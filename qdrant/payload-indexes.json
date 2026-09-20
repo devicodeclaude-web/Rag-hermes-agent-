@@ -1,0 +1,17 @@
+{
+  "collection": "hermes_chunks",
+  "payload_indexes": [
+    {"field_name": "tenant_id", "field_schema": {"type": "keyword", "is_tenant": true}},
+    {"field_name": "visibility", "field_schema": "keyword"},
+    {"field_name": "owner_id", "field_schema": "keyword"},
+    {"field_name": "allowed_group_ids", "field_schema": "keyword"},
+    {"field_name": "allowed_user_ids", "field_schema": "keyword"},
+    {"field_name": "classification", "field_schema": "integer"},
+    {"field_name": "tombstone", "field_schema": "bool"},
+    {"field_name": "document_id", "field_schema": "keyword"},
+    {"field_name": "doc_version", "field_schema": "integer"},
+    {"field_name": "source_sha", "field_schema": "keyword"}
+  ],
+  "verified_against": "Qdrant 1.19.0",
+  "minimum_version_for_is_tenant": "1.11.0"
+}

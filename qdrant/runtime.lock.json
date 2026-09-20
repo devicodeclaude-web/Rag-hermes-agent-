@@ -1,0 +1,9 @@
+{
+  "qdrant": {
+    "version": "1.19.0",
+    "server_commit": "74f3e85b9473c62560006c043e13737ce6b48412",
+    "architecture": "aarch64-unknown-linux-musl",
+    "download_url": "https://github.com/qdrant/qdrant/releases/download/v1.19.0/qdrant-aarch64-unknown-linux-musl.tar.gz",
+    "archive_sha256": "8986afbbff9ac32d6e2dbe5cabec80565f613f777126096a461ba066573d3245"
+  }
+}

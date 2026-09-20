@@ -1,0 +1,33 @@
+{
+  "model": {
+    "repo_id": "Qwen/Qwen2.5-14B-Instruct",
+    "revision": "cf98f3b3bbb457ad9e2bb7baf9a0125b6b88caa8",
+    "license": "Apache-2.0",
+    "parameters_billion": 14.77
+  },
+  "weights": {
+    "format": "bf16",
+    "quantization": "none",
+    "artifact_hash_kind": "sha256-of-canonical-lock-json",
+    "artifact_sha256": "b5ae3f567ff6759555e79dcb2e14bad9a1c1f916a1d7dfaabec822880f222fe3",
+    "lock_file": "manifests/locks/qwen2.5-14b-bf16.lock.json"
+  },
+  "runtime": {
+    "engine": "vllm",
+    "version": "0.29.0",
+    "arguments": ["--dtype", "bfloat16", "--max-model-len", "8192", "--gpu-memory-utilization", "0.85", "--max-num-seqs", "4"]
+  },
+  "hardware": {
+    "gpu_model": "NVIDIA RTX 6000 Ada Generation",
+    "gpu_count": 1,
+    "vram_gib": 48,
+    "ram_gib": 128
+  },
+  "workload": {
+    "context_length": 8192,
+    "max_output_tokens": 512,
+    "concurrent_users": 4,
+    "batch_size": 4
+  },
+  "status": "candidate_unbenchmarked"
+}

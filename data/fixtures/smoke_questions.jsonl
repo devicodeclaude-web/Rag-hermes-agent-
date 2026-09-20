@@ -1,0 +1,10 @@
+{"case_id":"public-termux","question":"Hermes Termux installation","tenant_id":"alpha","user_id":"alice","groups":["admins"],"clearance":2,"relevant_document_ids":["hermes-agent:getting-started/termux.md"],"should_abstain":false}
+{"case_id":"public-configuration","question":"Hermes configuration config yaml","tenant_id":"beta","user_id":"bob","groups":["admins"],"clearance":2,"relevant_document_ids":["hermes-agent:user-guide/configuration.md"],"should_abstain":false}
+{"case_id":"private-personal","question":"heliotrope nacre","tenant_id":"personal","user_id":"user","groups":["owners"],"clearance":2,"relevant_document_ids":["jarvis-placeholder"],"should_abstain":false}
+{"case_id":"alpha-own-secret","question":"ambre zephyr","tenant_id":"alpha","user_id":"alice","groups":["admins"],"clearance":2,"relevant_document_ids":["tenant-alpha-secret"],"should_abstain":false}
+{"case_id":"beta-own-secret","question":"cobalt orion","tenant_id":"beta","user_id":"bob","groups":["admins"],"clearance":2,"relevant_document_ids":["tenant-beta-secret"],"should_abstain":false}
+{"case_id":"gamma-own-secret","question":"jade pulsar","tenant_id":"gamma","user_id":"gina","groups":["admins"],"clearance":2,"relevant_document_ids":["tenant-gamma-secret"],"should_abstain":false}
+{"case_id":"alpha-cannot-read-beta","question":"cobalt orion","tenant_id":"alpha","user_id":"alice","groups":["admins"],"clearance":2,"relevant_document_ids":[],"should_abstain":true}
+{"case_id":"beta-cannot-read-gamma","question":"jade pulsar","tenant_id":"beta","user_id":"bob","groups":["admins"],"clearance":2,"relevant_document_ids":[],"should_abstain":true}
+{"case_id":"gamma-cannot-read-alpha","question":"ambre zephyr","tenant_id":"gamma","user_id":"gina","groups":["admins"],"clearance":2,"relevant_document_ids":[],"should_abstain":true}
+{"case_id":"alpha-unknown","question":"violet quasar","tenant_id":"alpha","user_id":"alice","groups":["admins"],"clearance":2,"relevant_document_ids":[],"should_abstain":true}

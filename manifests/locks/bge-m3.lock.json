@@ -1,0 +1,15 @@
+{
+  "repo_id": "BAAI/bge-m3",
+  "revision": "5617a9f61b028005a4858fdac845db406aefb181",
+  "license": "MIT",
+  "bundle_hash_kind": "sha256-of-canonical-lock-json",
+  "bundle_sha256": "148f351256e7e4c14caf535290c51d1a936cae137388215476c7eb9978dfc422",
+  "files": [
+    {"path":"config.json","size":687,"sha256":null,"git_oid":"e6eda1c72da8f9dc30fdd9b69c73d35af3b7a7ad"},
+    {"path":"modules.json","size":349,"sha256":null,"git_oid":"952a9b81c0bfd99800fabf352f69c7ccd46c5e43"},
+    {"path":"pytorch_model.bin","size":2271145830,"sha256":"b5e0ce3470abf5ef3831aa1bd5553b486803e83251590ab7ff35a117cf6aad38","git_oid":"88e71f33b1af45aa960f3fbf6883edc6f014452a"},
+    {"path":"sentence_bert_config.json","size":54,"sha256":null,"git_oid":"0140ba1eac83a3c9b857d64baba91969d988624b"},
+    {"path":"tokenizer.json","size":17098108,"sha256":"21106b6d7dab2952c1d496fb21d5dc9db75c28ed361a05f5020bbba27810dd08","git_oid":"c8fd8778874b9aa8bdafaa3bbd760f236d237dd6"},
+    {"path":"tokenizer_config.json","size":444,"sha256":null,"git_oid":"dc69ac559dcba2694012009aaa108c614541789a"}
+  ]
+}

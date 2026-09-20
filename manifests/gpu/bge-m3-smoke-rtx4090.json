@@ -1,0 +1,48 @@
+{
+  "job_id": "bge-m3-smoke-rtx4090-v1",
+  "status": "candidate_unexecuted",
+  "hardware": {
+    "gpu_model": "NVIDIA GeForce RTX 4090",
+    "gpu_count": 1,
+    "minimum_vram_gib": 24
+  },
+  "models": {
+    "embedding_lock": "manifests/locks/bge-m3.lock.json",
+    "reranker_lock": "manifests/locks/bge-reranker-v2-m3.lock.json"
+  },
+  "embedding": {
+    "precision": "fp16",
+    "dense_dimension": 1024,
+    "return_dense": true,
+    "return_sparse": true,
+    "return_colbert_vecs": false,
+    "batch_size": 2,
+    "max_length": 1024
+  },
+  "chunking": {
+    "tokenizer": "BAAI/bge-reranker-v2-m3",
+    "tokenizer_revision": "953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e",
+    "question_max_tokens": 96,
+    "passage_max_tokens": 384,
+    "overlap_tokens": 64,
+    "special_token_reserve": 32
+  },
+  "reranker": {
+    "precision": "fp16",
+    "batch_size": 1,
+    "max_length": 512,
+    "truncation_policy": "reject"
+  },
+  "corpus": {
+    "documents": [
+      "data/generated/hermes_public_documents.jsonl",
+      "data/fixtures/private_and_synthetic_documents.jsonl"
+    ],
+    "questions": "data/fixtures/smoke_questions.jsonl"
+  },
+  "qdrant": {
+    "version": "1.19.0",
+    "url": "http://127.0.0.1:6333",
+    "collection": "hermes_bge_m3_smoke_v1"
+  }
+}

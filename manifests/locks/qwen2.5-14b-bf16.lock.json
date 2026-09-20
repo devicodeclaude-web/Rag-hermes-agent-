@@ -1,0 +1,15 @@
+[
+  {"path":"config.json","size":663,"sha256":null,"git_oid":"172d20a3d7fc27df9ed89628cafdbaf1a773ddc1"},
+  {"path":"generation_config.json","size":242,"sha256":null,"git_oid":"bf077f03dc569cfb8a90b3ec1ad20365a620bad6"},
+  {"path":"model-00001-of-00008.safetensors","size":3885154816,"sha256":"b477be7572f0ab3ae3cbba38d508cc33e70600b2045669c4ad848051c3432094","git_oid":"c6c7ea67ef51963bf77dd66108bc4ec5532beacf"},
+  {"path":"model-00002-of-00008.safetensors","size":3995327992,"sha256":"eb356aacae443e30f52712b1e98fadf206976365e2f5ee886321b0bb38c7cea8","git_oid":"8cc56e73cc8dee7aff0511c99bfa78797f7ae405"},
+  {"path":"model-00003-of-00008.safetensors","size":3995328080,"sha256":"cee9dbdf738ce61adb21c70ad5c5585747caaab6457c9ffc3bfa20d73127c2c6","git_oid":"3bb47df7c057b1cfed9653dea14bc00d8c3edb1b"},
+  {"path":"model-00004-of-00008.safetensors","size":3995338432,"sha256":"b1201a6edcac8ef96a37040524fe37a5a84e446513ed40491e764a37302385fa","git_oid":"1249bc9d6ed7fdd756c2602cf199b74804178e93"},
+  {"path":"model-00005-of-00008.safetensors","size":3979624824,"sha256":"fbbda3cdee31895d0c57d617449af5579d219df34f3d63f7a23acbfe7fb0a647","git_oid":"56978537eb377eb7c7c0e2e051d1dd76a53107ce"},
+  {"path":"model-00006-of-00008.safetensors","size":3995328080,"sha256":"f7ac652aa101717c97cfeccf5109985cca5b04529b57d3f4d2ec7a802266296b","git_oid":"dde28241d511dfecb2daf77cd77c099696851b16"},
+  {"path":"model-00007-of-00008.safetensors","size":3995328080,"sha256":"e9115e615b575acb6e8b3a06524b32cbf7f680f07517125e4334f62c3f4acb0d","git_oid":"7edc60652ea939883c94bd6f1fcc14bb3aa7508b"},
+  {"path":"model-00008-of-00008.safetensors","size":1698703696,"sha256":"a77f603d8368749c19d3ac9cf2a300e476edcc794ea41af8e473ee12935eadb8","git_oid":"ba2875256480be476dae2bf47a169225f13e34a2"},
+  {"path":"model.safetensors.index.json","size":47472,"sha256":null,"git_oid":"76830d05f05b79fd413acb4a718b32bb68d96211"},
+  {"path":"tokenizer.json","size":7031645,"sha256":null,"git_oid":"443909a61d429dff23010e5bddd28ff530edda00"},
+  {"path":"tokenizer_config.json","size":7305,"sha256":null,"git_oid":"07bfe0640cb5a0037f9322287fbfc682806cf672"}
+]

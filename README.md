@@ -1,0 +1,164 @@
+# RAG Hermes Agent — MVP vérifiable
+
+Assistant RAG francophone consacré à **Hermes Agent de Nous Research** : installation, configuration, modèles, bots, automatisations, sécurité et dépannage sous Debian, Ubuntu, WSL et Termux.
+
+Ce dépôt est un harnais de preuve, pas encore une plateforme de production. Il construit ensemble le pipeline minimal et son évaluation. Keycloak, OpenBao, Valkey, Langfuse, stockage objet et OpenSearch restent hors du MVP.
+
+## État réellement vérifié
+
+- Corpus officiel Hermes Agent cloné au commit `b682a98ab8cb30c4f0561021e0ff9f41e5156526`.
+- 461 fichiers Markdown/MDX convertis en documents publics versionnés.
+- Fixtures privées/synthétiques pour quatre contextes et trois faux tenants.
+- ACL appliquées avant scoring, avec corpus global public explicite.
+- Chunks porteurs de `tenant_id`, ACL, `doc_version`, `source_sha` et `source_uri`.
+- Filtre Qdrant construit systématiquement à partir d’un contexte d’autorisation.
+- Qdrant 1.19.0 aarch64 réellement démarré sur `127.0.0.1` ; 2 945 chunks persistés.
+- Dix index payload créés ; `tenant_id` est confirmé avec `is_tenant: true` par lecture de la collection.
+- Probes réels : accès privé autorisé pour Alpha/Beta/Gamma, refus par clearance, fuite inter-tenant `0`.
+- Métriques : recall@k, MRR, précision des citations, précision/rappel d’abstention et fuite absolue.
+- Deux profils d’inférence exacts : GGUF + llama.cpp et BF16 + vLLM.
+- Baseline lexicale exécutée : recall@10 `0,667`, rappel d’abstention `0,25`, fuite `0`.
+- Smoke d’infrastructure BGE-M3 exécuté sur RTX 4090 : 2 945 chunks en `24,88 s`, soit `118,38 chunks/s`, pic CUDA alloué `1,11 Gio`.
+- Signal de smoke dense+sparse avant reranking : recall@10 `1,0` et MRR `1,0` sur seulement 10 questions, dont certaines dérivées du corpus ; ce n’est pas une preuve de qualité générale.
+- Le filtrage ACL de ce runner a été appliqué en mémoire Python avant scoring. Il n’a pas exercé Qdrant et ne valide donc pas la barrière ACL du moteur réel.
+- Le contrôle exact du reranker a refusé `190/200` paires dépassant 512 tokens. Le recall post-reranking `0,667` correspond à `4/6` questions répondables ; le reranker n’a pas été valablement évalué.
+- La cause est une déviation de spécification : `max_tokens=420` comptait des mots via `str.split()`, alors que le contrat exigeait des tokens du tokenizer exact.
+
+La baseline et le smoke restent des témoins techniques. Aucun score de qualité n’est considéré probant avant les jeux indépendants de 100 puis 300 questions. Voir `docs/audit-reconciliation.md`.
+
+## Exécution locale
+
+Aucune dépendance Python externe n’est nécessaire pour les tests du cœur :
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+Reconstruction du corpus public :
+
+```bash
+PYTHONPATH=. python scripts/build_public_corpus.py \
+  --docs-root data/sources/hermes-agent/website/docs \
+  --commit b682a98ab8cb30c4f0561021e0ff9f41e5156526 \
+  --output data/generated/hermes_public_documents.jsonl
+```
+
+Baseline retrieval :
+
+```bash
+PYTHONPATH=. python scripts/run_baseline.py \
+  --documents data/generated/hermes_public_documents.jsonl \
+  --documents data/fixtures/private_and_synthetic_documents.jsonl \
+  --questions data/fixtures/smoke_questions.jsonl \
+  --k 10 --minimum-score 0.5
+```
+
+Après démarrage de Qdrant 1.19.0 sur `127.0.0.1:6333`, chargement et probes ACL :
+
+```bash
+PYTHONPATH=. python scripts/qdrant_smoke.py \
+  --url http://127.0.0.1:6333 \
+  --collection hermes_chunks_smoke_v1 \
+  --documents data/generated/hermes_public_documents.jsonl \
+  --documents data/fixtures/private_and_synthetic_documents.jsonl
+```
+
+Les vecteurs de ce script sont déterministes et destinés exclusivement aux tests de stockage et d’ACL. Ils ne constituent pas des embeddings et ne mesurent aucune qualité sémantique.
+
+## Architecture du MVP
+
+```text
+Markdown/MDX officiel + fixtures privées/synthétiques
+  -> documents versionnés
+  -> chunks <= 420 mots (approximation provisoire)
+  -> payload ACL complet
+  -> BGE-M3 dense+sparse (prochaine étape GPU)
+  -> Qdrant avec filtre ACL pré-scoring
+  -> BGE-reranker-v2-m3 (entrée tokenisée <= 512)
+  -> modèle générateur via API OpenAI-compatible
+  -> citations ou abstention
+  -> harnais d’évaluation
+```
+
+La limite actuelle de 420 est une approximation par mots, pas une garantie tokenizer. Avant le reranking, le code devra mesurer `requête + passage + tokens spéciaux` avec le tokenizer exact et refuser toute troncature silencieuse.
+
+## Inférence : deux livraisons distinctes
+
+### Poste isolé
+
+- RTX 4090 24 Gio comme classe de référence initiale ;
+- Qwen2.5-14B-Instruct GGUF Q4_K_M ;
+- llama.cpp v0.4.0 ;
+- un utilisateur dans le manifeste initial.
+
+Fichiers :
+
+- `manifests/models/qwen2.5-14b-q4km-llamacpp-rtx4090.json`
+- `inference/llama_cpp/launch.sh`
+
+### Serveur partagé
+
+- RTX 6000 Ada 48 Gio comme classe de référence initiale ;
+- Qwen2.5-14B-Instruct BF16 officiel ;
+- vLLM 0.29.0 ;
+- quatre séquences dans le manifeste initial.
+
+Fichiers :
+
+- `manifests/models/qwen2.5-14b-bf16-vllm-rtx6000ada.json`
+- `manifests/locks/qwen2.5-14b-bf16.lock.json`
+- `inference/vllm/launch.sh`
+
+Ces deux profils sont `candidate_unbenchmarked`. Aucune capacité, concurrence ou latence n’est garantie avant mesure sur la classe de matériel indiquée.
+
+## Job GPU BGE exécuté
+
+Le manifeste `manifests/gpu/bge-m3-smoke-rtx4090.json` verrouille :
+
+- `BAAI/bge-m3` au commit `5617a9f61b028005a4858fdac845db406aefb181`, licence MIT ;
+- `BAAI/bge-reranker-v2-m3` au commit `953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e`, licence Apache-2.0 ;
+- 4,262 Gio d’artefacts listés par empreinte ;
+- dense 1 024 dimensions, dense+sparse activés, ColBERT désactivé pour le premier smoke test ;
+- embeddings limités à 1 024 tokens ;
+- reranker limité à 512 tokens avec politique `reject`, jamais `truncate` ;
+- cible matérielle RTX 4090 24 Gio.
+
+Validation locale sans téléchargement ni dépense :
+
+```bash
+PYTHONPATH=. python scripts/plan_bge_gpu_job.py
+```
+
+Exécution GPU reproductible :
+
+```bash
+python -m pip install -e '.[gpu]'
+PYTHONPATH=. python scripts/run_bge_gpu_smoke.py
+```
+
+Rapport historique corrigé après audit : `data/results/bge_m3_gpu_smoke_report.json` (SHA-256 actuel `c82589b1cb2b6da5f7a374f76846d87b068406c82088cb3bea5270e00193dbf2`, SHA-256 original conservé dans le rapport). Les artefacts principaux des deux checkpoints ont été vérifiés par taille et SHA-256 lorsqu’une empreinte LFS était présente dans les locks.
+
+Ce smoke valide l’exécution matérielle et le câblage, pas la qualité statistique : il ne contient que 10 questions. Il révèle surtout que la limite actuelle de 420 mots produit des passages trop longs pour le budget exact de 512 tokens du reranker.
+
+## Règles non négociables
+
+1. Poids et code sous licence OSI, vérifiés pour chaque checkpoint.
+2. Pas de transposition d’un résultat BF16/A100 vers une livraison Q4/RTX grand public.
+3. Un résultat est identifié par checkpoint, révision, artefact, quantification, moteur, version, GPU, contexte et concurrence.
+4. Toute requête retrieval possède un contexte d’autorisation ; absence de contexte = erreur.
+5. `tenant_id` doit être indexé dans Qdrant et déclaré tenant lorsque la version le permet.
+6. Une fuite inter-tenant invalide la configuration, indépendamment des scores moyens.
+7. La baseline sans retrieval est obligatoire dans la campagne générative.
+8. Le jeu final comporte au moins 300 questions et une revue humaine d’au moins 20 %.
+
+Voir `docs/acceptance-criteria.md`.
+
+## Prochain jalon
+
+1. Remplacer le chunking provisoire à 420 mots par un chunking piloté par le tokenizer exact, afin que `question + passage + tokens spéciaux <= 512`. **Fait** : `chunk_document_tokens` (question 96 / passage 384 / overlap 64 / réserve 32), avec test rouge d’abord.
+2. Réexécuter le smoke GPU et exiger zéro paire rejetée avant de retenir le reranker.
+3. Persister les sorties dense+sparse réelles dans Qdrant tout en conservant les mêmes filtres ACL pré-scoring. **Barrière ACL Qdrant réelle déjà validée** (`docs/smoke-gpu-runbook.md`, porte 2).
+4. Étendre et geler le corpus à 300 questions avant comparaison des modèles, en passant d’abord par un jeu intermédiaire de 100 questions dont au moins 30 écrites à la main.
+5. Ajouter la baseline générative sans retrieval et la revue humaine de 20 %.
+
+La procédure complète et les portes de sécurité sont dans `docs/smoke-gpu-runbook.md` ; la réconciliation des audits dans `docs/audit-reconciliation.md`.

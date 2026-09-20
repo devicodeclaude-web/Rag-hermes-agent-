@@ -1,0 +1,10 @@
+data/sources/
+data/generated/
+/models/
+.tools/
+qdrant/storage/
+/.qdrant-initialized
+results/raw/
+__pycache__/
+*.pyc
+.venv/

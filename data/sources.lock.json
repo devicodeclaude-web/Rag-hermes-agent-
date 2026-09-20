@@ -1,0 +1,7 @@
+{
+  "repository": "https://github.com/NousResearch/hermes-agent.git",
+  "commit": "b682a98ab8cb30c4f0561021e0ff9f41e5156526",
+  "docs_root": "website/docs",
+  "document_count": 461,
+  "generated_file": "data/generated/hermes_public_documents.jsonl"
+}

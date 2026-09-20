@@ -1,0 +1,224 @@
+{
+  "job_id": "bge-m3-smoke-rtx4090-v1",
+  "status": "historical_infrastructure_smoke_only",
+  "timestamp_utc": "2026-09-20T14:19:04Z",
+  "hardware": {
+    "gpu": "NVIDIA GeForce RTX 4090",
+    "vram_gib": 23.52618408203125,
+    "torch": "2.8.0+cu128",
+    "torch_cuda": "12.8",
+    "python": "3.12.3"
+  },
+  "artifacts": {
+    "embedding_repo": "BAAI/bge-m3",
+    "embedding_revision": "5617a9f61b028005a4858fdac845db406aefb181",
+    "reranker_repo": "BAAI/bge-reranker-v2-m3",
+    "reranker_revision": "953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e",
+    "verified_embedding_files": [
+      {
+        "path": "config.json",
+        "size": 687,
+        "sha256": null
+      },
+      {
+        "path": "modules.json",
+        "size": 349,
+        "sha256": null
+      },
+      {
+        "path": "pytorch_model.bin",
+        "size": 2271145830,
+        "sha256": "b5e0ce3470abf5ef3831aa1bd5553b486803e83251590ab7ff35a117cf6aad38"
+      },
+      {
+        "path": "sentence_bert_config.json",
+        "size": 54,
+        "sha256": null
+      },
+      {
+        "path": "tokenizer.json",
+        "size": 17098108,
+        "sha256": "21106b6d7dab2952c1d496fb21d5dc9db75c28ed361a05f5020bbba27810dd08"
+      },
+      {
+        "path": "tokenizer_config.json",
+        "size": 444,
+        "sha256": null
+      }
+    ],
+    "verified_reranker_files": [
+      {
+        "path": "config.json",
+        "size": 795,
+        "sha256": null
+      },
+      {
+        "path": "model.safetensors",
+        "size": 2271071852,
+        "sha256": "d9e3e081faff1eefb84019509b2f5558fd74c1a05a2c7db22f74174fcedb5286"
+      },
+      {
+        "path": "tokenizer.json",
+        "size": 17098273,
+        "sha256": "69564b696052886ed0ac63fa393e928384e0f8caada38c1f4864a9bfbf379c15"
+      },
+      {
+        "path": "tokenizer_config.json",
+        "size": 1173,
+        "sha256": null
+      }
+    ],
+    "download_seconds": 24.41153572872281
+  },
+  "corpus": {
+    "documents": 465,
+    "chunks": 2945,
+    "questions": 10
+  },
+  "embedding": {
+    "dense_dimension": 1024,
+    "seconds": 24.87738038226962,
+    "chunks_per_second": 118.38063151130387,
+    "peak_allocated_vram_gib": 1.114454746246338,
+    "sparse_nonzero_mean": 277.0264855687606
+  },
+  "reranker": {
+    "seconds": 1.1020160927437246,
+    "peak_allocated_vram_gib": 1.0759658813476562,
+    "max_length": 512,
+    "truncation_policy": "reject",
+    "rejected_pairs": 190,
+    "maximum_observed_pair_tokens": 1483
+  },
+  "metrics_hybrid_pre_rerank": {
+    "case_count": 10,
+    "recall_at_k": 1.0,
+    "mrr": 1.0,
+    "citation_precision": 0.0,
+    "abstention_precision": 0.0,
+    "abstention_recall": 0.0,
+    "leak_count": 0,
+    "security_gate_passed": true
+  },
+  "metrics_after_rerank": {
+    "case_count": 10,
+    "recall_at_k": 0.6666666666666666,
+    "mrr": 0.6666666666666666,
+    "citation_precision": 0.0,
+    "abstention_precision": 0.8,
+    "abstention_recall": 1.0,
+    "leak_count": 0,
+    "security_gate_passed": true
+  },
+  "cases": [
+    {
+      "case_id": "public-termux",
+      "best_score": null,
+      "did_abstain": true,
+      "retrieved_document_ids": []
+    },
+    {
+      "case_id": "public-configuration",
+      "best_score": 0.9056565881718779,
+      "did_abstain": false,
+      "retrieved_document_ids": [
+        "hermes-agent:integrations/providers.md"
+      ]
+    },
+    {
+      "case_id": "private-personal",
+      "best_score": 0.9180404503793634,
+      "did_abstain": false,
+      "retrieved_document_ids": [
+        "jarvis-placeholder"
+      ]
+    },
+    {
+      "case_id": "alpha-own-secret",
+      "best_score": 0.9226218936973621,
+      "did_abstain": false,
+      "retrieved_document_ids": [
+        "tenant-alpha-secret"
+      ]
+    },
+    {
+      "case_id": "beta-own-secret",
+      "best_score": 0.872456082633875,
+      "did_abstain": false,
+      "retrieved_document_ids": [
+        "tenant-beta-secret"
+      ]
+    },
+    {
+      "case_id": "gamma-own-secret",
+      "best_score": 0.8651101636647724,
+      "did_abstain": false,
+      "retrieved_document_ids": [
+        "tenant-gamma-secret",
+        "hermes-agent:user-guide/features/batch-processing.md"
+      ]
+    },
+    {
+      "case_id": "alpha-cannot-read-beta",
+      "best_score": null,
+      "did_abstain": true,
+      "retrieved_document_ids": []
+    },
+    {
+      "case_id": "beta-cannot-read-gamma",
+      "best_score": 0.0003740956047302422,
+      "did_abstain": true,
+      "retrieved_document_ids": [
+        "hermes-agent:user-guide/features/batch-processing.md"
+      ]
+    },
+    {
+      "case_id": "gamma-cannot-read-alpha",
+      "best_score": null,
+      "did_abstain": true,
+      "retrieved_document_ids": []
+    },
+    {
+      "case_id": "alpha-unknown",
+      "best_score": 0.00035976938316183637,
+      "did_abstain": true,
+      "retrieved_document_ids": [
+        "hermes-agent:user-guide/skills/optional/research/research-searxng-search.md",
+        "hermes-agent:user-guide/skills/optional/creative/creative-ai-presenter-video.md",
+        "tenant-alpha-secret"
+      ]
+    }
+  ],
+  "limitations": [
+    "Smoke set of 10 questions; not a statistically valid model-selection benchmark.",
+    "Abstention uses a provisional normalized reranker threshold of 0.5.",
+    "Hybrid retrieval uses rank fusion of dense and sparse scores; Qdrant persistence is not exercised in this GPU smoke.",
+    "Historical report corrected after audit: chunking counted words rather than tokenizer tokens, violating the specification.",
+    "The zero-leak result applies only to the Python in-memory prefilter in this runner; Qdrant was not exercised by this GPU run.",
+    "Recall and MRR are smoke signals on 10 questions and are not quality evidence."
+  ],
+  "original_report_sha256": "4409241ae9175d342b7f3bc6813b344c74215b29f24c6459aa8c1c5b2b8ff534",
+  "result_classification": "not_a_quality_benchmark",
+  "quality_gate_passed": false,
+  "acl_evidence": {
+    "scope": "python_in_memory_prefilter_before_scoring",
+    "qdrant_exercised": false,
+    "security_claim": "none_for_qdrant_or_complete_multitenant_system"
+  },
+  "post_rerank_metric_explanation": {
+    "answerable_question_count": 6,
+    "relevant_document_found_count": 4,
+    "formula": "4 / 6 = 0.6666666666666666",
+    "hits": [
+      "private-personal",
+      "alpha-own-secret",
+      "beta-own-secret",
+      "gamma-own-secret"
+    ],
+    "misses": {
+      "public-termux": "no pair survived the 512-token rejection policy",
+      "public-configuration": "returned hermes-agent:integrations/providers.md instead of hermes-agent:user-guide/configuration.md"
+    },
+    "interpretation": "invalid reranker quality evidence because 190 of 200 candidate pairs were rejected before scoring"
+  }
+}

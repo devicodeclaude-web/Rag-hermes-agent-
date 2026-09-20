@@ -1,0 +1,26 @@
+{
+  "benchmark": "qdrant-acl-smoke-v1",
+  "qdrant_version": "1.19.0",
+  "qdrant_commit": "74f3e85b9473c62560006c043e13737ce6b48412",
+  "collection": "hermes_chunks_smoke_v1",
+  "collection_status": "green",
+  "documents": 465,
+  "points_count": 2945,
+  "indexed_vectors_count": 0,
+  "vector_kind": "deterministic-test-only-not-an-embedding",
+  "payload_indexes": 10,
+  "tenant_index": {"type": "keyword", "is_tenant": true},
+  "probes": [
+    {"tenant_id":"alpha","clearance":2,"private_access_expected":true,"private_access_observed":true,"returned_tenants":["alpha","public"]},
+    {"tenant_id":"beta","clearance":2,"private_access_expected":true,"private_access_observed":true,"returned_tenants":["beta","public"]},
+    {"tenant_id":"gamma","clearance":2,"private_access_expected":true,"private_access_observed":true,"returned_tenants":["gamma","public"]},
+    {"tenant_id":"alpha","clearance":0,"private_access_expected":false,"private_access_observed":false,"returned_tenants":["public"]}
+  ],
+  "leak_count": 0,
+  "limitations": [
+    "This validates storage, payload indexes and pre-scoring ACL filters only.",
+    "Deterministic vectors are not embeddings and provide no semantic-quality evidence.",
+    "indexed_vectors_count is zero because this small collection is below the default vector-indexing threshold; exact search was used.",
+    "Authentication, TLS, replication, backup and failure recovery are not tested in this smoke run."
+  ]
+}

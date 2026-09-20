@@ -1,0 +1,13 @@
+{
+  "repo_id": "BAAI/bge-reranker-v2-m3",
+  "revision": "953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e",
+  "license": "Apache-2.0",
+  "bundle_hash_kind": "sha256-of-canonical-lock-json",
+  "bundle_sha256": "106026bd67083a718560195b2b0fd67a71cfcfb6d7b8d45b8042958e0c56a2eb",
+  "files": [
+    {"path":"config.json","size":795,"sha256":null,"git_oid":"9f62673cb00ec41dcec8947b9ed16f6f2eb23ba2"},
+    {"path":"model.safetensors","size":2271071852,"sha256":"d9e3e081faff1eefb84019509b2f5558fd74c1a05a2c7db22f74174fcedb5286","git_oid":"773a0a7d7cc8a010835938a3a82a87eac8b21909"},
+    {"path":"tokenizer.json","size":17098273,"sha256":"69564b696052886ed0ac63fa393e928384e0f8caada38c1f4864a9bfbf379c15","git_oid":"1c98a28b19c084901b2622d8e8b15e85eed13bff"},
+    {"path":"tokenizer_config.json","size":1173,"sha256":null,"git_oid":"328a00a9a560aadcf2a3064f917517359eb3cc26"}
+  ]
+}
