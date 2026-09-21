@@ -1,0 +1,16 @@
+# Dependances directes du groupe [gpu] (miroir de pyproject.toml).
+# Compile en lockfile hashe avec :
+#   uv pip compile requirements-gpu.in \
+#     --generate-hashes \
+#     --python-platform x86_64-manylinux2014 \
+#     --python-version 3.12 \
+#     -o requirements-gpu.lock.txt
+# La cible est la plateforme du POD (Linux x86_64 + Python 3.12), pas Termux.
+#
+# NOTE torch : uv resout torch==2.6.0 pour un env pip pur. Le pod PyTorch
+# fournit deja torch 2.8.0+cu128 via l'image de base (installe avec
+# --system-site-packages), donc torch n'est pas reinstalle depuis ce lock ;
+# le lock verrouille le reste de l'arbre (tokenizers, safetensors, hf-hub...).
+FlagEmbedding==1.3.5
+huggingface_hub==0.34.4
+transformers==4.57.6
