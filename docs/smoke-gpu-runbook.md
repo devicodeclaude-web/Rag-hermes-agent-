@@ -90,23 +90,49 @@ chown -R ragbench:ragbench /opt/ragbench
 runuser -u ragbench -- bash -lc 'cd /opt/ragbench && PYTHONPATH=. python scripts/run_bge_gpu_smoke.py'
 ```
 
-## Porte 5 — Smoke reconstruit et critères d’acceptation
+## Porte 5 — Smoke reconstruit et portée de la validation
 
 Le runner régénère le corpus avec le chunking tokenizer, encode dense+sparse,
-récupère au moins 20 candidats, rerank sans troncature, puis persiste dans Qdrant
-seulement après validation.
+récupère jusqu’à 20 candidats autorisés en mémoire, puis applique le reranker sans
+troncature. **Ce smoke GPU ne persiste rien dans Qdrant et ne teste pas le filtre ACL
+Qdrant.** Cette preuve séparée appartient au test d’intégration Qdrant réel.
 
-Critères durs du prochain run :
+### Verdict du run A40 du 2026-09-21
+
+**PASS conditionnel pour le smoke technique (8/10), NON-PASS production.**
+Le champ machine `quality_gate_passed` reste donc `false`.
+
+Réellement validé :
+- A40, CUDA 12.8 et PyTorch 2.8 fonctionnels ;
+- chunking tokenizer borné à 384 tokens ;
+- maximum observé question+passage : 396/512 tokens ;
 - `rejected_pairs = 0` ;
-- `truncated_pairs = 0` ;
-- fuite ACL = 0 ;
-- détail par question avant et après reranking ;
-- Recall@10 post-reranking ≥ Recall@10 sans reranker ;
-- temps de reranking mesuré séparément.
+- Recall@10 inchangé à 1,0 avant/après reranking sur ce smoke ;
+- détail avant/après disponible pour les 10 questions ;
+- aucune fuite inter-tenant détectée par le préfiltrage Python ;
+- rapport récupéré, Pod supprimé, facturation revenue à 0 USD/h.
 
-Rappel : avec MRR = 1 avant reranking sur le smoke, le reranker ne peut pas
-démontrer d’amélioration. Son utilité sera jugée sur le futur jeu de 100 puis 300
-questions, dont au moins 30 écrites à la main sans regarder les chunks.
+Limites et résultats négatifs :
+- 10 questions ne donnent aucun signal statistique de qualité ;
+- le reranker n’améliore pas Recall@10 et dégrade le MRR de 1,0 à 0,9167 ;
+- l’absence de fuite ne couvre que le préfiltrage Python en mémoire, pas Qdrant ni
+  le système multitenant complet ;
+- le rapport brut exécuté ne contient pas `truncated_pairs`. Pour ce run,
+  `truncated_pairs = 0` est une **déduction vérifiable**, car la politique était
+  `reject`, `rejected_pairs = 0` et le maximum observé était 396 < 512. Le champ a
+  été ajouté au script seulement après l’exécution et sera enregistré directement
+  lors des prochains runs.
+
+### Critères d’un futur PASS production
+
+- exécuter un jeu intermédiaire d’au moins 100 questions, puis le jeu final de 300 ;
+- inclure au moins 30 questions écrites à la main sans regarder les chunks ;
+- définir à l’avance des intervalles de confiance et des seuils de non-régression ;
+- démontrer un bénéfice du reranker sur une métrique préenregistrée, sans dégrader
+  les autres métriques critiques ;
+- exercer la persistance et le filtrage ACL dans Qdrant pendant le pipeline évalué ;
+- enregistrer directement `truncated_pairs`, `rejected_pairs` et les métriques par cas ;
+- conserver fuite ACL = 0 et vérifier l’isolation multitenant de bout en bout.
 
 ## Porte 6 — Récupération et arrêt
 
