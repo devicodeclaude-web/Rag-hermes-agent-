@@ -11,6 +11,18 @@
 # fournit deja torch 2.8.0+cu128 via l'image de base (installe avec
 # --system-site-packages), donc torch n'est pas reinstalle depuis ce lock ;
 # le lock verrouille le reste de l'arbre (tokenizers, safetensors, hf-hub...).
+#
+# NOTE CUDA / cible : x86_64-manylinux2014 resout les wheels nvidia-*-cu12 ;
+# x86_64-unknown-linux-gnu resout cu13. Ni l'un ni l'autre n'egale exactement
+# l'env du pod (CUDA 12.8, torch 2.8.0+cu128 issu de l'image, pas de pip).
+# Pour un lock 100% fidele au pod incluant torch+CUDA, generer le lock SUR le
+# pod avec l'index cu128 :
+#     uv pip compile requirements-gpu.in --generate-hashes \
+#       --index-url https://pypi.org/simple \
+#       --extra-index-url https://download.pytorch.org/whl/cu128 \
+#       --python-version 3.12 -o requirements-gpu.pod.lock.txt
+# Le lock committe ici verrouille le sous-arbre non-CUDA, suffisant pour la
+# reproductibilite des dependances applicatives.
 FlagEmbedding==1.3.5
 huggingface_hub==0.34.4
 transformers==4.57.6

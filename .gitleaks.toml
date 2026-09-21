@@ -1,0 +1,24 @@
+# Configuration gitleaks pour rag-hermes-agent.
+# Etend la config par defaut de gitleaks et ajoute une allowlist CIBLEE et
+# JUSTIFIEE pour les faux positifs connus. Aucun vrai secret n'est allowliste.
+
+title = "rag-hermes-agent gitleaks config"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = """
+Faux positifs justifies :
+1. Le SHA de revision git du tokenizer HuggingFace bge-reranker-v2-m3
+   (953dc6f6...) : identifiant PUBLIC de commit, present dans les manifests et
+   rapports. Ce n'est pas un secret.
+2. Les fixtures du scanner de secrets maison (tests/test_secret_scan.py) qui
+   contiennent des faux secrets VOLONTAIRES pour tester la detection.
+"""
+regexes = [
+  '''953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e''',
+]
+paths = [
+  '''tests/test_secret_scan\.py''',
+]
