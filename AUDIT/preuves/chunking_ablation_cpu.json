@@ -1,0 +1,41 @@
+{
+  "classification": "cpu_mechanism_only_not_exact_token_count",
+  "reranker_max_length": 512,
+  "question_words_assumed": 8,
+  "special_tokens_assumed": 4,
+  "corpus_documents": 465,
+  "old_strategy": {
+    "name": "word_chunking_420_40",
+    "chunk_count": 2945,
+    "max_chunk_words": 420,
+    "median_chunk_words": 420
+  },
+  "new_strategy": {
+    "name": "token_chunking_384_64",
+    "max_passage_tokens": 384,
+    "note": "borne par construction : chaque passage <= 384 tokens, donc paire <= 384 + question + special, structurellement < 512"
+  },
+  "over_budget_by_ratio": {
+    "1.2": {
+      "old_word_chunks_over_512": 2483,
+      "old_fraction_over": 0.8431,
+      "new_token_chunk_over_512": 0
+    },
+    "1.3": {
+      "old_word_chunks_over_512": 2514,
+      "old_fraction_over": 0.8537,
+      "new_token_chunk_over_512": 0
+    },
+    "1.4": {
+      "old_word_chunks_over_512": 2541,
+      "old_fraction_over": 0.8628,
+      "new_token_chunk_over_512": 0
+    },
+    "1.5": {
+      "old_word_chunks_over_512": 2558,
+      "old_fraction_over": 0.8686,
+      "new_token_chunk_over_512": 0
+    }
+  },
+  "caveat_vs_gpu_run": "Le run GPU historique montrait 190/200 rejets, pas ~85%, car le reranker ne voyait que les 20 candidats retrouves par question, pas tout le corpus. Cette ablation mesure la fraction de chunks trop longs dans le corpus entier ; les deux convergent sur le mecanisme (chunks par mots trop longs -> rejet), pas sur le chiffre exact."
+}

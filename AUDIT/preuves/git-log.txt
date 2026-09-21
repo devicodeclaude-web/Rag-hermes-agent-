@@ -1,0 +1,14 @@
+5970956 Integrate gitleaks into strict CI; document CUDA target caveat for uv lock
+7038595 Non-root workload wrapper + honest PRoot UID-isolation limit doc
+44f8416 Secret scanner: skip its own test fixtures (circular false positive)
+c7f701f Replace partial hashes with full uv-compiled lock (75 pkgs, x86_64 target)
+208c951 Hygiene: local secret scanner, hardened gitignore, hash-pinned GPU deps
+19a8516 CPU chunking ablation: word chunks 84-87% over reranker window vs 0 for token chunks
+e80f1ee Prove end-to-end ACL: ingestion to filtered Qdrant query, adversarial vector
+6a92701 Add strict CI runner: skipped integration test is a failure
+3cbc67f Document exact Qdrant integration test command
+ccfbee2 Mark reranker truncation as uninstrumented
+bbdd665 Clarify conditional scope of GPU smoke
+2e9e36b Run guarded BGE smoke on A40
+0df6571 Fix RunPod watchdog against live pod list shape
+ca55d8b Audit fixes: tokenizer-aware chunking, real Qdrant ACL, pod safety guards
