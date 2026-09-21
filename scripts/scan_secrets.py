@@ -11,6 +11,9 @@ from rag_hermes.secret_scan import scan_text
 ROOT = Path(__file__).resolve().parents[1]
 # extensions binaires / donnees a ignorer
 SKIP_SUFFIXES = {".pyc", ".mmap", ".dat", ".pack", ".idx", ".jsonl"}
+# fichiers qui contiennent LEGITIMEMENT des faux secrets (fixtures de test du
+# scanner lui-meme) : les scanner produirait un faux positif circulaire.
+SKIP_PATHS = {"tests/test_secret_scan.py"}
 
 
 def tracked_files() -> list[str]:
@@ -23,6 +26,8 @@ def tracked_files() -> list[str]:
 def main() -> int:
     findings = []
     for rel in tracked_files():
+        if rel in SKIP_PATHS:
+            continue
         path = ROOT / rel
         if path.suffix in SKIP_SUFFIXES or not path.is_file():
             continue
