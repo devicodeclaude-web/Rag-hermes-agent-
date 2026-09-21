@@ -18,13 +18,16 @@ Aucun Pod ne doit être créé tant que les portes 1 à 4 ne sont pas vertes.
    ```
    La réponse attendue est `not_found`. Une réponse `forbidden` interdit le
    provisionnement : le watchdog ne pourrait pas supprimer le Pod.
-3. Clé SSH dédiée **avec passphrase**, chargée dans `ssh-agent` :
-   ```bash
-   ssh-keygen -t ed25519 -f ~/.ssh/runpod_rag_bge -C rag-bge-runpod   # saisir une passphrase
-   chmod 600 ~/.ssh/runpod_rag_bge
-   eval "$(ssh-agent -s)" && ssh-add ~/.ssh/runpod_rag_bge
-   ```
-3. Enregistrer uniquement la moitié publique sur RunPod, sans écraser d’autres clés.
+3. Clé SSH ED25519 dédiée au smoke. Deux modes sont admis :
+   - passphrase + `ssh-agent` sur une machine où l’agent est durable ;
+   - sans passphrase pour l’automatisation Termux/PRoot, uniquement avec une clé
+     dédiée et un fichier privé en mode `0600`. Dans ce mode, verrouiller le
+     téléphone et supprimer/révoquer la clé après la campagne.
+   La campagne Termux utilise `/root/.ssh/runpod_rag_bge_auto` et passe
+   explicitement `-i /root/.ssh/runpod_rag_bge_auto` à SSH ; elle ne dépend pas
+   d’un agent partagé entre processus PRoot.
+4. Enregistrer uniquement la moitié publique sur RunPod, sans écraser d’autres clés,
+   puis vérifier que l’empreinte distante correspond à l’empreinte locale.
 
 ## Porte 1 — Validation locale hors dépense
 
@@ -68,6 +71,11 @@ Le watchdog :
 Preuve réelle effectuée le 2026-09-21 sur un Pod CPU jetable : événement
 `deleted` à l’échéance, puis `confirmed_absent`; listes RunPod CLI et MCP
 vides après vérification. Coût calculé du test : environ 0,002 USD.
+
+Smoke GPU réel effectué le 2026-09-21 sur une A40 sécurisée 48 Gio à
+0,49 USD/h, après indisponibilité de l'A5000. Le Pod a été supprimé
+manuellement dès la récupération du rapport, puis le watchdog a émis
+`confirmed_absent`; la dépense RunPod est revenue à 0 USD/h.
 
 ## Porte 4 — Provisionnement non-root
 

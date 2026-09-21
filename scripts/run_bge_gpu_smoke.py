@@ -299,6 +299,7 @@ def main() -> None:
             "peak_allocated_vram_gib": reranker_peak_gib,
             "max_length": int(manifest["reranker"]["max_length"]),
             "truncation_policy": "reject",
+            "truncated_pairs": 0,
             "rejected_pairs": rejected_pairs,
             "maximum_observed_pair_tokens": max(observed_lengths, default=0),
         },

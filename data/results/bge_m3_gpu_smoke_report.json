@@ -1,10 +1,11 @@
 {
   "job_id": "bge-m3-smoke-rtx4090-v1",
-  "status": "historical_infrastructure_smoke_only",
-  "timestamp_utc": "2026-09-20T14:19:04Z",
+  "status": "infrastructure_smoke_only",
+  "result_classification": "not_a_quality_benchmark",
+  "timestamp_utc": "2026-09-21T13:41:16Z",
   "hardware": {
-    "gpu": "NVIDIA GeForce RTX 4090",
-    "vram_gib": 23.52618408203125,
+    "gpu": "NVIDIA A40",
+    "vram_gib": 44.42193603515625,
     "torch": "2.8.0+cu128",
     "torch_cuda": "12.8",
     "python": "3.12.3"
@@ -68,27 +69,37 @@
         "sha256": null
       }
     ],
-    "download_seconds": 24.41153572872281
+    "download_seconds": 14.540522149764001
   },
   "corpus": {
     "documents": 465,
-    "chunks": 2945,
-    "questions": 10
+    "chunks": 7371,
+    "questions": 10,
+    "independent_manual_questions": 0
+  },
+  "chunking": {
+    "tokenizer": "BAAI/bge-reranker-v2-m3",
+    "tokenizer_revision": "953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e",
+    "question_max_tokens": 96,
+    "passage_max_tokens": 384,
+    "overlap_tokens": 64,
+    "special_token_reserve": 32,
+    "maximum_observed_chunk_tokens": 384
   },
   "embedding": {
     "dense_dimension": 1024,
-    "seconds": 24.87738038226962,
-    "chunks_per_second": 118.38063151130387,
-    "peak_allocated_vram_gib": 1.114454746246338,
-    "sparse_nonzero_mean": 277.0264855687606
+    "seconds": 54.36672109924257,
+    "chunks_per_second": 135.57926339800346,
+    "peak_allocated_vram_gib": 1.0850343704223633,
+    "sparse_nonzero_mean": 126.5695292361959
   },
   "reranker": {
-    "seconds": 1.1020160927437246,
-    "peak_allocated_vram_gib": 1.0759658813476562,
+    "seconds": 3.1510551776736975,
+    "peak_allocated_vram_gib": 1.0744876861572266,
     "max_length": 512,
     "truncation_policy": "reject",
-    "rejected_pairs": 190,
-    "maximum_observed_pair_tokens": 1483
+    "rejected_pairs": 0,
+    "maximum_observed_pair_tokens": 396
   },
   "metrics_hybrid_pre_rerank": {
     "case_count": 10,
@@ -102,123 +113,389 @@
   },
   "metrics_after_rerank": {
     "case_count": 10,
-    "recall_at_k": 0.6666666666666666,
-    "mrr": 0.6666666666666666,
+    "recall_at_k": 1.0,
+    "mrr": 0.9166666666666666,
     "citation_precision": 0.0,
-    "abstention_precision": 0.8,
+    "abstention_precision": 1.0,
     "abstention_recall": 1.0,
     "leak_count": 0,
     "security_gate_passed": true
   },
+  "acl_evidence": {
+    "scope": "python_in_memory_prefilter_before_scoring",
+    "qdrant_exercised": false,
+    "security_claim": "none_for_qdrant_or_complete_multitenant_system"
+  },
+  "quality_gate_passed": false,
   "cases": [
     {
       "case_id": "public-termux",
-      "best_score": null,
-      "did_abstain": true,
-      "retrieved_document_ids": []
+      "should_abstain": false,
+      "relevant_document_ids": [
+        "hermes-agent:getting-started/termux.md"
+      ],
+      "question_token_count": 6,
+      "pre_rerank": {
+        "retrieved_document_ids": [
+          "hermes-agent:getting-started/termux.md",
+          "hermes-agent:getting-started/installation.md",
+          "hermes-agent:getting-started/quickstart.md",
+          "hermes-agent:getting-started/platform-support.md",
+          "hermes-agent:user-guide/skills/optional/security/security-1password.md"
+        ],
+        "first_relevant_rank": 1,
+        "hit": true
+      },
+      "best_score": 0.9830850867332734,
+      "did_abstain": false,
+      "post_rerank": {
+        "retrieved_document_ids": [
+          "hermes-agent:getting-started/installation.md",
+          "hermes-agent:getting-started/termux.md",
+          "hermes-agent:getting-started/quickstart.md",
+          "hermes-agent:getting-started/platform-support.md",
+          "hermes-agent:user-guide/skills/optional/security/security-1password.md"
+        ],
+        "first_relevant_rank": 2,
+        "hit": true
+      }
     },
     {
       "case_id": "public-configuration",
-      "best_score": 0.9056565881718779,
+      "should_abstain": false,
+      "relevant_document_ids": [
+        "hermes-agent:user-guide/configuration.md"
+      ],
+      "question_token_count": 7,
+      "pre_rerank": {
+        "retrieved_document_ids": [
+          "hermes-agent:user-guide/configuration.md",
+          "hermes-agent:reference/environment-variables.md",
+          "hermes-agent:user-guide/messaging/telegram.md",
+          "hermes-agent:integrations/providers.md",
+          "hermes-agent:reference/faq.md",
+          "hermes-agent:user-guide/managed-scope.md"
+        ],
+        "first_relevant_rank": 1,
+        "hit": true
+      },
+      "best_score": 0.9922444632191525,
       "did_abstain": false,
-      "retrieved_document_ids": [
-        "hermes-agent:integrations/providers.md"
-      ]
+      "post_rerank": {
+        "retrieved_document_ids": [
+          "hermes-agent:user-guide/configuration.md",
+          "hermes-agent:user-guide/messaging/telegram.md",
+          "hermes-agent:reference/environment-variables.md",
+          "hermes-agent:user-guide/managed-scope.md",
+          "hermes-agent:integrations/providers.md",
+          "hermes-agent:reference/cli-commands.md",
+          "hermes-agent:user-guide/features/web-dashboard.md"
+        ],
+        "first_relevant_rank": 1,
+        "hit": true
+      }
     },
     {
       "case_id": "private-personal",
-      "best_score": 0.9180404503793634,
-      "did_abstain": false,
-      "retrieved_document_ids": [
+      "should_abstain": false,
+      "relevant_document_ids": [
         "jarvis-placeholder"
-      ]
+      ],
+      "question_token_count": 5,
+      "pre_rerank": {
+        "retrieved_document_ids": [
+          "jarvis-placeholder",
+          "hermes-agent:user-guide/skills/optional/mlops/mlops-qdrant.md",
+          "hermes-agent:user-guide/configuring-models.md",
+          "hermes-agent:developer-guide/chronos-managed-cron-contract.md",
+          "hermes-agent:getting-started/nix-setup.md",
+          "hermes-agent:reference/tools-reference.md",
+          "hermes-agent:developer-guide/relay-connector-contract.md",
+          "hermes-agent:user-guide/skills/optional/finance/finance-merger-model.md"
+        ],
+        "first_relevant_rank": 1,
+        "hit": true
+      },
+      "best_score": 0.9181872878284922,
+      "did_abstain": false,
+      "post_rerank": {
+        "retrieved_document_ids": [
+          "jarvis-placeholder",
+          "hermes-agent:user-guide/skills/optional/finance/finance-merger-model.md",
+          "hermes-agent:user-guide/features/tts.md",
+          "hermes-agent:guides/aws-bedrock.md",
+          "hermes-agent:user-guide/configuring-models.md",
+          "hermes-agent:developer-guide/chronos-managed-cron-contract.md",
+          "hermes-agent:reference/tools-reference.md",
+          "hermes-agent:user-guide/skills/optional/creative/creative-kanban-video-orchestrator.md",
+          "hermes-agent:user-guide/skills/bundled/research/research-research-paper-writing.md",
+          "hermes-agent:getting-started/nix-setup.md"
+        ],
+        "first_relevant_rank": 1,
+        "hit": true
+      }
     },
     {
       "case_id": "alpha-own-secret",
+      "should_abstain": false,
+      "relevant_document_ids": [
+        "tenant-alpha-secret"
+      ],
+      "question_token_count": 5,
+      "pre_rerank": {
+        "retrieved_document_ids": [
+          "tenant-alpha-secret",
+          "hermes-agent:user-guide/skills/bundled/creative/creative-popular-web-designs.md",
+          "hermes-agent:user-guide/skills/optional/creative/creative-creative-ideation.md",
+          "hermes-agent:guides/azure-foundry.md",
+          "hermes-agent:user-guide/skills/optional/research/research-gitnexus-explorer.md",
+          "hermes-agent:user-guide/checkpoints-and-rollback.md",
+          "hermes-agent:user-guide/skills/optional/finance/finance-merger-model.md",
+          "hermes-agent:user-guide/skills/optional/creative/creative-simple-english.md"
+        ],
+        "first_relevant_rank": 1,
+        "hit": true
+      },
       "best_score": 0.9226218936973621,
       "did_abstain": false,
-      "retrieved_document_ids": [
-        "tenant-alpha-secret"
-      ]
+      "post_rerank": {
+        "retrieved_document_ids": [
+          "tenant-alpha-secret",
+          "hermes-agent:user-guide/skills/optional/finance/finance-merger-model.md",
+          "hermes-agent:user-guide/skills/bundled/creative/creative-popular-web-designs.md",
+          "hermes-agent:user-guide/skills/bundled/github/github-github-repo-management.md",
+          "hermes-agent:guides/azure-foundry.md",
+          "hermes-agent:user-guide/checkpoints-and-rollback.md",
+          "hermes-agent:user-guide/skills/bundled/creative/creative-claude-design.md"
+        ],
+        "first_relevant_rank": 1,
+        "hit": true
+      }
     },
     {
       "case_id": "beta-own-secret",
+      "should_abstain": false,
+      "relevant_document_ids": [
+        "tenant-beta-secret"
+      ],
+      "question_token_count": 4,
+      "pre_rerank": {
+        "retrieved_document_ids": [
+          "tenant-beta-secret",
+          "hermes-agent:user-guide/skills/optional/creative/creative-mono-color.md",
+          "hermes-agent:developer-guide/context-compression-and-caching.md",
+          "hermes-agent:user-guide/skills/bundled/creative/creative-pretext.md",
+          "hermes-agent:user-guide/skills/optional/creative/creative-pretext.md",
+          "hermes-agent:user-guide/skills/optional/mlops/mlops-research-dspy.md",
+          "hermes-agent:user-guide/cli.md",
+          "hermes-agent:user-guide/skills/optional/yuanbao/yuanbao-yuanbao.md"
+        ],
+        "first_relevant_rank": 1,
+        "hit": true
+      },
       "best_score": 0.872456082633875,
       "did_abstain": false,
-      "retrieved_document_ids": [
-        "tenant-beta-secret"
-      ]
+      "post_rerank": {
+        "retrieved_document_ids": [
+          "tenant-beta-secret",
+          "hermes-agent:user-guide/skills/optional/creative/creative-mono-color.md",
+          "hermes-agent:developer-guide/context-compression-and-caching.md",
+          "hermes-agent:user-guide/skills/optional/mlops/mlops-obliteratus.md",
+          "hermes-agent:user-guide/egress/iron-proxy.md",
+          "hermes-agent:developer-guide/plugins/index.md",
+          "hermes-agent:user-guide/skills/bundled/research/research-arxiv.md"
+        ],
+        "first_relevant_rank": 1,
+        "hit": true
+      }
     },
     {
       "case_id": "gamma-own-secret",
+      "should_abstain": false,
+      "relevant_document_ids": [
+        "tenant-gamma-secret"
+      ],
+      "question_token_count": 4,
+      "pre_rerank": {
+        "retrieved_document_ids": [
+          "tenant-gamma-secret",
+          "hermes-agent:user-guide/skills/bundled/software-development/software-development-node-inspect-debugger.md",
+          "hermes-agent:user-guide/features/extending-the-dashboard.md",
+          "hermes-agent:user-guide/features/x-search.md",
+          "hermes-agent:user-guide/skills/bundled/autonomous-ai-agents/autonomous-ai-agents-claude-code.md",
+          "hermes-agent:getting-started/termux.md",
+          "hermes-agent:getting-started/installation.md",
+          "hermes-agent:user-guide/security.md"
+        ],
+        "first_relevant_rank": 1,
+        "hit": true
+      },
       "best_score": 0.8651101636647724,
       "did_abstain": false,
-      "retrieved_document_ids": [
-        "tenant-gamma-secret",
-        "hermes-agent:user-guide/features/batch-processing.md"
-      ]
+      "post_rerank": {
+        "retrieved_document_ids": [
+          "tenant-gamma-secret",
+          "hermes-agent:user-guide/skills/bundled/software-development/software-development-node-inspect-debugger.md",
+          "hermes-agent:user-guide/features/kanban.md",
+          "hermes-agent:user-guide/features/extending-the-dashboard.md",
+          "hermes-agent:user-guide/skills/bundled/autonomous-ai-agents/autonomous-ai-agents-claude-code.md",
+          "hermes-agent:user-guide/skills/optional/mlops/mlops-peft.md",
+          "hermes-agent:user-guide/skills/bundled/mlops/mlops-evaluation-evaluating-llms-harness.md",
+          "hermes-agent:user-guide/features/x-search.md"
+        ],
+        "first_relevant_rank": 1,
+        "hit": true
+      }
     },
     {
       "case_id": "alpha-cannot-read-beta",
-      "best_score": null,
+      "should_abstain": true,
+      "relevant_document_ids": [],
+      "question_token_count": 4,
+      "pre_rerank": {
+        "retrieved_document_ids": [
+          "hermes-agent:user-guide/skills/optional/creative/creative-mono-color.md",
+          "hermes-agent:developer-guide/context-compression-and-caching.md",
+          "hermes-agent:user-guide/skills/bundled/creative/creative-pretext.md",
+          "hermes-agent:user-guide/skills/optional/creative/creative-pretext.md",
+          "hermes-agent:user-guide/skills/optional/mlops/mlops-research-dspy.md",
+          "hermes-agent:user-guide/cli.md",
+          "hermes-agent:user-guide/skills/optional/yuanbao/yuanbao-yuanbao.md",
+          "hermes-agent:user-guide/skills/optional/mlops/mlops-obliteratus.md"
+        ],
+        "first_relevant_rank": null,
+        "hit": false
+      },
+      "best_score": 0.004231587478161332,
       "did_abstain": true,
-      "retrieved_document_ids": []
+      "post_rerank": {
+        "retrieved_document_ids": [
+          "hermes-agent:user-guide/skills/optional/creative/creative-mono-color.md",
+          "hermes-agent:developer-guide/context-compression-and-caching.md",
+          "hermes-agent:user-guide/skills/optional/mlops/mlops-obliteratus.md",
+          "hermes-agent:user-guide/egress/iron-proxy.md",
+          "hermes-agent:developer-guide/plugins/index.md",
+          "hermes-agent:user-guide/skills/bundled/research/research-arxiv.md",
+          "hermes-agent:user-guide/skills/optional/mlops/mlops-research-dspy.md"
+        ],
+        "first_relevant_rank": null,
+        "hit": false
+      }
     },
     {
       "case_id": "beta-cannot-read-gamma",
-      "best_score": 0.0003740956047302422,
+      "should_abstain": true,
+      "relevant_document_ids": [],
+      "question_token_count": 4,
+      "pre_rerank": {
+        "retrieved_document_ids": [
+          "hermes-agent:user-guide/skills/bundled/software-development/software-development-node-inspect-debugger.md",
+          "hermes-agent:user-guide/features/extending-the-dashboard.md",
+          "hermes-agent:user-guide/features/x-search.md",
+          "hermes-agent:user-guide/skills/bundled/autonomous-ai-agents/autonomous-ai-agents-claude-code.md",
+          "hermes-agent:getting-started/termux.md",
+          "hermes-agent:getting-started/installation.md",
+          "hermes-agent:user-guide/security.md",
+          "hermes-agent:user-guide/skills/optional/payments/payments-stripe-link-cli.md"
+        ],
+        "first_relevant_rank": null,
+        "hit": false
+      },
+      "best_score": 0.0038693910084949324,
       "did_abstain": true,
-      "retrieved_document_ids": [
-        "hermes-agent:user-guide/features/batch-processing.md"
-      ]
+      "post_rerank": {
+        "retrieved_document_ids": [
+          "hermes-agent:user-guide/skills/bundled/software-development/software-development-node-inspect-debugger.md",
+          "hermes-agent:user-guide/features/kanban.md",
+          "hermes-agent:user-guide/features/extending-the-dashboard.md",
+          "hermes-agent:user-guide/skills/optional/creative/creative-system-atlas.md",
+          "hermes-agent:user-guide/skills/bundled/autonomous-ai-agents/autonomous-ai-agents-claude-code.md",
+          "hermes-agent:user-guide/skills/optional/mlops/mlops-peft.md",
+          "hermes-agent:user-guide/skills/bundled/mlops/mlops-evaluation-evaluating-llms-harness.md",
+          "hermes-agent:user-guide/features/x-search.md"
+        ],
+        "first_relevant_rank": null,
+        "hit": false
+      }
     },
     {
       "case_id": "gamma-cannot-read-alpha",
-      "best_score": null,
+      "should_abstain": true,
+      "relevant_document_ids": [],
+      "question_token_count": 5,
+      "pre_rerank": {
+        "retrieved_document_ids": [
+          "hermes-agent:user-guide/skills/bundled/creative/creative-popular-web-designs.md",
+          "hermes-agent:user-guide/skills/optional/creative/creative-creative-ideation.md",
+          "hermes-agent:guides/azure-foundry.md",
+          "hermes-agent:user-guide/skills/optional/research/research-gitnexus-explorer.md",
+          "hermes-agent:user-guide/checkpoints-and-rollback.md",
+          "hermes-agent:user-guide/skills/optional/creative/creative-simple-english.md",
+          "hermes-agent:user-guide/skills/optional/finance/finance-merger-model.md",
+          "hermes-agent:integrations/providers.md"
+        ],
+        "first_relevant_rank": null,
+        "hit": false
+      },
+      "best_score": 0.0011513995656772138,
       "did_abstain": true,
-      "retrieved_document_ids": []
+      "post_rerank": {
+        "retrieved_document_ids": [
+          "hermes-agent:user-guide/skills/optional/finance/finance-merger-model.md",
+          "hermes-agent:user-guide/skills/bundled/creative/creative-popular-web-designs.md",
+          "hermes-agent:user-guide/skills/bundled/github/github-github-repo-management.md",
+          "hermes-agent:guides/azure-foundry.md",
+          "hermes-agent:user-guide/checkpoints-and-rollback.md",
+          "hermes-agent:user-guide/skills/bundled/creative/creative-claude-design.md"
+        ],
+        "first_relevant_rank": null,
+        "hit": false
+      }
     },
     {
       "case_id": "alpha-unknown",
-      "best_score": 0.00035976938316183637,
+      "should_abstain": true,
+      "relevant_document_ids": [],
+      "question_token_count": 3,
+      "pre_rerank": {
+        "retrieved_document_ids": [
+          "hermes-agent:user-guide/skills/optional/mlops/mlops-faiss.md",
+          "hermes-agent:user-guide/skills/bundled/creative/creative-sketch.md",
+          "hermes-agent:user-guide/features/extending-the-dashboard.md",
+          "hermes-agent:user-guide/skills/optional/creative/creative-tldraw-offline.md",
+          "hermes-agent:user-guide/features/tool-search.md",
+          "hermes-agent:user-guide/skills/bundled/creative/creative-songwriting-and-ai-music.md",
+          "hermes-agent:user-guide/skills/optional/mlops/mlops-obliteratus.md",
+          "hermes-agent:user-guide/skills/bundled/creative/creative-ascii-art.md",
+          "hermes-agent:user-guide/skills/optional/research/research-searxng-search.md"
+        ],
+        "first_relevant_rank": null,
+        "hit": false
+      },
+      "best_score": 0.0026626127171173355,
       "did_abstain": true,
-      "retrieved_document_ids": [
-        "hermes-agent:user-guide/skills/optional/research/research-searxng-search.md",
-        "hermes-agent:user-guide/skills/optional/creative/creative-ai-presenter-video.md",
-        "tenant-alpha-secret"
-      ]
+      "post_rerank": {
+        "retrieved_document_ids": [
+          "hermes-agent:user-guide/skills/optional/creative/creative-tldraw-offline.md",
+          "hermes-agent:user-guide/skills/optional/creative/creative-concept-diagrams.md",
+          "hermes-agent:user-guide/features/extending-the-dashboard.md",
+          "hermes-agent:user-guide/skills/bundled/creative/creative-popular-web-designs.md",
+          "hermes-agent:user-guide/skills/bundled/media/media-songsee.md",
+          "hermes-agent:user-guide/skills/bundled/creative/creative-ascii-art.md",
+          "hermes-agent:user-guide/skills/optional/mlops/mlops-obliteratus.md",
+          "hermes-agent:user-guide/skills/optional/mlops/mlops-faiss.md",
+          "hermes-agent:developer-guide/secret-source-plugin.md"
+        ],
+        "first_relevant_rank": null,
+        "hit": false
+      }
     }
   ],
   "limitations": [
     "Smoke set of 10 questions; not a statistically valid model-selection benchmark.",
     "Abstention uses a provisional normalized reranker threshold of 0.5.",
     "Hybrid retrieval uses rank fusion of dense and sparse scores; Qdrant persistence is not exercised in this GPU smoke.",
-    "Historical report corrected after audit: chunking counted words rather than tokenizer tokens, violating the specification.",
-    "The zero-leak result applies only to the Python in-memory prefilter in this runner; Qdrant was not exercised by this GPU run.",
-    "Recall and MRR are smoke signals on 10 questions and are not quality evidence."
-  ],
-  "original_report_sha256": "4409241ae9175d342b7f3bc6813b344c74215b29f24c6459aa8c1c5b2b8ff534",
-  "result_classification": "not_a_quality_benchmark",
-  "quality_gate_passed": false,
-  "acl_evidence": {
-    "scope": "python_in_memory_prefilter_before_scoring",
-    "qdrant_exercised": false,
-    "security_claim": "none_for_qdrant_or_complete_multitenant_system"
-  },
-  "post_rerank_metric_explanation": {
-    "answerable_question_count": 6,
-    "relevant_document_found_count": 4,
-    "formula": "4 / 6 = 0.6666666666666666",
-    "hits": [
-      "private-personal",
-      "alpha-own-secret",
-      "beta-own-secret",
-      "gamma-own-secret"
-    ],
-    "misses": {
-      "public-termux": "no pair survived the 512-token rejection policy",
-      "public-configuration": "returned hermes-agent:integrations/providers.md instead of hermes-agent:user-guide/configuration.md"
-    },
-    "interpretation": "invalid reranker quality evidence because 190 of 200 candidate pairs were rejected before scoring"
-  }
+    "The ACL result applies only to the Python in-memory prefilter used by this runner.",
+    "Quality metrics are non-probative until the independent 100-question intermediate set and 300-question final set exist."
+  ]
 }
