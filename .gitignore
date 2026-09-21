@@ -8,3 +8,15 @@ results/raw/
 __pycache__/
 *.pyc
 .venv/
+
+# Secrets et identifiants — ne jamais committer
+*.pem
+*.key
+id_ed25519*
+id_rsa*
+.env
+.env.*
+*.secret
+.runpod/
+**/config.toml
+.ssh/
