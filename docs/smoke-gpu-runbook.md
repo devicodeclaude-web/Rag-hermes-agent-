@@ -33,9 +33,24 @@ Aucun Pod ne doit être créé tant que les portes 1 à 4 ne sont pas vertes.
 
 ```bash
 cd /root/rag-hermes-agent
-QDRANT_INTEGRATION_URL=http://127.0.0.1:6333 python -m unittest discover -s tests -q
+QDRANT_INTEGRATION_URL=http://127.0.0.1:6333 python -m unittest discover -s tests -v
 PYTHONPATH=. python scripts/plan_bge_gpu_job.py
 ```
+
+La première commande est la commande normative de validation Qdrant réelle. Le
+serveur Qdrant 1.19.0 doit déjà répondre sur `127.0.0.1:6333`, et la sortie doit
+contenir explicitement :
+
+```text
+test_real_server_enforces_tenant_clearance_and_global_public ... ok
+Ran 60 tests
+OK
+```
+
+Sans `QDRANT_INTEGRATION_URL`, la même suite affiche `skipped 'Qdrant integration
+disabled'`. Ce run local reste utile, mais ne doit jamais être décrit comme une
+validation Qdrant réelle. Preuve renouvelée sur le commit `ccfbee2` : 60 tests en
+9,146 s, aucun skip, Qdrant réel `ok`.
 
 Exigences : suite verte, intégration Qdrant réelle incluse, contrat de chunking
 (question 96 / passage 384 / overlap 64 / réserve 32 ≤ 512) validé.
