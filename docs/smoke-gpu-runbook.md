@@ -5,9 +5,20 @@ Aucun Pod ne doit être créé tant que les portes 1 à 4 ne sont pas vertes.
 
 ## Porte 0 — Prérequis secrets (préparés par l’utilisateur, jamais transmis)
 
-1. Clé API RunPod **Restricted**, limitée à la gestion des Pods
-   (console → Settings → API Keys → Restricted → Pods: Read/Write).
-2. Clé SSH dédiée **avec passphrase**, chargée dans `ssh-agent` :
+1. Clé API RunPod temporaire dédiée au smoke. Dans l’interface actuelle,
+   la gestion/suppression des Pods par `runpodctl` exige
+   `api.runpod.io/graphql: Read/Write`; il n’existe pas de permission « Pods
+   uniquement ». Cette permission donne un accès très large au compte : ne jamais
+   transmettre la clé, la conserver dans `~/.runpod/config.toml` en mode `0600`,
+   puis la révoquer dès la fin du smoke. Laisser `api.runpod.ai` sur `No access`.
+2. Avant toute location, vérifier le droit de suppression sans toucher à une
+   ressource réelle :
+   ```bash
+   runpodctl pod delete watchdog-permission-probe-does-not-exist
+   ```
+   La réponse attendue est `not_found`. Une réponse `forbidden` interdit le
+   provisionnement : le watchdog ne pourrait pas supprimer le Pod.
+3. Clé SSH dédiée **avec passphrase**, chargée dans `ssh-agent` :
    ```bash
    ssh-keygen -t ed25519 -f ~/.ssh/runpod_rag_bge -C rag-bge-runpod   # saisir une passphrase
    chmod 600 ~/.ssh/runpod_rag_bge
@@ -46,12 +57,17 @@ PYTHONPATH=. python scripts/pod_watchdog.py \
 ```
 
 Le watchdog :
+- photographie les Pods avant création et refuse tout conflit de nom préexistant ;
 - calcule l’échéance de terminaison et le coût estimé ;
 - refuse un plan dont le coût dépasse le plafond ;
-- sélectionne uniquement le Pod au nom exact créé après `CREATED_AFTER` ;
-- échoue fermé si plusieurs Pods correspondent ;
+- sélectionne uniquement le nouvel ID apparu sous le nom exact après armement ;
+- échoue fermé si plusieurs Pods correspondent ou si aucun Pod n’a jamais été observé ;
 - supprime le Pod à l’échéance même si le benchmark a planté ;
 - confirme l’absence du Pod après suppression.
+
+Preuve réelle effectuée le 2026-09-21 sur un Pod CPU jetable : événement
+`deleted` à l’échéance, puis `confirmed_absent`; listes RunPod CLI et MCP
+vides après vérification. Coût calculé du test : environ 0,002 USD.
 
 ## Porte 4 — Provisionnement non-root
 

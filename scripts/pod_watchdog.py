@@ -2,12 +2,14 @@
 """Watchdog superviseur indépendant pour un Pod RunPod borné.
 
 Ce script est délibérément séparé du benchmark. Il ne dépend d'aucune
-sortie du run GPU : il ne connaît que le nom exact du Pod, l'heure de
-création minimale et l'échéance de terminaison. Tant qu'il tourne, il
-supprime le Pod dès l'échéance atteinte, même si le benchmark plante.
+sortie du run GPU : il photographie les Pods présents avant la campagne,
+exige un nom exact unique, mémorise l'ID apparu après armement et applique
+l'échéance de terminaison. Tant qu'il tourne, il supprime ce Pod dès
+l'échéance atteinte, même si le benchmark plante.
 
 Prérequis de sécurité :
-- RUNPOD_API_KEY doit être une clé Restricted limitée à la gestion des Pods ;
+- la clé temporaire doit permettre la suppression GraphQL des Pods ;
+- vérifier avant location qu'une suppression d'ID fictif répond `not_found`, pas `forbidden` ;
 - ce watchdog doit être lancé AVANT le workload et rester vivant à côté.
 """
 from __future__ import annotations
@@ -20,7 +22,7 @@ import sys
 import time
 
 from rag_hermes.pod_budget import plan_pod_budget
-from rag_hermes.pod_watchdog import pods_due_for_deletion, select_guarded_pod, parse_utc
+from rag_hermes.pod_watchdog import decide_watchdog_action, parse_utc
 
 
 def list_pods() -> list[dict]:
@@ -63,6 +65,20 @@ def main() -> int:
         starts_at=created_after,
     )
     deadline = parse_utc(plan.terminate_after)
+    initial_pods = list_pods()
+    preexisting_ids = {
+        str(pod["id"])
+        for pod in initial_pods
+        if pod.get("name") == args.name and pod.get("id")
+    }
+    if preexisting_ids:
+        print(json.dumps({
+            "event": "preexisting_name_conflict",
+            "name": args.name,
+            "pod_ids": sorted(preexisting_ids),
+        }), flush=True)
+        return 2
+
     print(json.dumps({
         "event": "watchdog_armed",
         "name": args.name,
@@ -71,29 +87,37 @@ def main() -> int:
         "estimated_compute_cost_usd": plan.estimated_compute_cost_usd,
     }), flush=True)
 
+    observed_id: str | None = None
     while True:
         now = datetime.now(timezone.utc)
         try:
             pods = list_pods()
+            action, pod_id, observed_id = decide_watchdog_action(
+                pods,
+                args.name,
+                preexisting_ids,
+                observed_id,
+                deadline,
+                now,
+            )
         except Exception as exc:  # keep guarding despite transient list errors
             print(json.dumps({"event": "list_error", "error": str(exc)}), flush=True)
             time.sleep(args.poll_seconds)
             continue
 
-        guarded = select_guarded_pod(pods, args.name, created_after)
-        if guarded is None and now >= deadline:
-            print(json.dumps({"event": "already_absent", "at": now.isoformat()}), flush=True)
+        if action == "delete" and pod_id:
+            try:
+                delete_pod(pod_id)
+                print(json.dumps({"event": "deleted", "pod_id": pod_id, "at": now.isoformat()}), flush=True)
+            except Exception as exc:
+                print(json.dumps({"event": "delete_error", "pod_id": pod_id, "error": str(exc)}), flush=True)
+        elif action == "confirmed_absent":
+            print(json.dumps({"event": "confirmed_absent", "pod_id": observed_id, "at": now.isoformat()}), flush=True)
             return 0
+        elif action == "never_observed":
+            print(json.dumps({"event": "never_observed", "at": now.isoformat()}), flush=True)
+            return 2
 
-        due = pods_due_for_deletion(pods, args.name, created_after, deadline, now)
-        for pod_id in due:
-            delete_pod(pod_id)
-            print(json.dumps({"event": "deleted", "pod_id": pod_id, "at": now.isoformat()}), flush=True)
-        if due:
-            remaining = select_guarded_pod(list_pods(), args.name, created_after)
-            if remaining is None:
-                print(json.dumps({"event": "confirmed_absent", "at": now.isoformat()}), flush=True)
-                return 0
         time.sleep(args.poll_seconds)
 
 
