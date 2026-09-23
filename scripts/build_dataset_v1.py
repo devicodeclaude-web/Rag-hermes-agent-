@@ -6,6 +6,7 @@ import json
 import math
 from pathlib import Path
 import re
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 CORPUS = ROOT / "data/generated/hermes_public_documents.jsonl"
@@ -50,6 +51,13 @@ def bm25_neighbor(index: int, docs: list[dict], document_frequency: Counter[str]
 
 
 def main() -> int:
+    if "--legacy-reproduction-only" not in sys.argv[1:]:
+        print(
+            "refused: this circular builder is retained only for historical "
+            "reproduction; pass --legacy-reproduction-only explicitly",
+            file=sys.stderr,
+        )
+        return 2
     docs = [json.loads(line) for line in CORPUS.read_text(encoding="utf-8").splitlines() if line.strip()]
     docs.sort(key=lambda item: item["document_id"])
     document_frequency: Counter[str] = Counter()
