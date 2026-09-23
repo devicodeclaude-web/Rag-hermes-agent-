@@ -36,6 +36,7 @@ class Chunk:
     tokenizer_name: str = ""
     tokenizer_revision: str = ""
     content_hash: str = ""
+    acl_version: int = 1
 
     def __post_init__(self) -> None:
         if self.visibility not in {"public", "private"}:
@@ -44,6 +45,8 @@ class Chunk:
             raise ValueError("doc_version must be positive")
         if self.classification < 0:
             raise ValueError("classification must be non-negative")
+        if self.acl_version < 1:
+            raise ValueError("acl_version must be positive")
         if not _SHA256_RE.fullmatch(self.source_sha):
             raise ValueError("source_sha must be a lowercase SHA-256 hex digest")
 

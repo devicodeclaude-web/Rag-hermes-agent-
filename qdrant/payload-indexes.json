@@ -10,6 +10,7 @@
     {"field_name": "tombstone", "field_schema": "bool"},
     {"field_name": "document_id", "field_schema": "keyword"},
     {"field_name": "doc_version", "field_schema": "integer"},
+    {"field_name": "acl_version", "field_schema": "integer"},
     {"field_name": "source_sha", "field_schema": "keyword"}
   ],
   "verified_against": "Qdrant 1.19.0",

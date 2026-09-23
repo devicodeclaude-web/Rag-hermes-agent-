@@ -18,9 +18,11 @@ from transformers import AutoTokenizer
 from FlagEmbedding import BGEM3FlagModel, FlagReranker
 
 from rag_hermes.acl import filter_authorized
+from rag_hermes.acl_authority import AclPolicy, CanonicalAclAuthority
 from rag_hermes.dataset import load_documents, load_questions
 from rag_hermes.evaluation import EvaluationCase, evaluate
 from rag_hermes.ingestion import chunk_document_tokens
+from rag_hermes.retrieval import hybrid_rrf_indices, postfilter_candidates, score_authorized_pairs
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "manifests/gpu/bge-m3-smoke-rtx4090.json"
@@ -116,6 +118,14 @@ def main() -> None:
             tokenizer_revision=chunking["tokenizer_revision"],
         )
     ]
+    authority = CanonicalAclAuthority({
+        document.document_id: AclPolicy(
+            document.tenant_id, document.visibility, document.owner_id,
+            document.allowed_groups, document.allowed_users,
+            document.classification, document.acl_version,
+        )
+        for document in documents
+    })
     texts = [chunk.text for chunk in chunks]
 
     torch.cuda.empty_cache()
@@ -158,11 +168,17 @@ def main() -> None:
         indices = [i for i, chunk in enumerate(chunks) if chunk.chunk_id in authorized_ids]
         dense_scores = [float(np.dot(query_dense[q_index], corpus_dense[i])) for i in indices]
         sparse_scores = [sparse_dot(query_sparse[q_index], corpus_sparse[i]) for i in indices]
-        dense_ranks = ranks_desc(dense_scores)
-        sparse_ranks = ranks_desc(sparse_scores)
-        fused = [1.0 / (60 + dense_ranks[j]) + 1.0 / (60 + sparse_ranks[j]) for j in range(len(indices))]
-        ranked = [indices[j] for j in sorted(range(len(indices)), key=lambda j: fused[j], reverse=True)]
-        top = ranked[:20]
+        hybrid = manifest["hybrid"]
+        top = hybrid_rrf_indices(
+            candidate_indices=indices, dense_scores=dense_scores,
+            sparse_scores=sparse_scores,
+            dense_limit=int(hybrid["dense_candidates"]),
+            sparse_limit=int(hybrid["sparse_candidates"]),
+            output_limit=int(hybrid["reranker_candidates"]),
+            fusion_k=int(hybrid["fusion_k"]),
+            dense_weight=float(hybrid["dense_weight"]),
+            sparse_weight=float(hybrid["sparse_weight"]),
+        )
         hybrid_candidates.append(top)
         retrieved_docs = tuple(dict.fromkeys(chunks[i].document_id for i in top[:10]))
         pre_cases.append(EvaluationCase(
@@ -194,30 +210,28 @@ def main() -> None:
     post_cases: list[EvaluationCase] = []
     case_details = []
     rejected_pairs = 0
+    acl_barrier_totals = {"examined": 0, "accepted": 0, "stale_acl_version": 0, "denied_by_authority": 0}
     observed_lengths = []
     for question, candidate_indices, pre_detail in zip(
         questions, hybrid_candidates, pre_case_details
     ):
-        accepted_pairs = []
-        accepted_indices = []
-        for index in candidate_indices:
-            pair = (question.question, chunks[index].text)
-            tokenized = tokenizer(pair[0], pair[1], add_special_tokens=True, truncation=False)
-            token_count = len(tokenized["input_ids"])
-            observed_lengths.append(token_count)
-            if token_count > int(manifest["reranker"]["max_length"]):
-                rejected_pairs += 1
-                continue
-            accepted_pairs.append([pair[0], pair[1]])
-            accepted_indices.append(index)
-        if accepted_pairs:
-            raw_scores = reranker.compute_score(
-                accepted_pairs,
+        candidates = [{"payload": {
+            "document_id": chunks[index].document_id,
+            "acl_version": chunks[index].acl_version,
+            "text": chunks[index].text,
+            "chunk_index": index,
+        }} for index in candidate_indices]
+        authorized, acl_counters = postfilter_candidates(candidates, question.context, authority)
+        for key in acl_barrier_totals:
+            acl_barrier_totals[key] += getattr(acl_counters, key)
+        if authorized:
+            scores, budget_counters = score_authorized_pairs(
+                reranker, tokenizer, question.question, authorized,
                 batch_size=int(manifest["reranker"]["batch_size"]),
                 max_length=int(manifest["reranker"]["max_length"]),
-                normalize=True,
             )
-            scores = [float(raw_scores)] if isinstance(raw_scores, (float, int)) else [float(x) for x in raw_scores]
+            observed_lengths.append(budget_counters.maximum_pair_tokens)
+            accepted_indices = [int(item["payload"]["chunk_index"]) for item in authorized]
             ordered = sorted(zip(accepted_indices, scores), key=lambda item: item[1], reverse=True)
         else:
             ordered = []
@@ -283,6 +297,13 @@ def main() -> None:
             "documents": len(documents), "chunks": len(chunks), "questions": len(questions),
             "independent_manual_questions": 0,
         },
+        "protocol": {
+            "path": "docs/ablation-protocol.md",
+            "sha256": sha256(ROOT / "docs/ablation-protocol.md"),
+            "dataset_path": manifest["corpus"]["questions"],
+            "dataset_sha256": sha256(ROOT / manifest["corpus"]["questions"]),
+        },
+        "hybrid": manifest["hybrid"],
         "chunking": {
             **chunking,
             "maximum_observed_chunk_tokens": max(chunk.token_count for chunk in chunks),
@@ -307,9 +328,10 @@ def main() -> None:
         "metrics_hybrid_pre_rerank": pre_report,
         "metrics_after_rerank": post_report,
         "acl_evidence": {
-            "scope": "python_in_memory_prefilter_before_scoring",
+            "scope": "python_prefilter_plus_canonical_authority_postfilter_before_reranking",
             "qdrant_exercised": False,
             "security_claim": "none_for_qdrant_or_complete_multitenant_system",
+            "postfilter_counters": acl_barrier_totals,
         },
         "quality_gate_passed": False,
         "cases": case_details,

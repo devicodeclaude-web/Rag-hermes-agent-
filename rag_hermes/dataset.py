@@ -64,6 +64,7 @@ def load_documents(path: str | Path) -> list[Document]:
             classification=int(value["classification"]),
             doc_version=int(value["doc_version"]),
             source_uri=value["source_uri"],
+            acl_version=int(value.get("acl_version", 1)),
         )
 
     return _load_jsonl(path, build)

@@ -19,6 +19,7 @@ class Document:
     classification: int
     doc_version: int
     source_uri: str
+    acl_version: int = 1
 
 
 def chunk_document(
@@ -58,6 +59,7 @@ def chunk_document(
                 doc_version=document.doc_version,
                 source_sha=source_sha,
                 source_uri=document.source_uri,
+                acl_version=document.acl_version,
             )
         )
         if start + max_tokens >= len(words):
@@ -133,6 +135,7 @@ def chunk_document_tokens(
                 tokenizer_name=tokenizer_name,
                 tokenizer_revision=tokenizer_revision,
                 content_hash=content_hash,
+                acl_version=document.acl_version,
             )
         )
         if token_end >= len(input_ids):

@@ -14,10 +14,13 @@ import subprocess
 import sys
 import unittest
 
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
+
 from rag_hermes.integration_gate import assert_no_skipped_integration_tests
 
-TESTS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tests")
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+TESTS_DIR = os.path.join(ROOT, "tests")
 
 
 def run_gitleaks() -> int:

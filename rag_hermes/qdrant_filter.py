@@ -25,9 +25,19 @@ def build_qdrant_filter(
             {"key": "allowed_group_ids", "match": {"any": list(context.groups)}}
         )
 
-    tenant_private_or_public = {
-        "must": [_match("tenant_id", context.tenant_id)],
-        "min_should": {"conditions": access_should, "min_count": 1},
+    private_access = access_should[1:]
+    tenant_private = {
+        "must": [
+            _match("tenant_id", context.tenant_id),
+            _match("visibility", "private"),
+        ],
+        "min_should": {"conditions": private_access, "min_count": 1},
+    }
+    tenant_public = {
+        "must": [
+            _match("tenant_id", context.tenant_id),
+            _match("visibility", "public"),
+        ]
     }
     global_public = {
         "must": [
@@ -35,7 +45,7 @@ def build_qdrant_filter(
             _match("visibility", "public"),
         ]
     }
-    tenant_branches = [tenant_private_or_public, global_public]
+    tenant_branches = [tenant_private, tenant_public, global_public]
 
     return {
         "must": [

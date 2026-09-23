@@ -16,7 +16,7 @@ class DatasetTests(unittest.TestCase):
                 "document_id": "d1", "content": "texte", "tenant_id": "a",
                 "visibility": "private", "owner_id": "alice", "allowed_groups": ["admins"],
                 "allowed_users": [], "classification": 2, "doc_version": 1,
-                "source_uri": "vault://d1"
+                "source_uri": "vault://d1", "acl_version": 9
             }) + "\n", encoding="utf-8")
             questions.write_text(json.dumps({
                 "case_id": "q1", "question": "texte ?", "tenant_id": "a",
@@ -27,6 +27,7 @@ class DatasetTests(unittest.TestCase):
             loaded_docs = load_documents(docs)
             loaded_questions = load_questions(questions)
             self.assertEqual(loaded_docs[0].tenant_id, "a")
+            self.assertEqual(loaded_docs[0].acl_version, 9)
             self.assertEqual(loaded_questions[0].context.groups, ("admins",))
             self.assertEqual(loaded_questions[0].relevant_document_ids, ("d1",))
 

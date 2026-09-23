@@ -8,6 +8,9 @@ results/raw/
 __pycache__/
 *.pyc
 .venv/
+.venv-*/
+.hypothesis/
+AUDIT/.staging/
 
 # Secrets et identifiants — ne jamais committer
 *.pem

@@ -18,12 +18,14 @@ class IngestionTests(unittest.TestCase):
             classification=2,
             doc_version=4,
             source_uri="vault://jarvis/private-guide.md",
+            acl_version=11,
         )
         chunks = chunk_document(document, max_tokens=10, overlap_tokens=2)
         self.assertGreater(len(chunks), 1)
         expected_sha = hashlib.sha256(content.encode("utf-8")).hexdigest()
         self.assertTrue(all(chunk.source_sha == expected_sha for chunk in chunks))
         self.assertTrue(all(chunk.doc_version == 4 for chunk in chunks))
+        self.assertTrue(all(chunk.acl_version == 11 for chunk in chunks))
         self.assertTrue(all(chunk.allowed_groups == ("operators",) for chunk in chunks))
         self.assertTrue(
             all(chunk.source_uri == "vault://jarvis/private-guide.md" for chunk in chunks)

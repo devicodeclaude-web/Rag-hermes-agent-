@@ -26,6 +26,7 @@ class QdrantStoreTests(unittest.TestCase):
             tokenizer_name="BAAI/bge-reranker-v2-m3",
             tokenizer_revision="953dc6f",
             content_hash="a" * 64,
+            acl_version=11,
         )
 
     def test_chunk_point_contains_complete_authorization_payload(self):
@@ -35,6 +36,7 @@ class QdrantStoreTests(unittest.TestCase):
         self.assertEqual(payload["allowed_group_ids"], ["admins"])
         self.assertEqual(payload["allowed_user_ids"], ["alice"])
         self.assertEqual(payload["doc_version"], 3)
+        self.assertEqual(payload["acl_version"], 11)
         self.assertEqual(payload["source_sha"], "a" * 64)
         self.assertEqual(payload["section"], "Installation")
         self.assertEqual(payload["start_offset"], 10)

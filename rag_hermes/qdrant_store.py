@@ -42,6 +42,7 @@ def chunk_to_point(chunk: Chunk, vector: list[float]) -> dict[str, Any]:
             "owner_id": chunk.owner_id,
             "classification": chunk.classification,
             "doc_version": chunk.doc_version,
+            "acl_version": chunk.acl_version,
             "source_sha": chunk.source_sha,
             "source_uri": chunk.source_uri,
             "section": chunk.section,

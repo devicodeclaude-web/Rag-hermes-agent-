@@ -33,6 +33,16 @@
     "max_length": 512,
     "truncation_policy": "reject"
   },
+  "hybrid": {
+    "dense_candidates": 40,
+    "sparse_candidates": 40,
+    "fusion": "weighted_reciprocal_rank_fusion",
+    "fusion_k": 60,
+    "dense_weight": 1.0,
+    "sparse_weight": 1.0,
+    "reranker_candidates": 20,
+    "deduplication_key": "chunk_id"
+  },
   "corpus": {
     "documents": [
       "data/generated/hermes_public_documents.jsonl",
