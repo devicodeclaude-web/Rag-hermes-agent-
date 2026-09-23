@@ -1,0 +1,9 @@
+provenance: git show ad1bc3c0b22dc12c53f978287af44343b437f484:AUDIT/preuves/gitleaks-historique.txt
+source_commit: ad1bc3c0b22dc12c53f978287af44343b437f484
+source_path: AUDIT/preuves/gitleaks-historique.txt
+source_sha256: 3f41d2f1f191a28781ad32525d6ff179485c893abf18d56cb26d98879f348b91
+immutable_historical_copy: true
+--- raw evidence ---
+4:00PM INF 14 commits scanned.
+4:00PM INF scanned ~390089 bytes (390.09 KB) in 1.08s
+4:00PM INF no leaks found

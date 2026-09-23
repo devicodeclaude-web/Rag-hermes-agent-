@@ -1,0 +1,44 @@
+audited_commit: ad1bc3c0b22dc12c53f978287af44343b437f484
+date_utc: 2026-09-23T08:05:30.385767+00:00
+command: python scripts/validate_dataset_v1.py
+exit_code: 2
+python_version: 3.14.6
+qdrant_version: 1.19.0
+qdrant_revision: 74f3e85b9473c62560006c043e13737ce6b48412
+embedding_model: BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181
+reranker_model: BAAI/bge-reranker-v2-m3@953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e
+random_seed: 20260923
+--- stdout ---
+{
+  "acl_probes": 0,
+  "categories": {
+    "chunk_boundary": 15,
+    "close_distractor": 20,
+    "no_answer": 20,
+    "paraphrase": 20,
+    "simple": 25
+  },
+  "dataset": "data/benchmark/dataset-v1.jsonl",
+  "dataset_sha256": "2912de8ee4c20030440e89c6d9d140568ab105547dfe9676b5aca1b1aa58439d",
+  "distractor_miners": [
+    "bm25_stdlib_not_bge_m3"
+  ],
+  "expected_categories": {
+    "chunk_boundary": 15,
+    "close_distractor": 20,
+    "no_answer": 20,
+    "paraphrase": 20,
+    "simple": 25
+  },
+  "global_quality_conclusion_allowed": false,
+  "human_validated_or_arbitrated": 0,
+  "initial_manual_control_required": 20,
+  "limitations": [
+    "No human validation has been claimed by automation.",
+    "The first 20 records are queued for initial manual control only.",
+    "No global quality conclusion is allowed before all 100 labels are validated or arbitrated by humans."
+  ],
+  "records": 100
+}
+
+--- stderr ---

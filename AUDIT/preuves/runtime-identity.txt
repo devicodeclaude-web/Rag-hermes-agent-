@@ -1,0 +1,19 @@
+audited_commit: ad1bc3c0b22dc12c53f978287af44343b437f484
+date_utc: 2026-09-23T08:05:27.865296+00:00
+command: sh -c 'id; ps -ef | grep -E "[h]ermes|[r]un_agent"'
+exit_code: 0
+python_version: 3.14.6
+qdrant_version: 1.19.0
+qdrant_revision: 74f3e85b9473c62560006c043e13737ce6b48412
+embedding_model: BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181
+reranker_model: BAAI/bge-reranker-v2-m3@953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e
+random_seed: not_applicable
+--- stdout ---
+uid=0(root) gid=0(root) groups=0(root),3003(aid_inet),9997(aid_everybody),20176(aid_u0_a176_cache),50176(aid_all_a176)
+aid_u0_+ 14444 30273  1  2023 ?        00:00:03 node /root/.hermes/lsp/bin/bash-language-server start
+aid_u0_+ 19495 30273  0  2023 ?        00:00:00 /usr/bin/bash -c source /tmp/hermes-snap-a15a7f68aea0.sh >/dev/null 2>&1 || true export AI_AGENT="${AI_AGENT:-hermes-agent}" HERMES_AGENT="${HERMES_AGENT:-true}" builtin cd -- /root/rag-hermes-agent || exit 126 eval 'QDRANT_INTEGRATION_URL=http://127.0.0.1:6333 AUDIT_PYTHON=.venv-audit/bin/python scripts/build_audit_bundle.sh' __hermes_ec=$? umask 077 __hermes_snap_tmp=$(mktemp /tmp/hermes-snap-a15a7f68aea0.sh.tmp.XXXXXXXXXX) && { { ( unset ${!HERMES_SESSION_*} ${!HERMES_CRON_AUTO_DELIVER_*} ${!HERMES_BROWSER_CONTROL_*} AI_AGENT HERMES_AGENT HERMES_UI_SESSION_ID 2>/dev/null; export -p; ) || true; } > "$__hermes_snap_tmp" && mv -f "$__hermes_snap_tmp" /tmp/hermes-snap-a15a7f68aea0.sh; } 2>/dev/null || rm -f "$__hermes_snap_tmp" 2>/dev/null || true printf '\n__HERMES_CWD_a15a7f68aea0__%s__HERMES_CWD_a15a7f68aea0__\n' "$(pwd -P)" exit $__hermes_ec
+aid_u0_+ 23215 19506 34  2023 ?        00:00:00 python scripts/capture_evidence.py --output /root/rag-hermes-agent/AUDIT/.staging/runtime-identity.txt -- sh -c id; ps -ef | grep -E "[h]ermes|[r]un_agent"
+aid_u0_+ 30273 30264 12  2023 pts/0    00:10:02 /usr/local/lib/hermes-agent/venv/bin/python /usr/local/lib/hermes-agent/hermes
+aid_u0_+ 31896 30273  2  2023 ?        00:00:24 node /root/.hermes/lsp/bin/pyright-langserver --stdio
+
+--- stderr ---

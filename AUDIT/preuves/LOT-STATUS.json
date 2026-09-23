@@ -1,0 +1,34 @@
+{
+  "lot_1": {
+    "exit_codes": {
+      "lock-install.txt": 1,
+      "runtime-identity.txt": 0,
+      "tests-ci-strict.txt": 0
+    },
+    "history_401_present": false,
+    "known_limit": "GHA can prove x86_64/Python 3.12 resolution, hashes and tests; CUDA runtime remains unproved.",
+    "status": "BLOQUÉ"
+  },
+  "lot_2": {
+    "exit_codes": {
+      "tests-ci-strict.txt": 0
+    },
+    "known_limit": "Hybrid dense/sparse persistence in deployed Qdrant is not proved by the local smoke.",
+    "status": "FERMÉ"
+  },
+  "lot_3": {
+    "exit_codes": {
+      "dataset-v1-validation.txt": 2
+    },
+    "known_limit": "Initial 20-case human control and 100-case human validation/arbitration are required.",
+    "status": "BLOQUÉ"
+  },
+  "lot_4": {
+    "exit_codes": {
+      "acl-matrix-qdrant.txt": 0,
+      "tests-ci-strict.txt": 0
+    },
+    "known_limit": "Local Qdrant plus in-memory canonical ACL authority is exercised; deployed persistent authority and zero risk are not proved.",
+    "status": "FERMÉ"
+  }
+}

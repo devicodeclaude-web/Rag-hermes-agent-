@@ -1,0 +1,212 @@
+audited_commit: ad1bc3c0b22dc12c53f978287af44343b437f484
+date_utc: 2026-09-23T08:05:26.953186+00:00
+command: python scripts/verify_lock_install.py
+exit_code: 1
+python_version: 3.14.6
+qdrant_version: 1.19.0
+qdrant_revision: 74f3e85b9473c62560006c043e13737ce6b48412
+embedding_model: BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181
+reranker_model: BAAI/bge-reranker-v2-m3@953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e
+random_seed: not_applicable
+--- stdout ---
+$ /data/data/com.termux/files/usr/bin/python -m venv /data/data/com.termux/files/usr/tmp/rag-lock-install-buif6r1e/venv
+$ /data/data/com.termux/files/usr/tmp/rag-lock-install-buif6r1e/venv/bin/python -m pip install --require-hashes -r /root/rag-hermes-agent/requirements-gpu.lock.txt
+Collecting accelerate==1.15.0 (from -r /root/rag-hermes-agent/requirements-gpu.lock.txt (line 3))
+  Using cached accelerate-1.15.0-py3-none-any.whl (394 kB)
+Collecting aiohappyeyeballs==2.7.1 (from -r /root/rag-hermes-agent/requirements-gpu.lock.txt (line 9))
+  Using cached aiohappyeyeballs-2.7.1-py3-none-any.whl (15 kB)
+Collecting aiohttp==3.14.3 (from -r /root/rag-hermes-agent/requirements-gpu.lock.txt (line 13))
+  Using cached aiohttp-3.14.3-cp314-cp314-android_24_arm64_v8a.whl (509 kB)
+Collecting aiosignal==1.4.0 (from -r /root/rag-hermes-agent/requirements-gpu.lock.txt (line 134))
+  Using cached aiosignal-1.4.0-py3-none-any.whl (7.5 kB)
+Collecting anyio==4.15.1 (from -r /root/rag-hermes-agent/requirements-gpu.lock.txt (line 138))
+  Using cached anyio-4.15.1-py3-none-any.whl (132 kB)
+Collecting attrs==26.1.0 (from -r /root/rag-hermes-agent/requirements-gpu.lock.txt (line 142))
+  Using cached attrs-26.1.0-py3-none-any.whl (67 kB)
+Collecting certifi==2026.7.22 (from -r /root/rag-hermes-agent/requirements-gpu.lock.txt (line 146))
+  Using cached certifi-2026.7.22-py3-none-any.whl (136 kB)
+Collecting charset-normalizer==3.5.1 (from -r /root/rag-hermes-agent/requirements-gpu.lock.txt (line 153))
+  Using cached charset_normalizer-3.5.1-cp314-cp314-android_24_arm64_v8a.whl (212 kB)
+Collecting cloudpickle==3.1.2 (from -r /root/rag-hermes-agent/requirements-gpu.lock.txt (line 327))
+  Using cached cloudpickle-3.1.2-py3-none-any.whl (22 kB)
+Collecting datasets==5.0.1 (from -r /root/rag-hermes-agent/requirements-gpu.lock.txt (line 331))
+  Using cached datasets-5.0.1-py3-none-any.whl (559 kB)
+Collecting dill==0.4.1 (from -r /root/rag-hermes-agent/requirements-gpu.lock.txt (line 335))
+  Using cached dill-0.4.1-py3-none-any.whl (120 kB)
+Collecting filelock==4.0.1 (from -r /root/rag-hermes-agent/requirements-gpu.lock.txt (line 341))
+  Using cached filelock-4.0.1-py3-none-any.whl (106 kB)
+Collecting flagembedding==1.3.5 (from -r /root/rag-hermes-agent/requirements-gpu.lock.txt (line 349))
+  Using cached FlagEmbedding-1.3.5.tar.gz (163 kB)
+  Installing build dependencies: started
+  Installing build dependencies: finished with status 'done'
+  Getting requirements to build wheel: started
+  Getting requirements to build wheel: finished with status 'done'
+  Preparing metadata (pyproject.toml): started
+  Preparing metadata (pyproject.toml): finished with status 'done'
+Collecting frozenlist==1.8.0 (from -r /root/rag-hermes-agent/requirements-gpu.lock.txt (line 352))
+  Using cached frozenlist-1.8.0-py3-none-any.whl (13 kB)
+Collecting fsspec==2026.6.0 (from -r /root/rag-hermes-agent/requirements-gpu.lock.txt (line 486))
+  Using cached fsspec-2026.6.0-py3-none-any.whl (203 kB)
+Collecting h11==0.16.0 (from -r /root/rag-hermes-agent/requirements-gpu.lock.txt (line 493))
+  Using cached h11-0.16.0-py3-none-any.whl (37 kB)
+Collecting hf-xet==1.6.0 (from -r /root/rag-hermes-agent/requirements-gpu.lock.txt (line 497))
+  Using cached hf_xet-1.6.0.tar.gz (920 kB)
+  Installing build dependencies: started
+  Installing build dependencies: finished with status 'error'
+
+--- stderr ---
+  error: subprocess-exited-with-error
+  
+  × installing build dependencies for hf-xet did not run successfully.
+  │ exit code: 1
+  ╰─> [143 lines of output]
+      Collecting maturin<2.0,>=1.7
+        Using cached maturin-1.15.0.tar.gz (385 kB)
+        Installing build dependencies: started
+        Installing build dependencies: finished with status 'done'
+        Getting requirements to build wheel: started
+        Getting requirements to build wheel: finished with status 'done'
+        Preparing metadata (pyproject.toml): started
+        Preparing metadata (pyproject.toml): finished with status 'done'
+      Building wheels for collected packages: maturin
+        Building wheel for maturin (pyproject.toml): started
+        Building wheel for maturin (pyproject.toml): finished with status 'error'
+        error: subprocess-exited-with-error
+      
+        × Building wheel for maturin (pyproject.toml) did not run successfully.
+        │ exit code: 1
+        ╰─> [118 lines of output]
+            /data/data/com.termux/files/usr/tmp/pip-build-env-_6ngd_1j/overlay/lib/python3.14/site-packages/setuptools/_vendor/wheel/bdist_wheel.py:4: FutureWarning: The 'wheel' package is no longer the canonical location of the 'bdist_wheel' command, and will be removed in a future release. Please update to setuptools v70.1 or later which contains an integrated version of this command.
+              warn(
+            running bdist_wheel
+            running build
+            running build_py
+            creating build/lib.android-24-arm64_v8a-cpython-314/maturin
+            copying maturin/__init__.py -> build/lib.android-24-arm64_v8a-cpython-314/maturin
+            copying maturin/__main__.py -> build/lib.android-24-arm64_v8a-cpython-314/maturin
+            copying maturin/bootstrap.py -> build/lib.android-24-arm64_v8a-cpython-314/maturin
+            running egg_info
+            creating maturin.egg-info
+            writing maturin.egg-info/PKG-INFO
+            writing dependency_links to maturin.egg-info/dependency_links.txt
+            writing requirements to maturin.egg-info/requires.txt
+            writing top-level names to maturin.egg-info/top_level.txt
+            writing manifest file 'maturin.egg-info/SOURCES.txt'
+            reading manifest file 'maturin.egg-info/SOURCES.txt'
+            reading manifest template 'MANIFEST.in'
+            warning: no files found matching '*.json' under directory 'src/python_interpreter'
+            adding license file 'license-mit'
+            adding license file 'license-apache'
+            writing manifest file 'maturin.egg-info/SOURCES.txt'
+            running build_ext
+            running build_rust
+            cargo build --manifest-path Cargo.toml --message-format=json-render-diagnostics --release -v --no-default-features --locked
+               Compiling proc-macro2 v1.0.106
+               Compiling quote v1.0.45
+               Compiling unicode-ident v1.0.24
+               Compiling libc v0.2.189
+               Compiling serde_core v1.0.228
+               Compiling cfg-if v1.0.4
+               Compiling find-msvc-tools v0.1.9
+               Compiling memchr v2.8.0
+                 Running `rustc --crate-name find_msvc_tools --edition=2018 /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/find-msvc-tools-0.1.9/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C embed-bitcode=no --allow=unexpected_cfgs --check-cfg 'cfg(disable_clang_cl_tests)' -C debug-assertions=off --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values())' -C metadata=f2c25e7a5fae9a92 -C extra-filename=-e65ad98a3f513f05 --out-dir /data/data/com.termux/files/usr/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/deps -C strip=debuginfo -L dependency=/data/data/com.termux/files/usr/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/deps --cap-lints allow`
+                 Running `rustc --crate-name memchr --edition=2021 /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/memchr-2.8.0/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C opt-level=3 -C embed-bitcode=no --cfg 'feature="alloc"' --cfg 'feature="default"' --cfg 'feature="std"' --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("alloc", "core", "default", "libc", "logging", "rustc-dep-of-std", "std", "use_std"))' -C metadata=0397b023e29bf4c2 -C extra-filename=-cf98e0500d773410 --out-dir /data/data/com.termux/files/usr/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/deps -C strip=debuginfo -L dependency=/data/data/com.termux/files/usr/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/deps --cap-lints allow`
+                 Running `rustc --crate-name cfg_if --edition=2018 /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cfg-if-1.0.4/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C opt-level=3 -C embed-bitcode=no --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("core", "rustc-dep-of-std"))' -C metadata=dc9596a40e4c13e5 -C extra-filename=-24b204ede4f7628f --out-dir /data/data/com.termux/files/usr/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/deps -C strip=debuginfo -L dependency=/data/data/com.termux/files/usr/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/deps --cap-lints allow`
+                 Running `rustc --crate-name build_script_build --edition=2021 /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/build.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type bin --emit=dep-info,link -C embed-bitcode=no -C debug-assertions=off --cfg 'feature="alloc"' --cfg 'feature="default"' --cfg 'feature="rc"' --cfg 'feature="result"' --cfg 'feature="std"' --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("alloc", "default", "rc", "result", "std", "unstable"))' -C metadata=1d73ab203c553af2 -C extra-filename=-1b38e6fa064ca861 --out-dir /data/data/com.termux/files/usr/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/build/serde_core-1b38e6fa064ca861 -C strip=debuginfo -L dependency=/data/data/com.termux/files/usr/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/deps --cap-lints allow`
+                 Running `rustc --crate-name unicode_ident --edition=2021 /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unicode-ident-1.0.24/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C embed-bitcode=no -C debug-assertions=off --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values())' -C metadata=ace15a20d1e52f97 -C extra-filename=-e4b83937a53e43a6 --out-dir /data/data/com.termux/files/usr/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/deps -C strip=debuginfo -L dependency=/data/data/com.termux/files/usr/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/deps --cap-lints allow`
+                 Running `rustc --crate-name build_script_build --edition=2021 /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libc-0.2.189/build.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type bin --emit=dep-info,link -C embed-bitcode=no --allow=unused_qualifications '--warn=clippy::unnecessary_semicolon' '--allow=clippy::unnecessary_cast' '--warn=clippy::ptr_as_ptr' '--allow=clippy::non_minimal_cfg' '--allow=clippy::missing_safety_doc' '--warn=clippy::map_unwrap_or' '--warn=clippy::manual_assert' '--allow=clippy::identity_op' '--warn=clippy::explicit_iter_loop' -C debug-assertions=off --cfg 'feature="default"' --cfg 'feature="std"' --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("align", "const-extern-fn", "default", "extra_traits", "rustc-dep-of-std", "rustc-std-workspace-core", "std", "use_std"))' -C metadata=6630a3e556b41a1c -C extra-filename=-6c2861a188748505 --out-dir /data/data/com.termux/files/usr/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/build/libc-6c2861a188748505 -C strip=debuginfo -L dependency=/data/data/com.termux/files/usr/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/deps --cap-lints allow`
+                 Running `rustc --crate-name build_script_build --edition=2021 /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/proc-macro2-1.0.106/build.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type bin --emit=dep-info,link -C embed-bitcode=no -C debug-assertions=off --cfg 'feature="default"' --cfg 'feature="proc-macro"' --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("default", "nightly", "proc-macro", "span-locations"))' -C metadata=23596d1db29af21b -C extra-filename=-e297fe4c43831ee8 --out-dir /data/data/com.termux/files/usr/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/build/proc-macro2-e297fe4c43831ee8 -C strip=debuginfo -L dependency=/data/data/com.termux/files/usr/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/deps --cap-lints allow`
+                 Running `rustc --crate-name build_script_build --edition=2021 /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/quote-1.0.45/build.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type bin --emit=dep-info,link -C embed-bitcode=no -C debug-assertions=off --cfg 'feature="default"' --cfg 'feature="proc-macro"' --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("default", "proc-macro"))' -C metadata=3584d800fee0a5b9 -C extra-filename=-641cde7e3dc2a172 --out-dir /data/data/com.termux/files/usr/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/build/quote-641cde7e3dc2a172 -C strip=debuginfo -L dependency=/data/data/com.termux/files/usr/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/deps --cap-lints allow`
+               Compiling shlex v1.3.0
+                 Running `rustc --crate-name shlex --edition=2015 /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/shlex-1.3.0/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C embed-bitcode=no -C debug-assertions=off --cfg 'feature="default"' --cfg 'feature="std"' --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("default", "std"))' -C metadata=0cab53881754d81f -C extra-filename=-7563b32d7d5234f0 --out-dir /data/data/com.termux/files/usr/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/deps -C strip=debuginfo -L dependency=/data/data/com.termux/files/usr/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/deps --cap-lints allow`
+               Compiling stable_deref_trait v1.2.1
+                 Running `rustc --crate-name stable_deref_trait --edition=2015 /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/stable_deref_trait-1.2.1/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C opt-level=3 -C embed-bitcode=no --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("alloc", "default", "std"))' -C metadata=92501a364964363c -C extra-filename=-ef49bc280e71f9f7 --out-dir /data/data/com.termux/files/usr/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/deps -C strip=debuginfo -L dependency=/data/data/com.termux/files/usr/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/deps --cap-lints allow`
+               Compiling typenum v1.20.0
+                 Running `rustc --crate-name typenum --edition=2018 /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/typenum-1.20.0/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C opt-level=3 -C embed-bitcode=no --cfg 'feature="const-generics"' --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("const-generics", "i128", "scale-info", "scale_info", "strict"))' -C metadata=4b0ff6045e939784 -C extra-filename=-5eae47e739f7f006 --out-dir /data/data/com.termux/files/usr/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/deps -C strip=debuginfo -L dependency=/data/data/com.termux/files/usr/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/deps --cap-lints allow`
+               Compiling log v0.4.29
+                 Running `rustc --crate-name log --edition=2021 /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.29/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C opt-level=3 -C embed-bitcode=no --cfg 'feature="std"' --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("kv", "kv_serde", "kv_std", "kv_sval", "kv_unstable", "kv_unstable_serde", "kv_unstable_std", "kv_unstable_sval", "max_level_debug", "max_level_error", "max_level_info", "max_level_off", "max_level_trace", "max_level_warn", "release_max_level_debug", "release_max_level_error", "release_max_level_info", "release_max_level_off", "release_max_level_trace", "release_max_level_warn", "serde", "serde_core", "std", "sval", "sval_ref", "value-bag"))' -C metadata=a4978ce58801753c -C extra-filename=-d1375b4e1eca01fd --out-dir /data/data/com.termux/files/usr/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/deps -C strip=debuginfo -L dependency=/data/data/com.termux/files/usr/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/deps --cap-lints allow`
+               Compiling rustix v1.1.4
+                 Running `rustc --crate-name build_script_build --edition=2021 /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustix-1.1.4/build.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type bin --emit=dep-info,link -C embed-bitcode=no --warn=unexpected_cfgs --check-cfg 'cfg(alloc_c_string)' --check-cfg 'cfg(alloc_ffi)' --check-cfg 'cfg(apple)' --check-cfg 'cfg(asm_experimental_arch)' --check-cfg 'cfg(bsd)' --check-cfg 'cfg(core_c_str)' --check-cfg 'cfg(core_ffi_c)' --check-cfg 'cfg(core_intrinsics)' --check-cfg 'cfg(criterion)' --check-cfg 'cfg(document_experimental_runtime_api)' --check-cfg 'cfg(error_in_core)' --check-cfg 'cfg(fix_y2038)' --check-cfg 'cfg(freebsdlike)' --check-cfg 'cfg(libc)' --check-cfg 'cfg(linux_kernel)' --check-cfg 'cfg(linux_like)' --check-cfg 'cfg(linux_raw)' --check-cfg 'cfg(linux_raw_dep)' --check-cfg 'cfg(lower_upper_exp_for_non_zero)' --check-cfg 'cfg(sanitize_memory)' --check-cfg 'cfg(netbsdlike)' --check-cfg 'cfg(rustc_attrs)' --check-cfg 'cfg(rustc_diagnostics)' --check-cfg 'cfg(solarish)' --check-cfg 'cfg(staged_api)' --check-cfg 'cfg(static_assertions)' --check-cfg 'cfg(thumb_mode)' --check-cfg 'cfg(wasi)' --check-cfg 'cfg(wasi_ext)' --check-cfg 'cfg(wasip2)' --check-cfg 'cfg(target_arch, values("xtensa"))' --check-cfg 'cfg(target_os, values("cygwin"))' -C debug-assertions=off --cfg 'feature="alloc"' --cfg 'feature="default"' --cfg 'feature="fs"' --cfg 'feature="std"' --cfg 'feature="termios"' --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("all-apis", "alloc", "core", "default", "event", "fs", "io_uring", "libc", "libc_errno", "linux_4_11", "linux_5_1", "linux_5_11", "linux_latest", "mm", "mount", "net", "param", "pipe", "process", "pty", "rand", "runtime", "rustc-dep-of-std", "rustc-std-workspace-alloc", "shm", "std", "stdio", "system", "termios", "thread", "time", "try_close", "use-explicitly-provided-auxv", "use-libc", "use-libc-auxv"))' -C metadata=442cbb4ba8f703dd -C extra-filename=-7b6d5f4b8ce2e5ef --out-dir /data/data/com.termux/files/usr/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/build/rustix-7b6d5f4b8ce2e5ef -C strip=debuginfo -L dependency=/data/data/com.termux/files/usr/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/deps --cap-lints allow`
+            error: linking with `cc` failed: exit status: 1
+              |
+              = note:  "cc" "<sysroot>/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/build/serde_core-1b38e6fa064ca861/rustcaUtyiK/symbols.o" "<2 object files omitted>" "-Wl,--as-needed" "-Wl,-Bstatic" "<sysroot>/lib/rustlib/aarch64-linux-android/lib/{libstd-*,libpanic_unwind-*,libobject-*,libmemchr-*,libaddr2line-*,libgimli-*,libcfg_if-*,librustc_demangle-*,libstd_detect-*,libhashbrown-*,librustc_std_workspace_alloc-*,libminiz_oxide-*,libadler2-*,libunwind-*,liblibc-*,librustc_std_workspace_core-*,liballoc-*,libcore-*,libcompiler_builtins-*}.rlib" "-Wl,-Bdynamic" "-ldl" "-llog" "-lunwind" "-ldl" "-lm" "-lc" "-L" "<sysroot>/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/build/serde_core-1b38e6fa064ca861/rustcaUtyiK/raw-dylibs" "-Wl,--eh-frame-hdr" "-Wl,-z,noexecstack" "-o" "<sysroot>/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/build/serde_core-1b38e6fa064ca861/build_script_build-1b38e6fa064ca861" "-Wl,--gc-sections" "-pie" "-Wl,-z,relro,-z,now" "-Wl,--strip-debug" "-nodefaultlibs"
+              = note: some arguments are omitted. use `--verbose` to show all linker arguments
+              = note: /usr/bin/ld: cannot find -llog: No such file or directory
+                      /usr/bin/ld: cannot find -lunwind: No such file or directory
+                      collect2: error: ld returned 1 exit status
+      
+      
+            error: could not compile `serde_core` (build script) due to 1 previous error
+      
+            Caused by:
+              process didn't exit successfully: `rustc --crate-name build_script_build --edition=2021 /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/build.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type bin --emit=dep-info,link -C embed-bitcode=no -C debug-assertions=off --cfg 'feature="alloc"' --cfg 'feature="default"' --cfg 'feature="rc"' --cfg 'feature="result"' --cfg 'feature="std"' --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("alloc", "default", "rc", "result", "std", "unstable"))' -C metadata=1d73ab203c553af2 -C extra-filename=-1b38e6fa064ca861 --out-dir /data/data/com.termux/files/usr/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/build/serde_core-1b38e6fa064ca861 -C strip=debuginfo -L dependency=/data/data/com.termux/files/usr/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/deps --cap-lints allow` (exit status: 1)
+            warning: build failed, waiting for other jobs to finish...
+            error: linking with `cc` failed: exit status: 1
+              |
+              = note:  "cc" "<sysroot>/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/build/quote-641cde7e3dc2a172/rustcD0KgCh/symbols.o" "<2 object files omitted>" "-Wl,--as-needed" "-Wl,-Bstatic" "<sysroot>/lib/rustlib/aarch64-linux-android/lib/{libstd-*,libpanic_unwind-*,libobject-*,libmemchr-*,libaddr2line-*,libgimli-*,libcfg_if-*,librustc_demangle-*,libstd_detect-*,libhashbrown-*,librustc_std_workspace_alloc-*,libminiz_oxide-*,libadler2-*,libunwind-*,liblibc-*,librustc_std_workspace_core-*,liballoc-*,libcore-*,libcompiler_builtins-*}.rlib" "-Wl,-Bdynamic" "-ldl" "-llog" "-lunwind" "-ldl" "-lm" "-lc" "-L" "<sysroot>/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/build/quote-641cde7e3dc2a172/rustcD0KgCh/raw-dylibs" "-Wl,--eh-frame-hdr" "-Wl,-z,noexecstack" "-o" "<sysroot>/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/build/quote-641cde7e3dc2a172/build_script_build-641cde7e3dc2a172" "-Wl,--gc-sections" "-pie" "-Wl,-z,relro,-z,now" "-Wl,--strip-debug" "-nodefaultlibs"
+              = note: some arguments are omitted. use `--verbose` to show all linker arguments
+              = note: /usr/bin/ld: cannot find -llog: No such file or directory
+                      /usr/bin/ld: cannot find -lunwind: No such file or directory
+                      collect2: error: ld returned 1 exit status
+      
+      
+            error: could not compile `quote` (build script) due to 1 previous error
+      
+            Caused by:
+              process didn't exit successfully: `rustc --crate-name build_script_build --edition=2021 /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/quote-1.0.45/build.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type bin --emit=dep-info,link -C embed-bitcode=no -C debug-assertions=off --cfg 'feature="default"' --cfg 'feature="proc-macro"' --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("default", "proc-macro"))' -C metadata=3584d800fee0a5b9 -C extra-filename=-641cde7e3dc2a172 --out-dir /data/data/com.termux/files/usr/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/build/quote-641cde7e3dc2a172 -C strip=debuginfo -L dependency=/data/data/com.termux/files/usr/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/deps --cap-lints allow` (exit status: 1)
+            error: linking with `cc` failed: exit status: 1
+              |
+              = note:  "cc" "<sysroot>/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/build/proc-macro2-e297fe4c43831ee8/rustcjUGRNo/symbols.o" "<2 object files omitted>" "-Wl,--as-needed" "-Wl,-Bstatic" "<sysroot>/lib/rustlib/aarch64-linux-android/lib/{libstd-*,libpanic_unwind-*,libobject-*,libmemchr-*,libaddr2line-*,libgimli-*,libcfg_if-*,librustc_demangle-*,libstd_detect-*,libhashbrown-*,librustc_std_workspace_alloc-*,libminiz_oxide-*,libadler2-*,libunwind-*,liblibc-*,librustc_std_workspace_core-*,liballoc-*,libcore-*,libcompiler_builtins-*}.rlib" "-Wl,-Bdynamic" "-ldl" "-llog" "-lunwind" "-ldl" "-lm" "-lc" "-L" "<sysroot>/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/build/proc-macro2-e297fe4c43831ee8/rustcjUGRNo/raw-dylibs" "-Wl,--eh-frame-hdr" "-Wl,-z,noexecstack" "-o" "<sysroot>/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/build/proc-macro2-e297fe4c43831ee8/build_script_build-e297fe4c43831ee8" "-Wl,--gc-sections" "-pie" "-Wl,-z,relro,-z,now" "-Wl,--strip-debug" "-nodefaultlibs"
+              = note: some arguments are omitted. use `--verbose` to show all linker arguments
+              = note: /usr/bin/ld: cannot find -llog: No such file or directory
+                      /usr/bin/ld: cannot find -lunwind: No such file or directory
+                      collect2: error: ld returned 1 exit status
+      
+      
+            error: could not compile `proc-macro2` (build script) due to 1 previous error
+      
+            Caused by:
+              process didn't exit successfully: `rustc --crate-name build_script_build --edition=2021 /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/proc-macro2-1.0.106/build.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type bin --emit=dep-info,link -C embed-bitcode=no -C debug-assertions=off --cfg 'feature="default"' --cfg 'feature="proc-macro"' --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("default", "nightly", "proc-macro", "span-locations"))' -C metadata=23596d1db29af21b -C extra-filename=-e297fe4c43831ee8 --out-dir /data/data/com.termux/files/usr/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/build/proc-macro2-e297fe4c43831ee8 -C strip=debuginfo -L dependency=/data/data/com.termux/files/usr/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/deps --cap-lints allow` (exit status: 1)
+            error: linking with `cc` failed: exit status: 1
+              |
+              = note:  "cc" "<sysroot>/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/build/libc-6c2861a188748505/rustcpUTlKf/symbols.o" "<3 object files omitted>" "-Wl,--as-needed" "-Wl,-Bstatic" "<sysroot>/lib/rustlib/aarch64-linux-android/lib/{libstd-*,libpanic_unwind-*,libobject-*,libmemchr-*,libaddr2line-*,libgimli-*,libcfg_if-*,librustc_demangle-*,libstd_detect-*,libhashbrown-*,librustc_std_workspace_alloc-*,libminiz_oxide-*,libadler2-*,libunwind-*,liblibc-*,librustc_std_workspace_core-*,liballoc-*,libcore-*,libcompiler_builtins-*}.rlib" "-Wl,-Bdynamic" "-ldl" "-llog" "-lunwind" "-ldl" "-lm" "-lc" "-L" "<sysroot>/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/build/libc-6c2861a188748505/rustcpUTlKf/raw-dylibs" "-Wl,--eh-frame-hdr" "-Wl,-z,noexecstack" "-o" "<sysroot>/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/build/libc-6c2861a188748505/build_script_build-6c2861a188748505" "-Wl,--gc-sections" "-pie" "-Wl,-z,relro,-z,now" "-Wl,--strip-debug" "-nodefaultlibs"
+              = note: some arguments are omitted. use `--verbose` to show all linker arguments
+              = note: /usr/bin/ld: cannot find -llog: No such file or directory
+                      /usr/bin/ld: cannot find -lunwind: No such file or directory
+                      collect2: error: ld returned 1 exit status
+      
+      
+            error: could not compile `libc` (build script) due to 1 previous error
+      
+            Caused by:
+              process didn't exit successfully: `rustc --crate-name build_script_build --edition=2021 /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libc-0.2.189/build.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type bin --emit=dep-info,link -C embed-bitcode=no --allow=unused_qualifications '--warn=clippy::unnecessary_semicolon' '--allow=clippy::unnecessary_cast' '--warn=clippy::ptr_as_ptr' '--allow=clippy::non_minimal_cfg' '--allow=clippy::missing_safety_doc' '--warn=clippy::map_unwrap_or' '--warn=clippy::manual_assert' '--allow=clippy::identity_op' '--warn=clippy::explicit_iter_loop' -C debug-assertions=off --cfg 'feature="default"' --cfg 'feature="std"' --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("align", "const-extern-fn", "default", "extra_traits", "rustc-dep-of-std", "rustc-std-workspace-core", "std", "use_std"))' -C metadata=6630a3e556b41a1c -C extra-filename=-6c2861a188748505 --out-dir /data/data/com.termux/files/usr/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/build/libc-6c2861a188748505 -C strip=debuginfo -L dependency=/data/data/com.termux/files/usr/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/deps --cap-lints allow` (exit status: 1)
+            error: linking with `cc` failed: exit status: 1
+              |
+              = note:  "cc" "<sysroot>/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/build/rustix-7b6d5f4b8ce2e5ef/rustcp0HzCL/symbols.o" "<3 object files omitted>" "-Wl,--as-needed" "-Wl,-Bstatic" "<sysroot>/lib/rustlib/aarch64-linux-android/lib/{libstd-*,libpanic_unwind-*,libobject-*,libmemchr-*,libaddr2line-*,libgimli-*,libcfg_if-*,librustc_demangle-*,libstd_detect-*,libhashbrown-*,librustc_std_workspace_alloc-*,libminiz_oxide-*,libadler2-*,libunwind-*,liblibc-*,librustc_std_workspace_core-*,liballoc-*,libcore-*,libcompiler_builtins-*}.rlib" "-Wl,-Bdynamic" "-ldl" "-llog" "-lunwind" "-ldl" "-lm" "-lc" "-L" "<sysroot>/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/build/rustix-7b6d5f4b8ce2e5ef/rustcp0HzCL/raw-dylibs" "-Wl,--eh-frame-hdr" "-Wl,-z,noexecstack" "-o" "<sysroot>/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/build/rustix-7b6d5f4b8ce2e5ef/build_script_build-7b6d5f4b8ce2e5ef" "-Wl,--gc-sections" "-pie" "-Wl,-z,relro,-z,now" "-Wl,--strip-debug" "-nodefaultlibs"
+              = note: some arguments are omitted. use `--verbose` to show all linker arguments
+              = note: /usr/bin/ld: cannot find -llog: No such file or directory
+                      /usr/bin/ld: cannot find -lunwind: No such file or directory
+                      collect2: error: ld returned 1 exit status
+      
+      
+            error: could not compile `rustix` (build script) due to 1 previous error
+      
+            Caused by:
+              process didn't exit successfully: `rustc --crate-name build_script_build --edition=2021 /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustix-1.1.4/build.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type bin --emit=dep-info,link -C embed-bitcode=no --warn=unexpected_cfgs --check-cfg 'cfg(alloc_c_string)' --check-cfg 'cfg(alloc_ffi)' --check-cfg 'cfg(apple)' --check-cfg 'cfg(asm_experimental_arch)' --check-cfg 'cfg(bsd)' --check-cfg 'cfg(core_c_str)' --check-cfg 'cfg(core_ffi_c)' --check-cfg 'cfg(core_intrinsics)' --check-cfg 'cfg(criterion)' --check-cfg 'cfg(document_experimental_runtime_api)' --check-cfg 'cfg(error_in_core)' --check-cfg 'cfg(fix_y2038)' --check-cfg 'cfg(freebsdlike)' --check-cfg 'cfg(libc)' --check-cfg 'cfg(linux_kernel)' --check-cfg 'cfg(linux_like)' --check-cfg 'cfg(linux_raw)' --check-cfg 'cfg(linux_raw_dep)' --check-cfg 'cfg(lower_upper_exp_for_non_zero)' --check-cfg 'cfg(sanitize_memory)' --check-cfg 'cfg(netbsdlike)' --check-cfg 'cfg(rustc_attrs)' --check-cfg 'cfg(rustc_diagnostics)' --check-cfg 'cfg(solarish)' --check-cfg 'cfg(staged_api)' --check-cfg 'cfg(static_assertions)' --check-cfg 'cfg(thumb_mode)' --check-cfg 'cfg(wasi)' --check-cfg 'cfg(wasi_ext)' --check-cfg 'cfg(wasip2)' --check-cfg 'cfg(target_arch, values("xtensa"))' --check-cfg 'cfg(target_os, values("cygwin"))' -C debug-assertions=off --cfg 'feature="alloc"' --cfg 'feature="default"' --cfg 'feature="fs"' --cfg 'feature="std"' --cfg 'feature="termios"' --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("all-apis", "alloc", "core", "default", "event", "fs", "io_uring", "libc", "libc_errno", "linux_4_11", "linux_5_1", "linux_5_11", "linux_latest", "mm", "mount", "net", "param", "pipe", "process", "pty", "rand", "runtime", "rustc-dep-of-std", "rustc-std-workspace-alloc", "shm", "std", "stdio", "system", "termios", "thread", "time", "try_close", "use-explicitly-provided-auxv", "use-libc", "use-libc-auxv"))' -C metadata=442cbb4ba8f703dd -C extra-filename=-7b6d5f4b8ce2e5ef --out-dir /data/data/com.termux/files/usr/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/build/rustix-7b6d5f4b8ce2e5ef -C strip=debuginfo -L dependency=/data/data/com.termux/files/usr/tmp/pip-install-9y6zexio/maturin_d793727ad12a46f0927d1ea6715eccb1/target/release/deps --cap-lints allow` (exit status: 1)
+            error: `cargo build --manifest-path Cargo.toml --message-format=json-render-diagnostics --release -v --no-default-features --locked` failed with code 101
+            [end of output]
+      
+        note: This error originates from a subprocess, and is likely not a problem with pip.
+        ERROR: Failed building wheel for maturin
+      Failed to build maturin
+      error: failed-wheel-build-for-install
+      
+      × Failed to build installable wheels for some pyproject.toml based projects
+      ╰─> maturin
+      [end of output]
+  
+  note: This error originates from a subprocess, and is likely not a problem with pip.
+
+[notice] A new release of pip is available: 26.1.2 -> 26.2.1
+[notice] To update, run: /data/data/com.termux/files/usr/tmp/rag-lock-install-buif6r1e/venv/bin/python -m pip install --upgrade pip
+ERROR: Failed to build 'hf-xet' when installing build dependencies for hf-xet

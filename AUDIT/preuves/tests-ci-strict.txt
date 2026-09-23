@@ -1,11 +1,30 @@
+audited_commit: ad1bc3c0b22dc12c53f978287af44343b437f484
+date_utc: 2026-09-23T08:04:07.437427+00:00
+command: .venv-audit/bin/python scripts/run_ci_strict.py
+exit_code: 0
+python_version: 3.14.6
+qdrant_version: 1.19.0
+qdrant_revision: 74f3e85b9473c62560006c043e13737ce6b48412
+embedding_model: BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181
+reranker_model: BAAI/bge-reranker-v2-m3@953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e
+random_seed: not_applicable
+--- stdout ---
+
+--- stderr ---
 test_cross_tenant_chunks_are_rejected (test_acl.ACLTests.test_cross_tenant_chunks_are_rejected) ... ok
 test_global_public_chunk_is_visible_to_each_tenant (test_acl.ACLTests.test_global_public_chunk_is_visible_to_each_tenant) ... ok
 test_group_and_clearance_are_both_required_for_private_chunk (test_acl.ACLTests.test_group_and_clearance_are_both_required_for_private_chunk) ... ok
 test_owner_can_read_private_chunk_with_sufficient_clearance (test_acl.ACLTests.test_owner_can_read_private_chunk_with_sufficient_clearance) ... ok
 test_retrieval_requires_authorization_context (test_acl.ACLTests.test_retrieval_requires_authorization_context) ... ok
 test_source_sha_must_be_sha256_hex (test_acl.ACLTests.test_source_sha_must_be_sha256_hex) ... ok
+test_qdrant_filter_never_returns_more_than_independent_reference (test_acl_differential.DifferentialAclTests.test_qdrant_filter_never_returns_more_than_independent_reference) ... ok
+test_group_and_named_user_categories_include_allow_and_deny_cases (test_acl_matrix_scenarios.AclMatrixScenarioTests.test_group_and_named_user_categories_include_allow_and_deny_cases) ... ok
+test_matrix_has_every_required_category (test_acl_matrix_scenarios.AclMatrixScenarioTests.test_matrix_has_every_required_category) ... ok
+test_revoked_and_stale_cases_are_allowed_by_index_but_denied_by_authority (test_acl_matrix_scenarios.AclMatrixScenarioTests.test_revoked_and_stale_cases_are_allowed_by_index_but_denied_by_authority) ... ok
 test_bge_locks_recompute_to_declared_bundle_hash (test_artifact_lock.ArtifactLockTests.test_bge_locks_recompute_to_declared_bundle_hash) ... ok
 test_mutated_file_hash_is_rejected (test_artifact_lock.ArtifactLockTests.test_mutated_file_hash_is_rejected) ... ok
+test_failed_commands_are_preserved_and_reflected_as_blocked (test_audit_status.AuditStatusTests.test_failed_commands_are_preserved_and_reflected_as_blocked) ... ok
+test_missing_evidence_never_closes_a_lot (test_audit_status.AuditStatusTests.test_missing_evidence_never_closes_a_lot) ... ok
 test_end_to_end_retrieval_respects_tenants_and_abstention (test_benchmark.BenchmarkTests.test_end_to_end_retrieval_respects_tenants_and_abstention) ... ok
 test_counts_only_over_budget_pairs (test_chunking_ablation.ChunkingAblationTests.test_counts_only_over_budget_pairs) ... ok
 test_large_word_chunk_exceeds_reranker_window (test_chunking_ablation.ChunkingAblationTests.test_large_word_chunk_exceeds_reranker_window) ... ok
@@ -21,6 +40,7 @@ test_empty_case_set_is_invalid (test_evaluation.EvaluationTests.test_empty_case_
 test_recall_at_k_and_mrr (test_evaluation.EvaluationTests.test_recall_at_k_and_mrr) ... ok
 test_candidate_job_validates_locks_and_resource_contract (test_gpu_job.GPUJobTests.test_candidate_job_validates_locks_and_resource_contract) ... ok
 test_reranker_truncation_policy_must_be_reject (test_gpu_job.GPUJobTests.test_reranker_truncation_policy_must_be_reject) ... ok
+test_dense_and_sparse_lists_are_bounded_deduplicated_and_fused (test_hybrid_retrieval.HybridRetrievalTests.test_dense_and_sparse_lists_are_bounded_deduplicated_and_fused) ... ok
 test_chunks_preserve_acl_version_and_source_hash (test_ingestion.IngestionTests.test_chunks_preserve_acl_version_and_source_hash) ... ok
 test_invalid_overlap_is_rejected (test_ingestion.IngestionTests.test_invalid_overlap_is_rejected) ... ok
 test_skip_is_a_hard_failure (test_integration_gate.IntegrationGateTests.test_skip_is_a_hard_failure) ... ok
@@ -47,12 +67,17 @@ test_new_live_shape_is_due_at_deadline_without_created_at (test_pod_watchdog.Pod
 test_new_selector_fails_closed_if_exact_name_preexisted (test_pod_watchdog.PodWatchdogTests.test_new_selector_fails_closed_if_exact_name_preexisted) ... ok
 test_pod_is_due_only_at_or_after_deadline (test_pod_watchdog.PodWatchdogTests.test_pod_is_due_only_at_or_after_deadline) ... ok
 test_selects_only_exact_name_created_in_campaign (test_pod_watchdog.PodWatchdogTests.test_selects_only_exact_name_created_in_campaign) ... ok
-test_alpha_query_with_beta_secret_vector_never_leaks_beta (test_qdrant_end_to_end_acl.EndToEndAclTests.test_alpha_query_with_beta_secret_vector_never_leaks_beta) ... skipped 'Qdrant integration disabled'
-test_low_clearance_owner_is_denied_high_classification (test_qdrant_end_to_end_acl.EndToEndAclTests.test_low_clearance_owner_is_denied_high_classification) ... skipped 'Qdrant integration disabled'
-test_owner_recovers_own_private_document_end_to_end (test_qdrant_end_to_end_acl.EndToEndAclTests.test_owner_recovers_own_private_document_end_to_end) ... skipped 'Qdrant integration disabled'
+test_budget_check_is_immediately_before_compute_score (test_production_retrieval.ProductionAclBarrierTests.test_budget_check_is_immediately_before_compute_score) ... ok
+test_budget_guard_survives_python_optimized_mode (test_production_retrieval.ProductionAclBarrierTests.test_budget_guard_survives_python_optimized_mode) ... ok
+test_over_budget_raises_before_compute_score (test_production_retrieval.ProductionAclBarrierTests.test_over_budget_raises_before_compute_score) ... ok
+test_postfilter_uses_authority_and_rejects_revoked_or_stale_payload (test_production_retrieval.ProductionAclBarrierTests.test_postfilter_uses_authority_and_rejects_revoked_or_stale_payload) ... ok
+test_production_query_applies_qdrant_filter_then_canonical_authority (test_production_retrieval.ProductionAclBarrierTests.test_production_query_applies_qdrant_filter_then_canonical_authority) ... ok
+test_alpha_query_with_beta_secret_vector_never_leaks_beta (test_qdrant_end_to_end_acl.EndToEndAclTests.test_alpha_query_with_beta_secret_vector_never_leaks_beta) ... ok
+test_low_clearance_owner_is_denied_high_classification (test_qdrant_end_to_end_acl.EndToEndAclTests.test_low_clearance_owner_is_denied_high_classification) ... ok
+test_owner_recovers_own_private_document_end_to_end (test_qdrant_end_to_end_acl.EndToEndAclTests.test_owner_recovers_own_private_document_end_to_end) ... ok
 test_filter_contains_tenant_clearance_and_global_public_branch (test_qdrant_filter.QdrantFilterTests.test_filter_contains_tenant_clearance_and_global_public_branch) ... ok
 test_filter_never_accepts_missing_context (test_qdrant_filter.QdrantFilterTests.test_filter_never_accepts_missing_context) ... ok
-test_real_server_enforces_tenant_clearance_and_global_public (test_qdrant_integration.QdrantIntegrationTests.test_real_server_enforces_tenant_clearance_and_global_public) ... skipped 'Qdrant integration disabled'
+test_real_server_enforces_tenant_clearance_and_global_public (test_qdrant_integration.QdrantIntegrationTests.test_real_server_enforces_tenant_clearance_and_global_public) ... ok
 test_create_collection_sends_named_dense_vector_config (test_qdrant_rest.QdrantRestClientTests.test_create_collection_sends_named_dense_vector_config) ... ok
 test_create_tenant_payload_index_preserves_is_tenant (test_qdrant_rest.QdrantRestClientTests.test_create_tenant_payload_index_preserves_is_tenant) ... ok
 test_delete_collection_uses_collection_endpoint (test_qdrant_rest.QdrantRestClientTests.test_delete_collection_uses_collection_endpoint) ... ok
@@ -78,6 +103,6 @@ test_chunks_record_offsets_tokenizer_and_content_hash (test_token_chunking.Token
 test_invalid_token_overlap_is_rejected (test_token_chunking.TokenChunkingTests.test_invalid_token_overlap_is_rejected) ... ok
 
 ----------------------------------------------------------------------
-Ran 78 tests in 0.616s
+Ran 90 tests in 47.146s
 
-OK (skipped=4)
+OK
