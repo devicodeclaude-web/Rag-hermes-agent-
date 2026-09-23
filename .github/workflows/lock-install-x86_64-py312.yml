@@ -1,0 +1,75 @@
+name: Lock install x86_64 Python 3.12
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "requirements-*.lock.txt"
+      - "scripts/verify_lock_install.py"
+      - "scripts/run_ci_strict.py"
+      - "scripts/capture_evidence.py"
+      - "tests/**"
+      - ".github/workflows/lock-install-x86_64-py312.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  lock-install:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      QDRANT_INTEGRATION_URL: http://127.0.0.1:6333
+      QDRANT_VERSION: "1.19.0"
+      QDRANT_ARCHIVE_SHA256: 9ec667456443463eee390e43cd36988af6b730c6db807b4e39f57c303d0264a3
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Start hash-verified Qdrant
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="https://github.com/qdrant/qdrant/releases/download/v${QDRANT_VERSION}/qdrant-x86_64-unknown-linux-musl.tar.gz"
+          curl -fL "$url" -o /tmp/qdrant.tar.gz
+          printf '%s  %s\n' "$QDRANT_ARCHIVE_SHA256" /tmp/qdrant.tar.gz | sha256sum -c -
+          mkdir -p /tmp/qdrant-bin /tmp/qdrant-storage
+          tar -xzf /tmp/qdrant.tar.gz -C /tmp/qdrant-bin
+          QDRANT__STORAGE__STORAGE_PATH=/tmp/qdrant-storage /tmp/qdrant-bin/qdrant >/tmp/qdrant.log 2>&1 &
+          echo $! >/tmp/qdrant.pid
+          curl --retry 20 --retry-connrefused --retry-delay 1 -fsS http://127.0.0.1:6333/healthz
+
+      - name: Capture lock installation and strict tests
+        id: lock
+        shell: bash
+        run: |
+          set +e
+          mkdir -p gha-evidence
+          python scripts/capture_evidence.py \
+            --output gha-evidence/lock-install-x86_64-py312.txt \
+            -- python scripts/verify_lock_install.py
+          rc=$?
+          printf '%s\n' "$rc" > gha-evidence/exit-code.txt
+          exit 0
+
+      - name: Record proof limitation
+        if: always()
+        shell: bash
+        run: cp docs/gha-lock-proof-limit.md gha-evidence/
+
+      - name: Upload evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lock-install-x86_64-py312-${{ github.sha }}
+          path: gha-evidence/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Propagate lock result
+        if: always()
+        shell: bash
+        run: exit "$(cat gha-evidence/exit-code.txt)"

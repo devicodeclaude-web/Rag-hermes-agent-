@@ -7,6 +7,7 @@ from typing import Any, Iterable
 
 from .acl import AuthorizationContext, Chunk, filter_authorized
 from .acl_authority import CanonicalAclAuthority
+from .qdrant_filter import build_qdrant_filter
 from .reranker_budget import assert_pair_fits
 
 _TOKEN_RE = re.compile(r"\w+", re.UNICODE)
@@ -74,6 +75,25 @@ def postfilter_candidates(candidates: Iterable[dict[str, Any]], context: Authori
         else:
             denied += 1
     return accepted, AclBarrierCounters(examined, len(accepted), stale, denied)
+
+
+def retrieve_authorized_candidates(
+    client: Any,
+    collection: str,
+    vector: list[float],
+    *,
+    context: AuthorizationContext,
+    authority: CanonicalAclAuthority,
+    limit: int,
+) -> tuple[list[dict[str, Any]], AclBarrierCounters]:
+    """Production path: Qdrant prefilter then canonical ACL recheck."""
+    candidates = client.query(
+        collection,
+        vector,
+        query_filter=build_qdrant_filter(context),
+        limit=limit,
+    )
+    return postfilter_candidates(candidates, context, authority)
 
 
 def hybrid_rrf_indices(

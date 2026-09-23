@@ -7,7 +7,11 @@ import unittest
 
 from rag_hermes.acl import AuthorizationContext
 from rag_hermes.acl_authority import AclPolicy, CanonicalAclAuthority
-from rag_hermes.retrieval import postfilter_candidates, score_authorized_pairs
+from rag_hermes.retrieval import (
+    postfilter_candidates,
+    retrieve_authorized_candidates,
+    score_authorized_pairs,
+)
 from rag_hermes.reranker_budget import RerankerBudgetExceeded
 
 
@@ -30,6 +34,16 @@ class FakeReranker:
         return [0.25 for _ in pairs]
 
 
+class FakeQdrantClient:
+    def __init__(self, points):
+        self.points = points
+        self.calls = []
+
+    def query(self, collection, vector, *, query_filter, limit):
+        self.calls.append((collection, vector, query_filter, limit))
+        return self.points
+
+
 class ProductionAclBarrierTests(unittest.TestCase):
     def setUp(self):
         self.context = AuthorizationContext("alpha", "alice", ("admins",), 2)
@@ -50,6 +64,24 @@ class ProductionAclBarrierTests(unittest.TestCase):
         self.assertEqual([item["payload"]["document_id"] for item in accepted], ["allowed"])
         self.assertEqual(counters.stale_acl_version, 1)
         self.assertEqual(counters.denied_by_authority, 1)
+
+    def test_production_query_applies_qdrant_filter_then_canonical_authority(self):
+        client = FakeQdrantClient([
+            {"payload": {"document_id": "allowed", "acl_version": 7, "text": "ok"}},
+            {"payload": {"document_id": "revoked", "acl_version": 7, "text": "stale"}},
+        ])
+        accepted, counters = retrieve_authorized_candidates(
+            client,
+            "chunks",
+            [1.0, 0.0],
+            context=self.context,
+            authority=self.authority,
+            limit=20,
+        )
+        self.assertEqual([item["payload"]["document_id"] for item in accepted], ["allowed"])
+        self.assertEqual(counters.stale_acl_version, 1)
+        self.assertEqual(client.calls[0][0], "chunks")
+        self.assertIsNotNone(client.calls[0][2])
 
     def test_budget_check_is_immediately_before_compute_score(self):
         tokenizer = FakeTokenizer([5, 6])
