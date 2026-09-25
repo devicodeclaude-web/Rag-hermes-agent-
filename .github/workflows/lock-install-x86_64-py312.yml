@@ -22,6 +22,8 @@ jobs:
       QDRANT_INTEGRATION_URL: http://127.0.0.1:6333
       QDRANT_VERSION: "1.19.0"
       QDRANT_ARCHIVE_SHA256: 9ec667456443463eee390e43cd36988af6b730c6db807b4e39f57c303d0264a3
+      GITLEAKS_VERSION: "8.30.1"
+      GITLEAKS_ARCHIVE_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
     steps:
       - uses: actions/checkout@v4
 
@@ -41,6 +43,17 @@ jobs:
           QDRANT__STORAGE__STORAGE_PATH=/tmp/qdrant-storage /tmp/qdrant-bin/qdrant >/tmp/qdrant.log 2>&1 &
           echo $! >/tmp/qdrant.pid
           curl --retry 20 --retry-connrefused --retry-delay 1 -fsS http://127.0.0.1:6333/healthz
+
+      - name: Install hash-verified gitleaks
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          url="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${archive}"
+          curl -fL "$url" -o "/tmp/${archive}"
+          printf '%s  %s\n' "$GITLEAKS_ARCHIVE_SHA256" "/tmp/${archive}" | sha256sum -c -
+          tar -xzf "/tmp/${archive}" -C /tmp gitleaks
+          /tmp/gitleaks version
 
       - name: Capture lock installation and strict tests
         id: lock

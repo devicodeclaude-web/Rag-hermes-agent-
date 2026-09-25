@@ -24,13 +24,13 @@ TESTS_DIR = os.path.join(ROOT, "tests")
 
 
 def run_gitleaks() -> int:
-    """Scanne tout l'historique git. Absent -> avertissement non bloquant."""
+    """Scanne tout l'historique git. Un scanner absent est un échec dur."""
     binary = shutil.which("gitleaks") or "/tmp/gitleaks"
     if not (shutil.which("gitleaks") or os.path.exists("/tmp/gitleaks")):
         sys.stderr.write(
-            "AVERTISSEMENT CI : gitleaks absent, scan de secrets historique ignore.\n"
+            "ECHEC CI : gitleaks absent, scan de secrets historique impossible.\n"
         )
-        return 0
+        return 5
     config = os.path.join(ROOT, ".gitleaks.toml")
     result = subprocess.run(
         [binary, "git", "--no-banner", f"--config={config}", ROOT],
