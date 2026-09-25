@@ -53,6 +53,9 @@ jobs:
             -- python scripts/verify_lock_install.py
           rc=$?
           printf '%s\n' "$rc" > gha-evidence/exit-code.txt
+          echo "::group::Captured lock evidence"
+          python -c 'from pathlib import Path; print(Path("gha-evidence/lock-install-x86_64-py312.txt").read_text(encoding="utf-8"))'
+          echo "::endgroup::"
           exit 0
 
       - name: Record proof limitation
