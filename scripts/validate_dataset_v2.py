@@ -17,10 +17,11 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from rag_hermes.eval_corpus import corpus_manifest, load_documents
+from rag_hermes.eval_corpus import DEFAULT_CORPUS, corpus_manifest, load_documents
 from rag_hermes.evaluation_dataset import validate_evaluation_case
 
 DATASET = ROOT / "data/benchmark/dataset-v2.jsonl"
+CORPUS = DEFAULT_CORPUS
 
 TARGET_EN = 100
 TARGET_FR_PAIRS = 40
@@ -51,8 +52,8 @@ def main() -> int:
         print(json.dumps({"status": "empty", "dataset": str(DATASET)}))
         return 2
 
-    documents = load_documents()
-    manifest = corpus_manifest()
+    documents = load_documents(CORPUS)
+    manifest = corpus_manifest(CORPUS)
 
     # 1. Structural + anti-circularity validation of every case.
     ids: set[str] = set()

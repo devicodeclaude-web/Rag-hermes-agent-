@@ -5,12 +5,14 @@ from pathlib import Path
 
 from rag_hermes.eval_corpus import corpus_manifest, find_passage_span, load_documents
 
+TEST_CORPUS = Path(__file__).parent / "fixtures/eval_corpus.jsonl"
+
 
 class EvalCorpusTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.docs = load_documents()
-        cls.manifest = corpus_manifest()
+        cls.docs = load_documents(TEST_CORPUS)
+        cls.manifest = corpus_manifest(TEST_CORPUS)
 
     def test_manifest_pins_single_revision_and_content_hash(self):
         self.assertRegex(self.manifest["source_revision"], r"^[0-9a-f]{7,40}$")
@@ -51,23 +53,26 @@ class AnnotateAndValidateChainTests(unittest.TestCase):
         self.path.unlink(missing_ok=True)
         self._orig_a = annotate.DATASET
         self._orig_v = validate.DATASET
+        self._orig_corpus = validate.CORPUS
         self._orig_en = validate.TARGET_EN
         self._orig_fr = validate.TARGET_FR_PAIRS
         annotate.DATASET = self.path
         validate.DATASET = self.path
+        validate.CORPUS = TEST_CORPUS
         validate.TARGET_EN = 1
         validate.TARGET_FR_PAIRS = 1
 
     def tearDown(self):
         self.annotate.DATASET = self._orig_a
         self.validate.DATASET = self._orig_v
+        self.validate.CORPUS = self._orig_corpus
         self.validate.TARGET_EN = self._orig_en
         self.validate.TARGET_FR_PAIRS = self._orig_fr
         self.path.unlink(missing_ok=True)
 
     def _passage(self):
         import re
-        docs = load_documents()
+        docs = load_documents(TEST_CORPUS)
         for did, doc in docs.items():
             for seg in re.split(r"(?<=[.!?])\s+", doc["content"]):
                 seg = seg.strip()
@@ -77,8 +82,8 @@ class AnnotateAndValidateChainTests(unittest.TestCase):
 
     def test_pair_annotation_validates_ready(self):
         did, passage = self._passage()
-        docs = load_documents()
-        manifest = corpus_manifest()
+        docs = load_documents(TEST_CORPUS)
+        manifest = corpus_manifest(TEST_CORPUS)
         base = {
             "case_id": "t-001-en", "pair_id": "t-001",
             "question": "How does this work?", "language": "en", "track": "en2en",
