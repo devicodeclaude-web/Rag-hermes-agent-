@@ -13,11 +13,12 @@ Les rapports distinguent obligatoirement :
 
 1. récupération de passages ;
 2. qualité de la réponse finale ;
-3. validité et complétude des citations ;
+3. validité structurelle, support et complétude des citations ;
 4. abstention ;
-5. résistance aux instructions documentaires hostiles ;
-6. sécurité ACL ;
-7. latence, tokens et coût.
+5. pannes techniques ;
+6. résistance aux instructions documentaires hostiles ;
+7. sécurité ACL ;
+8. latence, tokens et coût.
 
 Aucun score de retrieval ne sera transformé en conclusion sur la fiabilité de
 la réponse finale.
@@ -157,11 +158,23 @@ est un incident, pas une bonne réponse.
 
 ## 6. Métriques de réponse finale
 
+Le pipeline de production n'existe pas encore et n'émet donc pas aujourd'hui
+ces statuts. Le contrat de la V1 exige que chaque cas reçoive un statut terminal
+exclusif : `answered`, `abstained`, `acl_error` ou `backend_error`. Seul
+`abstained` comptera comme abstention prédite. Les erreurs ACL et les pannes du
+backend devront être publiées séparément et conserver leur place dans le nombre
+total de cas ; elles ne pourront pas être recodées comme abstentions pour
+améliorer les métriques. Leur représentation dans le harnais d'évaluation est
+un contrat à implémenter dans le futur pipeline, pas la preuve qu'il existe déjà.
+
 Une grille aveugle au nom de la configuration évalue chaque sortie :
 
 - exactitude : `0` incorrecte, `1` partielle, `2` complète ;
 - taux de réponses complètement correctes ;
-- précision de support des citations au niveau des affirmations ;
+- validité structurelle des citations : identifiant résolvable et passage cité
+  présent dans le contexte réellement fourni au générateur ;
+- précision de support des citations au niveau des affirmations : le passage
+  valide justifie effectivement l'affirmation associée ;
 - complétude des citations pour les affirmations factuelles vérifiables ;
 - précision et rappel de l'abstention ;
 - affirmations critiques non soutenues ;
@@ -174,6 +187,7 @@ Seuils proposés avant gel :
 
 - réponses complètement correctes : au moins 80 % par strate de qualité ;
 - précision de support des citations : au moins 95 % ;
+- validité structurelle des citations : 100 % ;
 - complétude des citations : au moins 90 % ;
 - aucune affirmation critique non soutenue ;
 - rappel d'abstention : au moins 90 %, précision : au moins 80 % ;
@@ -194,6 +208,13 @@ immédiat. Ce jeu ne contient aucun secret réel.
 
 ## 8. Autorité et sécurité
 
+Pour la V1, toute erreur, indisponibilité ou réponse incohérente de l'autorité
+ACL devra produire le statut `acl_error` et interrompre la requête. Il sera
+interdit de relancer avec un filtre absent, vide ou plus large. Une panne du
+générateur devra produire `backend_error`, jamais `abstained`. Ce paragraphe
+énonce une exigence du pipeline à construire, et non un comportement déjà émis
+par un pipeline de production existant.
+
 Qdrant est un index dérivé. `CanonicalAclAuthority` est actuellement un
 registre en mémoire ; il ne prouve pas la révocation durable après redémarrage.
 Le produit personnel mono-tenant peut être livré avant la plateforme, mais
@@ -208,3 +229,21 @@ commande, code de sortie, versions, modèles et révisions, paramètres de
 génération, graine, hashes du protocole, du dataset et du corpus, matériel,
 latence, tokens et hypothèses de coût. Les sorties brutes sont conservées et
 hashées, y compris en cas d'échec.
+
+## 10. Preuve d'indépendance envers Hermes
+
+Avant toute déclaration de V1 livrable, un environnement propre sans binaire,
+service, mémoire ni skill Hermes exécute le produit comme un utilisateur :
+
+1. installation depuis l'artefact destiné à être livré ;
+2. démarrage des dépendances déclarées ;
+3. ingestion d'un corpus de test identifié et hashé ;
+4. question et réponse comportant une citation structurellement valide et
+   sémantiquement soutenue ;
+5. arrêt complet du produit et de ses processus ;
+6. redémarrage sans réingestion ;
+7. nouvelle question prouvant la persistance de l'index et des ACL.
+
+La preuve conserve les commandes exactes, codes de sortie, versions, sorties
+brutes et hashes. Une règle écrite ou un test lancé depuis l'environnement de
+construction Hermes ne remplace pas cette exécution indépendante.
