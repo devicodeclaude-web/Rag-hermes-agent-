@@ -16,28 +16,65 @@ _TRUSTED_HOST_RE = re.compile(
 )
 
 
-def _context(value: dict[str, Any]) -> AuthorizationContext:
+def _object(value: Any, field: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ValueError(f"{field} must be a JSON object")
+    return value
+
+
+def _string(value: Any, field: str, *, preserve: bool = False) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field} must be a non-empty string")
+    return value if preserve else value.strip()
+
+
+def _integer(value: Any, field: str, *, minimum: int = 0) -> int:
+    if type(value) is not int or value < minimum:
+        raise ValueError(f"{field} must be an integer >= {minimum}")
+    return value
+
+
+def _string_list(value: Any, field: str) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        raise ValueError(f"{field} must be a JSON array")
+    return tuple(_string(item, field) for item in value)
+
+
+def _context(raw: Any) -> AuthorizationContext:
+    value = _object(raw, "context")
     return AuthorizationContext(
-        tenant_id=str(value["tenant_id"]),
-        user_id=str(value["user_id"]),
-        groups=tuple(str(group) for group in value.get("groups", [])),
-        clearance=int(value["clearance"]),
+        tenant_id=_string(value["tenant_id"], "context.tenant_id"),
+        user_id=_string(value["user_id"], "context.user_id"),
+        groups=_string_list(value.get("groups", []), "context.groups"),
+        clearance=_integer(value["clearance"], "context.clearance"),
     )
 
 
-def _document(value: dict[str, Any]) -> Document:
+def _document(raw: Any) -> Document:
+    value = _object(raw, "document")
+    visibility = _string(value["visibility"], "document.visibility")
+    if visibility not in {"public", "private"}:
+        raise ValueError("document.visibility must be public or private")
     return Document(
-        document_id=str(value["document_id"]),
-        content=str(value["content"]),
-        tenant_id=str(value["tenant_id"]),
-        visibility=str(value["visibility"]),
-        owner_id=str(value["owner_id"]),
-        allowed_groups=tuple(str(group) for group in value.get("allowed_groups", [])),
-        allowed_users=tuple(str(user) for user in value.get("allowed_users", [])),
-        classification=int(value["classification"]),
-        doc_version=int(value["doc_version"]),
-        source_uri=str(value["source_uri"]),
-        acl_version=int(value.get("acl_version", 1)),
+        document_id=_string(value["document_id"], "document.document_id"),
+        content=_string(value["content"], "document.content", preserve=True),
+        tenant_id=_string(value["tenant_id"], "document.tenant_id"),
+        visibility=visibility,
+        owner_id=_string(value["owner_id"], "document.owner_id"),
+        allowed_groups=_string_list(
+            value.get("allowed_groups", []), "document.allowed_groups"
+        ),
+        allowed_users=_string_list(
+            value.get("allowed_users", []), "document.allowed_users"
+        ),
+        classification=_integer(
+            value["classification"], "document.classification"
+        ),
+        doc_version=_integer(value["doc_version"], "document.doc_version", minimum=1),
+        source_uri=_string(value["source_uri"], "document.source_uri"),
+        acl_version=_integer(
+            value.get("acl_version", 1), "document.acl_version", minimum=1
+        ),
     )
 
 
@@ -45,6 +82,8 @@ def _json_response(
     start_response: Callable[..., Any],
     status: str,
     value: dict[str, Any],
+    *,
+    extra_headers: tuple[tuple[str, str], ...] = (),
 ) -> Iterable[bytes]:
     body = json.dumps(value, ensure_ascii=False).encode("utf-8")
     start_response(
@@ -53,6 +92,7 @@ def _json_response(
             ("Content-Type", "application/json; charset=utf-8"),
             ("Content-Length", str(len(body))),
             ("Cache-Control", "no-store"),
+            *extra_headers,
         ],
     )
     return [body]
@@ -85,7 +125,15 @@ def make_app(service: RagService):
             )
         if method == "GET" and path == "/":
             return _html_response(start_response)
-        if method != "POST" or path not in {"/api/documents", "/api/questions"}:
+        api_paths = {"/api/documents", "/api/questions"}
+        if path in api_paths and method != "POST":
+            return _json_response(
+                start_response,
+                "405 Method Not Allowed",
+                {"error": "method_not_allowed"},
+                extra_headers=(("Allow", "POST"),),
+            )
+        if path not in api_paths:
             return _json_response(start_response, "404 Not Found", {"error": "not_found"})
         content_type = str(environ.get("CONTENT_TYPE", "")).split(";", 1)[0].strip().lower()
         if content_type != "application/json":
@@ -97,7 +145,13 @@ def make_app(service: RagService):
 
         try:
             length = int(environ.get("CONTENT_LENGTH") or 0)
-            if length < 1 or length > _MAX_BODY_BYTES:
+            if length > _MAX_BODY_BYTES:
+                return _json_response(
+                    start_response,
+                    "413 Payload Too Large",
+                    {"error": "payload_too_large"},
+                )
+            if length < 1:
                 raise ValueError("request body size is invalid")
             raw = environ["wsgi.input"].read(length)
             payload = json.loads(raw.decode("utf-8"))
@@ -112,7 +166,8 @@ def make_app(service: RagService):
                 )
                 return _json_response(start_response, "201 Created", asdict(result))
 
-            result = service.answer(str(payload["question"]), context=context)
+            question = _string(payload["question"], "question")
+            result = service.answer(question, context=context)
             return _json_response(start_response, "200 OK", asdict(result))
         except PermissionError as exc:
             return _json_response(

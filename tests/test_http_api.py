@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from io import BytesIO
 import json
+from typing import Any
 import unittest
 
 from rag_hermes.http_api import make_app
@@ -16,7 +18,7 @@ def request(
     *,
     content_type: str = "application/json",
     host: str = "localhost:8080",
-):
+) -> tuple[str, dict[str, str], Any]:
     body = b"" if payload is None else json.dumps(payload).encode("utf-8")
     environ = {
         "REQUEST_METHOD": method,
@@ -30,7 +32,7 @@ def request(
         "SERVER_PROTOCOL": "HTTP/1.1",
         "HTTP_HOST": host,
     }
-    captured: dict[str, object] = {}
+    captured: dict[str, Any] = {}
 
     def start_response(status, headers):
         captured["status"] = status
@@ -126,6 +128,87 @@ class HttpApiTests(unittest.TestCase):
         )
         self.assertEqual(ipv6_suffix_status, "400 Bad Request")
         self.assertEqual(ipv6_suffix_response["error"], "invalid_host")
+
+    def test_known_api_route_rejects_wrong_method_with_allow_header(self) -> None:
+        status, headers, response = request(self.app, "GET", "/api/questions")
+
+        self.assertEqual(status, "405 Method Not Allowed")
+        self.assertEqual(headers["Allow"], "POST")
+        self.assertEqual(response["error"], "method_not_allowed")
+
+    def test_oversized_body_returns_payload_too_large(self) -> None:
+        status, _, response = request(
+            self.app,
+            "POST",
+            "/api/questions",
+            {"question": "x" * 1_000_000, "context": self.context},
+        )
+
+        self.assertEqual(status, "413 Payload Too Large")
+        self.assertEqual(response["error"], "payload_too_large")
+
+    def test_question_rejects_invalid_identity_types_and_empty_question(self) -> None:
+        invalid_payloads = []
+        for field, value in (
+            ("tenant_id", None),
+            ("user_id", ["alice"]),
+            ("groups", "support"),
+            ("clearance", True),
+        ):
+            context = deepcopy(self.context)
+            context[field] = value
+            invalid_payloads.append(
+                (field, {"context": context, "question": "Bonjour"})
+            )
+        invalid_payloads.append(
+            ("question", {"context": self.context, "question": "   "})
+        )
+
+        for field, payload in invalid_payloads:
+            with self.subTest(field=field):
+                status, _, response = request(
+                    self.app,
+                    "POST",
+                    "/api/questions",
+                    payload,
+                )
+                self.assertEqual(status, "400 Bad Request")
+                self.assertEqual(response["error"], "invalid_request")
+
+    def test_document_rejects_invalid_acl_types_and_empty_values(self) -> None:
+        document = {
+            "document_id": "guide",
+            "content": "Contenu valide",
+            "tenant_id": "alpha",
+            "visibility": "private",
+            "owner_id": "alice",
+            "allowed_groups": ["support"],
+            "allowed_users": [],
+            "classification": 1,
+            "doc_version": 1,
+            "source_uri": "local://guide",
+        }
+        invalid_values = (
+            ("document_id", None),
+            ("content", "   "),
+            ("allowed_groups", "support"),
+            ("allowed_users", None),
+            ("classification", False),
+            ("doc_version", True),
+        )
+
+        for field, value in invalid_values:
+            with self.subTest(field=field):
+                invalid_document = deepcopy(document)
+                invalid_document[field] = value
+                status, _, response = request(
+                    self.app,
+                    "POST",
+                    "/api/documents",
+                    {"context": self.context, "document": invalid_document},
+                )
+                self.assertEqual(status, "400 Bad Request")
+                self.assertEqual(response["error"], "invalid_request")
 
 
 if __name__ == "__main__":
