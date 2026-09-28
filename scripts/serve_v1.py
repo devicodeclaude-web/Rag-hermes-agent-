@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 import sys
 from wsgiref.simple_server import make_server
@@ -10,8 +11,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from rag_hermes.app_factory import build_service
 from rag_hermes.http_api import make_app
-from rag_hermes.service import RagService
 
 
 def validate_bind_host(value: str) -> str:
@@ -44,9 +45,13 @@ def main() -> int:
     args = parse_args()
     if not 1 <= args.port <= 65535:
         raise SystemExit("--port doit être compris entre 1 et 65535")
-    app = make_app(RagService())
+    app = make_app(build_service(env=os.environ))
     with make_server(args.host, args.port, app) as server:
-        print(f"RAG Hermes V1 : http://{args.host}:{args.port}", flush=True)
+        backend = "Qdrant" if os.environ.get("RAG_QDRANT_URL", "").strip() else "mémoire"
+        print(
+            f"RAG Hermes V1 ({backend}) : http://{args.host}:{args.port}",
+            flush=True,
+        )
         try:
             server.serve_forever()
         except KeyboardInterrupt:

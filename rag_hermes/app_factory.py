@@ -1,0 +1,41 @@
+from __future__ import annotations
+
+from typing import Callable, Mapping
+
+from .qdrant_repository import QdrantChunkRepository
+from .qdrant_rest import QdrantRestClient
+from .service import RagService
+
+Embedder = Callable[[str], list[float]]
+
+_DEFAULT_COLLECTION = "hermes_chunks_v1"
+
+
+def build_service(
+    *,
+    env: Mapping[str, str],
+    embed: Embedder | None = None,
+) -> RagService:
+    """Build a RagService.
+
+    - Without RAG_QDRANT_URL: in-memory lexical backend (development default).
+    - With RAG_QDRANT_URL: a Qdrant-backed service. An `embed` callable is then
+      mandatory — this module never chooses an embedding model implicitly.
+    """
+    qdrant_url = env.get("RAG_QDRANT_URL", "").strip()
+    if not qdrant_url:
+        return RagService()
+
+    if embed is None:
+        raise ValueError(
+            "RAG_QDRANT_URL is set but no embedding function was provided; "
+            "refusing to start a Qdrant-backed service without embeddings"
+        )
+
+    collection = env.get("RAG_QDRANT_COLLECTION", _DEFAULT_COLLECTION).strip()
+    if not collection:
+        raise ValueError("RAG_QDRANT_COLLECTION must not be empty")
+
+    client = QdrantRestClient(qdrant_url)
+    repository = QdrantChunkRepository(client, collection=collection, embed=embed)
+    return RagService(repository=repository)

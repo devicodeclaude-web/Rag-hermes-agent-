@@ -47,6 +47,20 @@ locale par défaut. Les options sont visibles avec :
 .venv-audit/bin/python scripts/serve_v1.py --help
 ```
 
+### Backend de stockage (mémoire ou Qdrant)
+
+Par défaut, la V1 stocke les segments en mémoire (perdus au redémarrage). Pour
+activer la persistance Qdrant, définir `RAG_QDRANT_URL` (et éventuellement
+`RAG_QDRANT_COLLECTION`, défaut `hermes_chunks_v1`) avant de lancer le serveur.
+La collection et ses index de payload doivent exister au préalable
+(voir `qdrant/payload-indexes.json`).
+
+Le module n'impose aucun modèle d'embedding : `scripts/serve_v1.py` ne fournit
+pas d'`embed`, donc démarrer avec `RAG_QDRANT_URL` sans brancher une fonction
+d'embedding est refusé explicitement. Le câblage d'un embedder réel (BGE-M3)
+reste une étape ultérieure ; la barrière ACL pré-filtrage/post-filtrage est déjà
+prouvée contre un vrai Qdrant 1.19.0.
+
 ### Tests
 
 La suite complète utilise `hypothesis`, verrouillé dans
