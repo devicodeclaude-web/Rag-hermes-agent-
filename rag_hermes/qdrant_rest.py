@@ -65,6 +65,18 @@ class QdrantRestClient:
             "PUT", f"/collections/{name}/points?wait=true", {"points": points}
         )
 
+    def delete_points(
+        self, collection: str, query_filter: dict[str, Any] | None
+    ) -> dict[str, Any]:
+        if not query_filter:
+            raise ValueError("query_filter is mandatory")
+        name = quote(collection, safe="")
+        return self._request(
+            "POST",
+            f"/collections/{name}/points/delete?wait=true",
+            {"filter": query_filter},
+        )
+
     def query(
         self,
         collection: str,

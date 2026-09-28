@@ -84,6 +84,23 @@ class QdrantRestClientTests(unittest.TestCase):
         self.assertEqual(path, "/collections/chunks/points?wait=true")
         self.assertEqual(body, {"points": [point]})
 
+    def test_delete_points_waits_and_sends_mandatory_filter(self):
+        expected_filter = {
+            "must": [
+                {"key": "tenant_id", "match": {"value": "alpha"}},
+                {"key": "document_id", "match": {"value": "guide"}},
+            ]
+        }
+
+        self.client.delete_points("chunks", expected_filter)
+
+        method, path, body = RecordingHandler.requests[-1]
+        self.assertEqual(
+            (method, path),
+            ("POST", "/collections/chunks/points/delete?wait=true"),
+        )
+        self.assertEqual(body, {"filter": expected_filter})
+
     def test_delete_collection_uses_collection_endpoint(self):
         self.client.delete_collection("chunks")
         method, path, _ = RecordingHandler.requests[-1]
