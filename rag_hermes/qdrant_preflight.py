@@ -106,6 +106,13 @@ def verify_collection_ready(
                     collection,
                     f"payload index {field!r} must declare is_tenant=true",
                 )
+        else:
+            index_params = entry.get("params")
+            if isinstance(index_params, dict) and index_params.get("is_tenant") is True:
+                raise _fail(
+                    collection,
+                    f"payload index {field!r} must not declare is_tenant=true",
+                )
 
     return {
         "collection": collection,

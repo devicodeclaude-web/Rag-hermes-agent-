@@ -29,6 +29,14 @@ class QdrantRestClient:
         except URLError as exc:
             raise RuntimeError(f"Qdrant unavailable: {exc.reason}") from exc
 
+    def collection_exists(self, collection: str) -> bool:
+        name = quote(collection, safe="")
+        response = self._request("GET", f"/collections/{name}/exists", {})
+        result = response.get("result")
+        if not isinstance(result, dict) or type(result.get("exists")) is not bool:
+            raise RuntimeError("Qdrant returned malformed collection existence result")
+        return result["exists"]
+
     def get_collection(self, collection: str) -> dict[str, Any]:
         name = quote(collection, safe="")
         response = self._request("GET", f"/collections/{name}", {})

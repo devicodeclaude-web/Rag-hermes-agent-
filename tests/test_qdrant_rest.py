@@ -2,12 +2,14 @@ import json
 import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Any
 
 from rag_hermes.qdrant_rest import QdrantRestClient
 
 
 class RecordingHandler(BaseHTTPRequestHandler):
     requests = []
+    exists_result: Any = True
 
     def log_message(self, format, *args):
         return
@@ -16,7 +18,12 @@ class RecordingHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get("content-length", "0"))
         body = json.loads(self.rfile.read(length) or b"{}")
         self.__class__.requests.append((self.command, self.path, body))
-        response = {"result": {"points": []}, "status": "ok", "time": 0.0}
+        result = (
+            {"exists": self.__class__.exists_result}
+            if self.path.endswith("/exists")
+            else {"points": []}
+        )
+        response = {"result": result, "status": "ok", "time": 0.0}
         encoded = json.dumps(response).encode()
         self.send_response(200)
         self.send_header("content-type", "application/json")
@@ -46,6 +53,7 @@ class QdrantRestClientTests(unittest.TestCase):
 
     def setUp(self):
         RecordingHandler.requests.clear()
+        RecordingHandler.exists_result = True
         self.client = QdrantRestClient(self.base_url)
 
     def test_create_collection_sends_named_dense_vector_config(self):
@@ -62,6 +70,26 @@ class QdrantRestClientTests(unittest.TestCase):
             ("GET", "/collections/chunks%20with%2Fslash", {}),
         )
         self.assertEqual(result, {"points": []})
+
+    def test_collection_exists_reads_strict_boolean_result(self):
+        exists = self.client.collection_exists("chunks with/slash")
+        method, path, body = RecordingHandler.requests[-1]
+        self.assertEqual(
+            (method, path, body),
+            ("GET", "/collections/chunks%20with%2Fslash/exists", {}),
+        )
+        self.assertIs(exists, True)
+
+    def test_collection_exists_preserves_false(self):
+        RecordingHandler.exists_result = False
+        self.assertIs(self.client.collection_exists("missing"), False)
+
+    def test_collection_exists_rejects_non_boolean_values(self):
+        for invalid in (None, 0, 1, "false", [], {}):
+            with self.subTest(invalid=invalid):
+                RecordingHandler.exists_result = invalid
+                with self.assertRaisesRegex(RuntimeError, "malformed"):
+                    self.client.collection_exists("chunks")
 
     def test_create_tenant_payload_index_preserves_is_tenant(self):
         self.client.create_payload_index(

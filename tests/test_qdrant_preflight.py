@@ -172,6 +172,21 @@ class VerifyCollectionReadyTests(unittest.TestCase):
         self.assertIn("classification", message)
         self.assertIn("integer", message)
 
+    def test_non_tenant_index_declared_as_tenant_is_refused(self) -> None:
+        schema = _schema(
+            visibility={
+                "data_type": "keyword",
+                "params": {"type": "keyword", "is_tenant": True},
+                "points": 0,
+            }
+        )
+        client = FakeClient(_collection(payload_schema=schema))
+        with self.assertRaises(QdrantPreflightError) as caught:
+            verify_collection_ready(client, "hermes_chunks_v1")
+        message = str(caught.exception)
+        self.assertIn("visibility", message)
+        self.assertIn("is_tenant", message)
+
     def test_missing_named_dense_vector_is_refused(self) -> None:
         client = FakeClient(_collection(vectors={"other": {"size": 4}}))
         with self.assertRaises(QdrantPreflightError) as caught:

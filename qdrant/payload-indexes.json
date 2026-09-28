@@ -1,5 +1,5 @@
 {
-  "collection": "hermes_chunks",
+  "collection": "hermes_chunks_v1",
   "payload_indexes": [
     {"field_name": "tenant_id", "field_schema": {"type": "keyword", "is_tenant": true}},
     {"field_name": "visibility", "field_schema": "keyword"},

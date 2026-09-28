@@ -55,6 +55,20 @@ activer la persistance Qdrant, définir `RAG_QDRANT_URL` (et éventuellement
 La collection et ses index de payload doivent exister au préalable
 (voir `qdrant/payload-indexes.json`).
 
+Pour provisionner explicitement la collection par défaut BGE-M3 (vecteur dense
+de dimension 1 024) sur un Qdrant local :
+
+```bash
+.venv-audit/bin/python scripts/provision_qdrant.py
+```
+
+Les paramètres peuvent être modifiés avec `--url`, `--collection`,
+`--vector-size` et `--index-spec`. La commande est idempotente : une seconde
+exécution sur une collection conforme ne crée rien. Une collection existante
+avec une dimension, une distance ou un index incompatible est refusée avant
+toute création d'index ; aucune infrastructure existante n'est corrigée ou
+écrasée silencieusement.
+
 Au démarrage, le service lit les métadonnées de la collection et refuse de
 démarrer si la collection est absente, si le vecteur nommé `dense` manque, si
 un index déclaré dans `qdrant/payload-indexes.json` manque ou possède un type
