@@ -28,6 +28,27 @@ La baseline et le smoke restent des témoins techniques. Aucun score de qualité
 
 ## Exécution locale
 
+### V1 web locale
+
+Cette première interface permet d'importer un texte puis de poser une question avec
+filtrage ACL, citation et abstention. Elle reste volontairement limitée : stockage
+en mémoire (perdu au redémarrage), recherche lexicale et contexte utilisateur saisi
+manuellement. Elle ne doit pas être exposée sur Internet et ne constitue pas encore
+une authentification de production.
+
+```bash
+.venv-audit/bin/python scripts/serve_v1.py
+```
+
+Ouvrir ensuite `http://127.0.0.1:8080`. Le serveur écoute uniquement sur l'interface
+locale par défaut. Les options sont visibles avec :
+
+```bash
+.venv-audit/bin/python scripts/serve_v1.py --help
+```
+
+### Tests du cœur
+
 Aucune dépendance Python externe n’est nécessaire pour les tests du cœur :
 
 ```bash
