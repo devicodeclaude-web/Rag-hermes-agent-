@@ -27,10 +27,19 @@ def build_service(
         return RagService()
 
     if embed is None:
-        raise ValueError(
-            "RAG_QDRANT_URL is set but no embedding function was provided; "
-            "refusing to start a Qdrant-backed service without embeddings"
-        )
+        embed_lock = env.get("RAG_EMBED_LOCK", "").strip()
+        if embed_lock:
+            # Explicit operator opt-in to the pinned BGE-M3 checkpoint. The
+            # model is loaded lazily on first use, so build stays offline-safe.
+            from .embedding import LockedBgeM3Embedder
+
+            embed = LockedBgeM3Embedder(lock_path=embed_lock)
+        else:
+            raise ValueError(
+                "RAG_QDRANT_URL is set but no embedding function was provided; "
+                "refusing to start a Qdrant-backed service without embeddings "
+                "(pass embed=..., or set RAG_EMBED_LOCK to a pinned model lock)"
+            )
 
     collection = env.get("RAG_QDRANT_COLLECTION", _DEFAULT_COLLECTION).strip()
     if not collection:

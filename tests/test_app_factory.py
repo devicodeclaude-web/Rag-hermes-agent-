@@ -27,6 +27,17 @@ class BuildServiceTests(unittest.TestCase):
         )
         self.assertIsNotNone(service._repository)
 
+    def test_embed_lock_env_builds_locked_embedder_lazily_without_loading_model(self) -> None:
+        # RAG_EMBED_LOCK is an explicit operator opt-in; no model is loaded at
+        # build time (lazy), so this stays offline-safe.
+        service = build_service(
+            env={
+                "RAG_QDRANT_URL": "http://127.0.0.1:6333",
+                "RAG_EMBED_LOCK": "manifests/locks/bge-m3.lock.json",
+            },
+        )
+        self.assertIsNotNone(service._repository)
+
 
 if __name__ == "__main__":
     unittest.main()

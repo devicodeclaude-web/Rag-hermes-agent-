@@ -56,10 +56,19 @@ La collection et ses index de payload doivent exister au préalable
 (voir `qdrant/payload-indexes.json`).
 
 Le module n'impose aucun modèle d'embedding : `scripts/serve_v1.py` ne fournit
-pas d'`embed`, donc démarrer avec `RAG_QDRANT_URL` sans brancher une fonction
-d'embedding est refusé explicitement. Le câblage d'un embedder réel (BGE-M3)
-reste une étape ultérieure ; la barrière ACL pré-filtrage/post-filtrage est déjà
-prouvée contre un vrai Qdrant 1.19.0.
+pas d'`embed`. Deux options explicites pour la persistance Qdrant :
+
+- passer une fonction `embed` en code via `app_factory.build_service(env, embed=...)` ;
+- ou définir `RAG_EMBED_LOCK` vers un lock de checkpoint épinglé
+  (`manifests/locks/bge-m3.lock.json`). Le factory construit alors un
+  `LockedBgeM3Embedder` verrouillé sur `BAAI/bge-m3` à la révision auditée. Le
+  modèle est chargé paresseusement au premier appel (import de `FlagEmbedding`
+  différé) ; l'installation GPU se fait via `pip install -e '.[gpu]'`. Démarrer
+  avec `RAG_QDRANT_URL` sans l'une de ces deux options est refusé explicitement.
+
+La barrière ACL pré-filtrage/post-filtrage est déjà prouvée contre un vrai
+Qdrant 1.19.0.
+
 
 ### Tests
 
