@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Callable, Mapping
 
+from .qdrant_preflight import verify_collection_ready
 from .qdrant_repository import QdrantChunkRepository
 from .qdrant_rest import QdrantRestClient
 from .service import RagService
@@ -46,5 +47,6 @@ def build_service(
         raise ValueError("RAG_QDRANT_COLLECTION must not be empty")
 
     client = QdrantRestClient(qdrant_url)
+    verify_collection_ready(client, collection)
     repository = QdrantChunkRepository(client, collection=collection, embed=embed)
     return RagService(repository=repository)

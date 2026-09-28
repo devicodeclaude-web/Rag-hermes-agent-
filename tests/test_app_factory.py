@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 from rag_hermes.app_factory import build_service
+from rag_hermes.qdrant_preflight import QdrantPreflightError
 
 
 class BuildServiceTests(unittest.TestCase):
@@ -17,7 +19,10 @@ class BuildServiceTests(unittest.TestCase):
                 embed=None,
             )
 
-    def test_with_qdrant_url_and_embedder_builds_repository_backed_service(self) -> None:
+    @patch("rag_hermes.app_factory.verify_collection_ready")
+    def test_with_qdrant_url_and_embedder_builds_repository_backed_service(
+        self, verify
+    ) -> None:
         service = build_service(
             env={
                 "RAG_QDRANT_URL": "http://127.0.0.1:6333",
@@ -26,8 +31,23 @@ class BuildServiceTests(unittest.TestCase):
             embed=lambda text: [1.0, 0.0],
         )
         self.assertIsNotNone(service._repository)
+        verify.assert_called_once()
 
-    def test_embed_lock_env_builds_locked_embedder_lazily_without_loading_model(self) -> None:
+    @patch("rag_hermes.app_factory.verify_collection_ready")
+    def test_misconfigured_qdrant_collection_refuses_startup(self, verify) -> None:
+        verify.side_effect = QdrantPreflightError(
+            "tenant_id must declare is_tenant=true"
+        )
+        with self.assertRaisesRegex(QdrantPreflightError, "is_tenant"):
+            build_service(
+                env={"RAG_QDRANT_URL": "http://127.0.0.1:6333"},
+                embed=lambda text: [1.0, 0.0],
+            )
+
+    @patch("rag_hermes.app_factory.verify_collection_ready")
+    def test_embed_lock_env_builds_locked_embedder_lazily_without_loading_model(
+        self, verify
+    ) -> None:
         # RAG_EMBED_LOCK is an explicit operator opt-in; no model is loaded at
         # build time (lazy), so this stays offline-safe.
         service = build_service(
@@ -37,6 +57,7 @@ class BuildServiceTests(unittest.TestCase):
             },
         )
         self.assertIsNotNone(service._repository)
+        verify.assert_called_once()
 
 
 if __name__ == "__main__":

@@ -27,6 +27,7 @@ class RecordingHandler(BaseHTTPRequestHandler):
     do_PUT = _record
     do_POST = _record
     do_DELETE = _record
+    do_GET = _record
 
 
 class QdrantRestClientTests(unittest.TestCase):
@@ -52,6 +53,15 @@ class QdrantRestClientTests(unittest.TestCase):
         method, path, body = RecordingHandler.requests[-1]
         self.assertEqual((method, path), ("PUT", "/collections/chunks"))
         self.assertEqual(body["vectors"], {"dense": {"size": 4, "distance": "Cosine"}})
+
+    def test_get_collection_reads_collection_metadata(self):
+        result = self.client.get_collection("chunks with/slash")
+        method, path, body = RecordingHandler.requests[-1]
+        self.assertEqual(
+            (method, path, body),
+            ("GET", "/collections/chunks%20with%2Fslash", {}),
+        )
+        self.assertEqual(result, {"points": []})
 
     def test_create_tenant_payload_index_preserves_is_tenant(self):
         self.client.create_payload_index(

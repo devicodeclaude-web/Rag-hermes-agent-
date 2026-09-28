@@ -55,6 +55,13 @@ activer la persistance Qdrant, définir `RAG_QDRANT_URL` (et éventuellement
 La collection et ses index de payload doivent exister au préalable
 (voir `qdrant/payload-indexes.json`).
 
+Au démarrage, le service lit les métadonnées de la collection et refuse de
+démarrer si la collection est absente, si le vecteur nommé `dense` manque, si
+un index déclaré dans `qdrant/payload-indexes.json` manque ou possède un type
+différent, ou si `tenant_id` n'est pas un index `keyword` déclaré avec
+`is_tenant: true`. Ce contrôle est fail-closed et ne crée ni ne modifie
+l'infrastructure Qdrant.
+
 Le module n'impose aucun modèle d'embedding : `scripts/serve_v1.py` ne fournit
 pas d'`embed`. Deux options explicites pour la persistance Qdrant :
 
