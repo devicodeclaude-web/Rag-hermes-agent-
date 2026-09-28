@@ -47,12 +47,21 @@ locale par défaut. Les options sont visibles avec :
 .venv-audit/bin/python scripts/serve_v1.py --help
 ```
 
-### Tests du cœur
+### Tests
 
-Aucune dépendance Python externe n’est nécessaire pour les tests du cœur :
+La suite complète utilise `hypothesis`, verrouillé dans
+`requirements-audit.lock.txt`. Sur un nouveau clone, préparer l’environnement
+d’audit avec :
 
 ```bash
-python -m unittest discover -s tests -v
+python -m venv .venv-audit
+.venv-audit/bin/python -m pip install --require-hashes -r requirements-audit.lock.txt
+```
+
+Exécuter ensuite tous les tests :
+
+```bash
+.venv-audit/bin/python -m unittest discover -s tests -v
 ```
 
 Reconstruction du corpus public :
