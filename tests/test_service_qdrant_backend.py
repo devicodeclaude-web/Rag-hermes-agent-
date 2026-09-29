@@ -40,6 +40,23 @@ class FakeQdrantClient:
         # The fake returns everything; the repository postfilter enforces ACL.
         return [dict(point, score=1.0) for point in self.points.values()][:limit]
 
+    def scroll(self, collection, *, query_filter, limit=1):
+        matches = []
+        for point in self.points.values():
+            payload = point["payload"]
+            if not all(
+                payload[condition["key"]] == condition["match"]["value"]
+                for condition in query_filter["must"]
+            ):
+                continue
+            if any(
+                payload[condition["key"]] == condition["match"]["value"]
+                for condition in query_filter.get("must_not", [])
+            ):
+                continue
+            matches.append(point)
+        return matches[:limit]
+
 
 class RagServiceQdrantBackendTests(unittest.TestCase):
     def setUp(self) -> None:

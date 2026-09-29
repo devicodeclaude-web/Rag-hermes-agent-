@@ -107,9 +107,51 @@ class QdrantRestClientTests(unittest.TestCase):
         self.assertEqual(body["filter"], expected_filter)
         self.assertEqual(body["using"], "dense")
 
-    def test_query_refuses_missing_filter(self):
-        with self.assertRaises(ValueError):
-            self.client.query("chunks", [1.0, 0.0], query_filter=None)
+    def test_query_refuses_missing_or_empty_filter(self):
+        for invalid in (None, {}):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(ValueError):
+                    self.client.query("chunks", [1.0, 0.0], query_filter=invalid)
+
+    def test_scroll_sends_mandatory_filter_and_returns_points(self):
+        expected_filter = {
+            "must": [
+                {"key": "tenant_id", "match": {"value": "alpha"}},
+                {"key": "document_id", "match": {"value": "guide"}},
+            ]
+        }
+        points = self.client.scroll(
+            "chunks",
+            query_filter=expected_filter,
+            limit=2,
+        )
+        method, path, body = RecordingHandler.requests[-1]
+        self.assertEqual((method, path), ("POST", "/collections/chunks/points/scroll"))
+        self.assertEqual(
+            body,
+            {"filter": expected_filter, "limit": 2, "with_payload": True},
+        )
+        self.assertEqual(points, [])
+
+    def test_scroll_refuses_missing_or_empty_filter(self):
+        for invalid in (None, {}):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(ValueError):
+                    self.client.scroll("chunks", query_filter=invalid)
+
+    def test_scroll_rejects_malformed_results(self):
+        for invalid in (None, [], {}, {"points": None}, {"points": {}}):
+            with self.subTest(invalid=invalid):
+                original = self.client._request
+                self.client._request = lambda *_args, **_kwargs: {"result": invalid}
+                try:
+                    with self.assertRaisesRegex(RuntimeError, "malformed"):
+                        self.client.scroll(
+                            "chunks",
+                            query_filter={"must": [{"has_id": ["one"]}]},
+                        )
+                finally:
+                    self.client._request = original
 
     def test_upsert_waits_for_payload_and_vector_persistence(self):
         point = {

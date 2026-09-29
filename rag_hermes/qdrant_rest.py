@@ -71,6 +71,32 @@ class QdrantRestClient:
             {"field_name": field_name, "field_schema": field_schema},
         )
 
+    def scroll(
+        self,
+        collection: str,
+        *,
+        query_filter: dict[str, Any] | None,
+        limit: int = 1,
+    ) -> list[dict[str, Any]]:
+        if not query_filter:
+            raise ValueError("query_filter is mandatory")
+        if limit < 1:
+            raise ValueError("limit must be positive")
+        name = quote(collection, safe="")
+        response = self._request(
+            "POST",
+            f"/collections/{name}/points/scroll",
+            {
+                "filter": query_filter,
+                "limit": limit,
+                "with_payload": True,
+            },
+        )
+        result = response.get("result")
+        if not isinstance(result, dict) or not isinstance(result.get("points"), list):
+            raise RuntimeError("Qdrant returned malformed scroll result")
+        return list(result["points"])
+
     def upsert(
         self, collection: str, points: list[dict[str, Any]]
     ) -> dict[str, Any]:
@@ -101,7 +127,7 @@ class QdrantRestClient:
         query_filter: dict[str, Any] | None,
         limit: int = 10,
     ) -> list[dict[str, Any]]:
-        if query_filter is None:
+        if not query_filter:
             raise ValueError("query_filter is mandatory")
         if limit < 1:
             raise ValueError("limit must be positive")

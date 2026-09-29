@@ -79,6 +79,41 @@ class QdrantRepositoryIntegrationTests(unittest.TestCase):
         self.assertIn("Nouvelle version du guide.", texts)
         self.assertNotIn("Ancienne version du guide.", texts)
 
+    def test_corrupt_array_owner_is_refused_before_any_mutation(self) -> None:
+        self.client.upsert(
+            self.collection,
+            [
+                {
+                    "id": str(uuid.uuid4()),
+                    "vector": {"dense": _fixed_vector("")},
+                    "payload": {
+                        "tenant_id": "alpha",
+                        "document_id": "guide",
+                        "owner_id": ["alice", "bob"],
+                    },
+                }
+            ],
+        )
+        attempted = self._document(
+            "guide", "alpha", "bob", "Tentative de remplacement."
+        )
+
+        with self.assertRaisesRegex(PermissionError, "owner"):
+            self.repository.replace_document(attempted, chunk_document(attempted))
+
+        points = self.client.scroll(
+            self.collection,
+            query_filter={
+                "must": [
+                    {"key": "tenant_id", "match": {"value": "alpha"}},
+                    {"key": "document_id", "match": {"value": "guide"}},
+                ]
+            },
+            limit=10,
+        )
+        self.assertEqual(len(points), 1)
+        self.assertEqual(points[0]["payload"]["owner_id"], ["alice", "bob"])
+
 
 if __name__ == "__main__":
     unittest.main()

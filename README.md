@@ -90,6 +90,22 @@ pas d'`embed`. Deux options explicites pour la persistance Qdrant :
 La barrière ACL pré-filtrage/post-filtrage est déjà prouvée contre un vrai
 Qdrant 1.19.0.
 
+Le parcours système HTTP → service → Qdrant est également testé contre ce
+serveur réel : un document importé reste interrogeable avec sa citation après
+reconstruction complète du service. Le propriétaire persisté est contrôlé
+avant tout remplacement ; après redémarrage, un autre utilisateur du même
+tenant ne peut pas reprendre le même `document_id`. Ce test utilise un vecteur
+déterministe de quatre dimensions et prouve le câblage, la persistance et la
+barrière de propriété, pas la qualité sémantique du modèle d'embedding.
+
+Cette garantie suppose l'unique writer fourni par `scripts/serve_v1.py`
+(serveur WSGI mono-processus et séquentiel). Le contrôle du propriétaire et
+l'écriture Qdrant ne constituent pas une transaction atomique : plusieurs
+processus ou writers concurrents sur la même collection ne sont pas supportés
+par cette V1. Un déploiement multi-writer devra ajouter un registre de
+propriété avec création conditionnelle ou un verrou distribué avant d'être
+considéré sûr.
+
 
 ### Tests
 

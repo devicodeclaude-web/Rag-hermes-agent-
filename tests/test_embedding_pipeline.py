@@ -41,6 +41,23 @@ class FakeQdrantClient:
     def query(self, collection, vector, *, query_filter, limit):
         return [dict(p, score=1.0) for p in self.points.values()][:limit]
 
+    def scroll(self, collection, *, query_filter, limit=1):
+        matches = []
+        for point in self.points.values():
+            payload = point["payload"]
+            if not all(
+                payload[condition["key"]] == condition["match"]["value"]
+                for condition in query_filter["must"]
+            ):
+                continue
+            if any(
+                payload[condition["key"]] == condition["match"]["value"]
+                for condition in query_filter.get("must_not", [])
+            ):
+                continue
+            matches.append(point)
+        return matches[:limit]
+
 
 class LockedEmbedderPipelineTests(unittest.TestCase):
     def test_locked_embedder_feeds_repository_and_answer_returns_1024_dim_backed_result(self) -> None:

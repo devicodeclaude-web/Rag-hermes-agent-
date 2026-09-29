@@ -10,6 +10,9 @@ from .qdrant_store import chunk_to_point
 from .retrieval import SearchResult
 
 
+_OWNER_SCAN_LIMIT = 10_000
+
+
 @dataclass(frozen=True)
 class QdrantReplaceResult:
     document_id: str
@@ -32,11 +35,40 @@ class QdrantChunkRepository:
         self._collection = collection
         self._embed = embed
 
+    def _assert_document_owner(self, document: Document) -> None:
+        existing = self._client.scroll(
+            self._collection,
+            query_filter={
+                "must": [
+                    {"key": "tenant_id", "match": {"value": document.tenant_id}},
+                    {
+                        "key": "document_id",
+                        "match": {"value": document.document_id},
+                    },
+                ],
+            },
+            limit=_OWNER_SCAN_LIMIT,
+        )
+        if len(existing) >= _OWNER_SCAN_LIMIT:
+            raise PermissionError("document owner cannot be verified safely")
+        for point in existing:
+            payload = point.get("payload") if isinstance(point, dict) else None
+            if not isinstance(payload, dict):
+                raise PermissionError("document owner payload is invalid")
+            if (
+                payload.get("tenant_id") != document.tenant_id
+                or payload.get("document_id") != document.document_id
+                or not isinstance(payload.get("owner_id"), str)
+                or payload["owner_id"] != document.owner_id
+            ):
+                raise PermissionError("only the existing document owner can replace it")
+
     def replace_document(
         self,
         document: Document,
         chunks: Iterable[Chunk],
     ) -> QdrantReplaceResult:
+        self._assert_document_owner(document)
         materialized = list(chunks)
         points = [
             chunk_to_point(chunk, self._embed(chunk.text))
