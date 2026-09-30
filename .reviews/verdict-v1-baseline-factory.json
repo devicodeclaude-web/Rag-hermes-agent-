@@ -1,0 +1,21 @@
+{
+  "passed": true,
+  "date_utc": "2026-09-30",
+  "repo": "/root/rag-hermes-agent",
+  "branch": "feat/local-v1-web",
+  "head_at_review": "a3ecbba",
+  "scope": "Cablage du generateur closed-book (baseline sans retrieval) dans app_factory via RAG_BASELINE_* (axe F) + branchement du script de comparaison. Fonction build_baseline_generator(env) -> ClosedBookGenerator | None. Fichiers : rag_hermes/app_factory.py, scripts/compare_campaigns.py, tests/test_app_factory.py, README.md.",
+  "reviewer": "sous-agent independant fail-closed (leaf) — focus durcissement reseau + separation baseline/RAG",
+  "resume": "Conforme et fail-closed. 6/6 points satisfaits contre execution reelle. XOR sur RAG_BASELINE_BASE_URL/MODEL, durcissement reseau herite via validate_endpoint, baseline jamais injectee dans RagService, fail-safe du comparateur verifie, aucun secret expose. 18 tests app_factory OK, suite 309 OK.",
+  "checkpoints": [
+    {"id": 1, "titre": "build_baseline_generator XOR + durcissement reseau", "verdict": "pass", "preuve": "app_factory : base_url/model strip ; XOR strict -> ValueError ; None sans config ; ClosedBookGenerator sinon, api_key optionnel. Durcissement herite via validate_endpoint (memes fonctions que RAG). Runtime : non-loopback, credentials, query/fragment, api_key \\n/\\t tous rejetes ; pas de strip silencieux de la cle."},
+    {"id": 2, "titre": "Separation des campagnes", "verdict": "pass", "preuve": "build_baseline_generator distinct ; build_service inchange (seul OpenAICompatibleGenerator injecte dans RagService). grep depot : RAG_BASELINE jamais dans RagService. Pas de confusion."},
+    {"id": 3, "titre": "Branchement comparateur + fail-safe", "verdict": "pass", "preuve": "baseline=build_baseline_generator(os.environ) ; si present -> baseline(question) dans try/except -> abstention (fail-safe verifie) ; sinon stub. Sans config : rag_recall=0.0, cb_recall=1.0, cb_precision=0.2, 20 paires, EXIT=0."},
+    {"id": 4, "titre": "Pas de secret expose", "verdict": "pass", "preuve": "Rejet api_key leve 'api_key must contain visible ASCII...' sans la valeur (runtime : 'SEKRET\\nVALUE' absent du message). Rapport n'expose que des metriques. Fallback except avale l'exception sans la propager."},
+    {"id": 5, "titre": "Coherence des tests", "verdict": "pass", "preuve": "5 tests baseline (None, XOR 2 orientations, isinstance, rejet non-loopback, rejet api_key malformee). Ran 18 tests app_factory OK."},
+    {"id": 6, "titre": "General : pas d'injection ni regression", "verdict": "pass", "preuve": "Imports propres. Tests existants (RAG_GENERATOR_*, TOP_K, RETRIEVAL_K, Qdrant, embed lock) verts. Suite 309 OK (14 skip Qdrant normaux). Payload closed-book = {question} seulement, pas de surface d'injection ajoutee."}
+  ],
+  "concerns": [],
+  "tests_cibles": {"total": 18, "ok": 18, "skipped": 0, "failed": 0},
+  "suite_complete": {"total": 309, "ok": 309, "skipped_sans_qdrant": 14, "failed": 0, "note": "0 skip avec Qdrant 1.19.0 reel"}
+}

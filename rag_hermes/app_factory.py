@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Callable, Mapping
 
+from .closed_book import ClosedBookGenerator
 from .generator import OpenAICompatibleGenerator
 from .qdrant_preflight import verify_collection_ready
 from .qdrant_repository import QdrantChunkRepository
@@ -11,6 +12,37 @@ from .service import RagService
 Embedder = Callable[[str], list[float]]
 
 _DEFAULT_COLLECTION = "hermes_chunks_v1"
+
+
+def build_baseline_generator(
+    *, env: Mapping[str, str]
+) -> ClosedBookGenerator | None:
+    """Build the closed-book (no-retrieval) baseline generator from env.
+
+    Mirrors the RAG generator wiring: RAG_BASELINE_BASE_URL and
+    RAG_BASELINE_MODEL are required together, RAG_BASELINE_API_KEY is optional.
+    Returns None when no baseline endpoint is configured. The same network
+    hardening as the RAG generator is enforced (loopback-only HTTP, HTTPS
+    elsewhere, no credentials, visible-ASCII api_key).
+
+    This is a SEPARATE campaign from RagService: the baseline answers without
+    any retrieval, so it is never wired into RagService — callers drive it
+    directly (e.g. the comparison harness).
+    """
+    base_url = env.get("RAG_BASELINE_BASE_URL", "").strip()
+    model = env.get("RAG_BASELINE_MODEL", "").strip()
+    if bool(base_url) != bool(model):
+        raise ValueError(
+            "baseline configuration requires both RAG_BASELINE_BASE_URL "
+            "and RAG_BASELINE_MODEL"
+        )
+    if not base_url:
+        return None
+    return ClosedBookGenerator(
+        base_url=base_url,
+        model=model,
+        api_key=env.get("RAG_BASELINE_API_KEY", ""),
+    )
 
 
 def build_service(

@@ -325,6 +325,15 @@ l'abstention réelle). Les réponses concrètes sont exposées par `case_id`
 une revue humaine juge la justesse d'une réponse closed-book, qu'aucune métrique
 hors-ligne ne peut établir. Cette revue humaine reste à réaliser.
 
+Le générateur baseline s'active par variables d'environnement, sur le même modèle
+que le générateur RAG : `RAG_BASELINE_BASE_URL` et `RAG_BASELINE_MODEL` sont
+exigés ensemble, `RAG_BASELINE_API_KEY` est optionnel. Le même durcissement réseau
+s'applique (HTTPS partout ou HTTP loopback uniquement, sans identifiants). La
+fabrique `rag_hermes.app_factory.build_baseline_generator(env=…)` renvoie un
+`ClosedBookGenerator` ou `None` si rien n'est configuré. La baseline est une
+campagne SÉPARÉE (sans retrieval) : elle n'est jamais injectée dans le
+`RagService`, les appelants la pilotent directement (voir le comparateur).
+
 ### Comparaison RAG vs closed-book (harnais hors-ligne)
 
 `rag_hermes/campaign_compare.py` contraste les deux campagnes sur le même jeu de

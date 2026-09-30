@@ -30,6 +30,9 @@ if str(ROOT) not in sys.path:
 from dataclasses import asdict
 
 from rag_hermes.acl import AuthorizationContext
+import os
+
+from rag_hermes.app_factory import build_baseline_generator
 from rag_hermes.campaign_compare import compare_campaigns
 from rag_hermes.closed_book import CLOSED_BOOK_ABSTENTION
 from rag_hermes.eval_corpus import DEFAULT_CORPUS, corpus_manifest, load_documents
@@ -78,9 +81,18 @@ def main() -> int:
         trace = service.answer_with_trace(question, context=context)
         return RAG_ABSTENTION if trace.response.abstained else trace.response.answer
 
-    def closed_book_answer(_question: str) -> str:
-        # No baseline endpoint wired in: abstain honestly rather than fabricate.
-        return CLOSED_BOOK_ABSTENTION
+    # Baseline side: use the real closed-book generator when RAG_BASELINE_* is
+    # configured, otherwise abstain honestly (no endpoint to answer from).
+    baseline = build_baseline_generator(env=os.environ)
+    if baseline is not None:
+        def closed_book_answer(question: str) -> str:
+            try:
+                return baseline(question)
+            except Exception:
+                return CLOSED_BOOK_ABSTENTION
+    else:
+        def closed_book_answer(_question: str) -> str:
+            return CLOSED_BOOK_ABSTENTION
 
     try:
         result = compare_campaigns(

@@ -127,5 +127,60 @@ class BuildServiceTests(unittest.TestCase):
         verify.assert_called_once()
 
 
+class BuildBaselineGeneratorTests(unittest.TestCase):
+    def test_no_baseline_env_returns_none(self) -> None:
+        from rag_hermes.app_factory import build_baseline_generator
+
+        self.assertIsNone(build_baseline_generator(env={}))
+
+    def test_baseline_requires_base_url_and_model_together(self) -> None:
+        from rag_hermes.app_factory import build_baseline_generator
+
+        for env in (
+            {"RAG_BASELINE_BASE_URL": "http://127.0.0.1:8001/v1"},
+            {"RAG_BASELINE_MODEL": "qwen-local"},
+        ):
+            with self.subTest(env=env):
+                with self.assertRaises(ValueError):
+                    build_baseline_generator(env=env)
+
+    def test_complete_baseline_env_builds_closed_book_generator(self) -> None:
+        from rag_hermes.app_factory import build_baseline_generator
+        from rag_hermes.closed_book import ClosedBookGenerator
+
+        gen = build_baseline_generator(
+            env={
+                "RAG_BASELINE_BASE_URL": "http://127.0.0.1:8001/v1",
+                "RAG_BASELINE_MODEL": "qwen-local",
+                "RAG_BASELINE_API_KEY": "test-key",
+            }
+        )
+        self.assertIsInstance(gen, ClosedBookGenerator)
+
+    def test_baseline_rejects_non_loopback_http(self) -> None:
+        from rag_hermes.app_factory import build_baseline_generator
+
+        with self.assertRaises(ValueError):
+            build_baseline_generator(
+                env={
+                    "RAG_BASELINE_BASE_URL": "http://evil.example.com/v1",
+                    "RAG_BASELINE_MODEL": "qwen-local",
+                }
+            )
+
+    def test_baseline_api_key_whitespace_is_not_silently_stripped(self) -> None:
+        from rag_hermes.app_factory import build_baseline_generator
+
+        malformed_credential = "bad\nkey"
+        with self.assertRaises(ValueError):
+            build_baseline_generator(
+                env={
+                    "RAG_BASELINE_BASE_URL": "http://127.0.0.1:8001/v1",
+                    "RAG_BASELINE_MODEL": "qwen-local",
+                    "RAG_BASELINE_API_KEY": malformed_credential,
+                }
+            )
+
+
 if __name__ == "__main__":
     unittest.main()
