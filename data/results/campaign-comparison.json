@@ -1,0 +1,11 @@
+{
+  "track": "synthetic",
+  "note": "OFFLINE comparison. RAG = extractive top-chunk answer; closed-book abstains (no endpoint). Abstention axis is real; answer correctness is left to the >=20% human review.",
+  "total": 100,
+  "review_fraction": 0.2,
+  "review_sample_size": 20,
+  "rag_abstention_precision": 0.0,
+  "rag_abstention_recall": 0.0,
+  "closed_book_abstention_precision": 0.2,
+  "closed_book_abstention_recall": 1.0
+}

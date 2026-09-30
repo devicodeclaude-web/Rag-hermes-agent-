@@ -312,6 +312,33 @@ l'abstention réelle). Les réponses concrètes sont exposées par `case_id`
 une revue humaine juge la justesse d'une réponse closed-book, qu'aucune métrique
 hors-ligne ne peut établir. Cette revue humaine reste à réaliser.
 
+### Comparaison RAG vs closed-book (harnais hors-ligne)
+
+`rag_hermes/campaign_compare.py` contraste les deux campagnes sur le même jeu de
+questions. Chaque campagne abstient avec SA propre sentinelle (RAG et closed-book
+en ont deux distinctes), et le harnais mesure l'axe **abstention** des deux côtés,
+puis tire un échantillon de revue humaine déterministe (fraction paramétrable,
+≥20 %) appariant, par question, la réponse RAG et la réponse closed-book.
+
+`scripts/compare_campaigns.py` exécute cette comparaison sur la piste synthétique
+et écrit `data/results/campaign-comparison.json` (métriques d'abstention) et
+`data/results/campaign-review-sample.jsonl` (les paires à juger, avec des champs
+`human_verdict` vides à remplir).
+
+```bash
+.venv-audit/bin/python scripts/compare_campaigns.py --review-fraction 0.2 --seed 1
+```
+
+**Limite hors-ligne assumée** : sans endpoint LLM câblé, le côté RAG utilise la
+réponse extractive (meilleur chunk autorisé) et le côté closed-book s'abstient par
+défaut. Résultat vérifié (100 cas, seed 1) : `rag_abstention_recall = 0,0`
+(l'extractif à seuil bas ne s'abstient jamais), `closed_book_abstention_recall =
+1,0` mais `precision = 0,2` (le stub s'abstient partout, y compris à tort sur les
+répondables). Ces chiffres ne mesurent PAS la justesse des réponses : seule la
+**revue humaine ≥20 %** (le fichier de paires produit) le fait. Quand un endpoint
+réel sera fourni, on remplace les deux callables injectés par les générateurs
+réseau (RAG et baseline).
+
 ## Architecture du MVP
 
 ```text

@@ -1,0 +1,24 @@
+{
+  "passed": true,
+  "date_utc": "2026-09-30",
+  "repo": "/root/rag-hermes-agent",
+  "branch": "feat/local-v1-web",
+  "head_at_review": "5bdf007",
+  "scope": "Comparateur OFFLINE RAG vs closed-book (axe E). Module rag_hermes/campaign_compare.py (compare_campaigns + build_review_sample) + script scripts/compare_campaigns.py (rapport d'abstention + fichier de revue humaine >=20%). Diff purement additif (6 fichiers, +438). Aucun module existant modifie.",
+  "reviewer": "sous-agent independant fail-closed (leaf) — focus sentinelles/metriques/determinisme/honnetete",
+  "resume": "Les 8 points de controle passent contre le code reel, tests (5 OK) et script executes reellement. Aucune preoccupation.",
+  "checkpoints": [
+    {"id": 1, "titre": "Sentinelles d'abstention distinctes", "verdict": "pass", "preuve": "generator.py:13 vs closed_book.py:29 = chaines distinctes. compare_campaigns teste RAG UNIQUEMENT contre _RAG_ABSTENTION et CB UNIQUEMENT contre CLOSED_BOOK_ABSTENTION. Scenario croise verifie : aucune confusion (les deux -> 0.0)."},
+    {"id": 2, "titre": "Metriques d'abstention", "verdict": "pass", "preuve": "_safe_ratio div/0 -> 0.0. Scenario 4 cas : RAG P=0.5 R=0.5 ; CB P=0.6667 R=1.0."},
+    {"id": 3, "titre": "Echantillon de revue", "verdict": "pass", "preuve": "ceil(N*fraction), min 1, ]0,1] sinon ValueError, deterministe (Random(seed)). 0.2/100 => 20 paires, meme seed => memes case_id, appariement meme question."},
+    {"id": 4, "titre": "Rejet entrees incoherentes", "verdict": "pass", "preuve": "dup case_id + should_abstain non-bool -> ValueError dans build_review_sample ET compare_campaigns."},
+    {"id": 5, "titre": "Honnetete", "verdict": "pass", "preuve": "Rapport JSON + README declarent OFFLINE, RAG extractif, CB s'abstient sans endpoint, justesse = revue humaine >=20%. 20 lignes review avec human_verdict vides."},
+    {"id": 6, "titre": "Securite / offline", "verdict": "pass", "preuve": "Aucun reseau, aucun secret. Ecriture confinee a data/results/. Cas quality-eligible -> exit 1 avant ecriture (non-circularite)."},
+    {"id": 7, "titre": "Coherence des tests", "verdict": "pass", "preuve": "5 tests OK. Script reproduit exactement le rapport staged : rag_recall=0.0, cb_recall=1.0, cb_precision=0.2, 20 paires, total=100."},
+    {"id": 8, "titre": "Pas de regression", "verdict": "pass", "preuve": "Diff additif, campaign_compare importe seulement par le nouveau script/test. Modules existants intacts."}
+  ],
+  "concerns": [],
+  "tests_cibles": {"total": 5, "ok": 5, "skipped": 0, "failed": 0},
+  "suite_complete": {"total": 300, "ok": 300, "skipped": 0, "failed": 0, "qdrant": "1.19.0 reel"},
+  "execution_reelle": {"rag_abstention_recall": 0.0, "closed_book_abstention_recall": 1.0, "closed_book_abstention_precision": 0.2, "review_pairs": 20, "total": 100}
+}
