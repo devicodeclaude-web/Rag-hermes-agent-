@@ -1,0 +1,23 @@
+{
+  "passed": true,
+  "date_utc": "2026-09-30",
+  "repo": "/root/rag-hermes-agent",
+  "branch": "feat/local-v1-web",
+  "head_at_review": "bd82a0e",
+  "scope": "Baseline generative sans retrieval (closed-book), axe A1 du README point 5. (a) refactor validate_endpoint partage par le generateur RAG et closed-book ; (b) ClosedBookGenerator (repond de memoire, sans sources, sans citations) ; (c) harnais d'evaluation d'abstention closed-book (hors-ligne). Fichiers : rag_hermes/generator.py, rag_hermes/closed_book.py, rag_hermes/closed_book_eval.py, tests/test_generator.py, tests/test_closed_book.py, tests/test_closed_book_eval.py, README.md.",
+  "reviewer": "sous-agent independant fail-closed (leaf) — focus SSRF refactor + logique abstention",
+  "resume": "Les 7 points de controle satisfaits contre le code reel. Refactor SSRF byte-identique sans regression, ClosedBookGenerator correctement durci et sans sources, harnais d'abstention correct, README honnete. Suite ciblee : 27 tests OK, 0 echec, 0 skip.",
+  "checkpoints": [
+    {"id": 1, "titre": "Refactor sans regression (SSRF intacte)", "verdict": "pass", "preuve": "validate_endpoint (generator.py:42-75) extrait BYTE-IDENTIQUE de l'ancienne validation inline (verifie via git show HEAD). Memes rejets et meme ordre. OpenAICompatibleGenerator appelle validate_endpoint (l.88). 12 tests test_generator verts. Aucune faille SSRF affaiblie."},
+    {"id": 2, "titre": "ClosedBookGenerator durci reseau", "verdict": "pass", "preuve": "closed_book.py:47 appelle validate_endpoint. transport defaut = _default_transport (build_opener(_NoRedirectHandler)) — redirections coupees. Caps _MAX_RESPONSE_BYTES/_MAX_ANSWER_CHARS appliques ; malformee/vide/trop grande => GenerationError. Rejets http non-loopback, credentials, api_key controle : verifies (tests + runtime)."},
+    {"id": 3, "titre": "Absence de sources", "verdict": "pass", "preuve": "closed_book.py:60-62 : prompt={'question':question}, aucun champ 'sources' (verifie runtime : payload keys==['question']). _SYSTEM_PROMPT n'exige aucune citation [Sn]. Message user = donnee jamais instruction. Aucune donnee de source ne transite."},
+    {"id": 4, "titre": "Harnais d'abstention", "verdict": "pass", "preuve": "precision=TP/predicted, recall=TP/required (l.83-84). should_abstain non-bool => ValueError. case_id dup => ValueError. GenerationError => failures+=1+continue (ni reponse ni abstention). answered seulement si did_abstain False. _safe_ratio div/0 => 0.0. Scenario mixte 5 cas execute : prec 0.5, recall 0.5, failures 1, answered exact."},
+    {"id": 5, "titre": "Coherence des tests", "verdict": "pass", "preuve": "unittest tests.test_closed_book tests.test_closed_book_eval tests.test_generator => Ran 27 OK (10+5+12), 0 echec, 0 skip. Tests exercent reellement (payload sans sources, pas de citation, caps, rejets SSRF, prec/rappel exacts, non-bool/dup/failure). Pas de faux vert."},
+    {"id": 6, "titre": "Honnetete", "verdict": "pass", "preuve": "README : baseline closed-book mesure SEULEMENT l'abstention hors-ligne ; aucune affirmation de qualite ; answered_case_ids -> echantillon revue humaine >=20% ; revue humaine 'reste a realiser'. Coherent avec regle 8 et etape 5. Aucune sur-affirmation."},
+    {"id": 7, "titre": "General", "verdict": "pass", "preuve": "CLOSED_BOOK_ABSTENTION distinct de ABSTENTION_ANSWER (RAG) — verifie runtime ; scoring closed-book compare uniquement a CLOSED_BOOK_ABSTENTION, aucune confusion. Aucun secret, api_key jamais dans un message d'erreur, transport injectable. Aucune autre regression."}
+  ],
+  "concerns": [],
+  "tests_cibles": {"total": 27, "ok": 27, "skipped": 0, "failed": 0, "detail": "closed_book=10, closed_book_eval=5, generator=12"},
+  "suite_complete": {"total": 295, "ok": 295, "skipped": 0, "failed": 0, "qdrant": "1.19.0 reel"},
+  "note": "La baseline closed-book ne mesure PAS la qualite des reponses hors-ligne ; seule l'abstention est scoree. La justesse releve de la revue humaine (regle 8), qui reste a realiser."
+}

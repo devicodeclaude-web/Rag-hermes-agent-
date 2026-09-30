@@ -39,6 +39,42 @@ def _default_transport(request: Request, *, timeout: float) -> bytes:
         return response.read(_MAX_RESPONSE_BYTES + 1)
 
 
+def validate_endpoint(base_url: str, api_key: str = "") -> str:
+    """Validate an OpenAI-compatible endpoint and return the completions URL.
+
+    Shared by every generator (RAG and closed-book) so the network hardening
+    cannot drift: HTTPS anywhere, or HTTP only on an explicit loopback host; no
+    credentials/query/fragment in the URL; api_key restricted to visible ASCII.
+    """
+    try:
+        parsed = urlsplit(base_url)
+        hostname = parsed.hostname
+        parsed.port
+    except ValueError as exc:
+        raise ValueError("base_url is invalid") from exc
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or (
+            parsed.scheme == "http"
+            and hostname.lower() not in {"localhost", "127.0.0.1", "::1"}
+        )
+    ):
+        raise ValueError(
+            "base_url must use HTTPS, or HTTP on an explicit loopback host, "
+            "without credentials, query, or fragment"
+        )
+    if api_key and any(
+        ord(character) < 33 or ord(character) > 126 for character in api_key
+    ):
+        raise ValueError("api_key must contain visible ASCII characters only")
+    return base_url.rstrip("/") + "/chat/completions"
+
+
 class OpenAICompatibleGenerator:
     def __init__(
         self,
@@ -49,33 +85,7 @@ class OpenAICompatibleGenerator:
         timeout: float = 60.0,
         transport: Transport = _default_transport,
     ) -> None:
-        try:
-            parsed = urlsplit(base_url)
-            hostname = parsed.hostname
-            parsed.port
-        except ValueError as exc:
-            raise ValueError("base_url is invalid") from exc
-        if (
-            parsed.scheme not in {"http", "https"}
-            or not hostname
-            or parsed.username is not None
-            or parsed.password is not None
-            or parsed.query
-            or parsed.fragment
-            or (
-                parsed.scheme == "http"
-                and hostname.lower() not in {"localhost", "127.0.0.1", "::1"}
-            )
-        ):
-            raise ValueError(
-                "base_url must use HTTPS, or HTTP on an explicit loopback host, "
-                "without credentials, query, or fragment"
-            )
-        if api_key and any(
-            ord(character) < 33 or ord(character) > 126 for character in api_key
-        ):
-            raise ValueError("api_key must contain visible ASCII characters only")
-        self._url = base_url.rstrip("/") + "/chat/completions"
+        self._url = validate_endpoint(base_url, api_key)
         self._model = model
         self._api_key = api_key
         self._timeout = timeout

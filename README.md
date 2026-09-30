@@ -289,6 +289,29 @@ mesurée de la baseline lexicale ; l’abstention n’apparaît qu’à seuil é
 attendu ; la piste humaine annotée au passage et un récupérateur dense/reranké
 sont nécessaires pour toute affirmation de qualité.
 
+### Baseline générative sans retrieval (closed-book)
+
+La campagne générative exige une baseline **sans retrieval** (règle non
+négociable 7) : ce que le modèle répond DE MÉMOIRE, sans corpus, pour prouver
+ensuite que le RAG apporte un gain. `rag_hermes/closed_book.py` fournit un
+`ClosedBookGenerator` distinct du générateur RAG :
+
+- il n'envoie QUE la question (jamais de champ `sources`) ;
+- il n'exige AUCUNE citation `[Sn]` (il n'y a rien à citer) ;
+- il est instruit d'abstenir honnêtement (`Je ne connais pas la réponse.`)
+  plutôt que d'inventer ;
+- il partage le durcissement réseau du générateur RAG via `validate_endpoint`
+  (HTTPS partout ou HTTP loopback uniquement, pas d'identifiants dans l'URL,
+  redirections coupées, réponse plafonnée), et son transport est injectable
+  (tests hors-ligne, aucun appel réseau).
+
+`rag_hermes/closed_book_eval.py` mesure hors-ligne le **seul** axe scorable sans
+sources : l'abstention (précision/rappel entre `should_abstain` attendu et
+l'abstention réelle). Les réponses concrètes sont exposées par `case_id`
+(`answered_case_ids`) pour tirer l'échantillon de **revue humaine ≥20 %** — seule
+une revue humaine juge la justesse d'une réponse closed-book, qu'aucune métrique
+hors-ligne ne peut établir. Cette revue humaine reste à réaliser.
+
 ## Architecture du MVP
 
 ```text
