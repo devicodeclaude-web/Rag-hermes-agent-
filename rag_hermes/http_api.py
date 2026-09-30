@@ -9,11 +9,34 @@ from .acl import AuthorizationContext
 from .generator import GenerationError
 from .ingestion import Document
 from .service import RagService
-from .web_ui import INDEX_HTML
+from .web_ui import APP_JS, INDEX_HTML
 
 _MAX_BODY_BYTES = 1_000_000
 _TRUSTED_HOST_RE = re.compile(
     r"^(?:(?:localhost|127\.0\.0\.1)(?::\d{1,5})?|\[::1\](?::\d{1,5})?)$"
+)
+
+# A strict Content-Security-Policy is only possible because the UI JavaScript is
+# served from /app.js (no inline <script>): script-src 'self' with no
+# 'unsafe-inline'. default-src 'none' denies everything not explicitly allowed.
+_CSP = (
+    "default-src 'none'; "
+    "script-src 'self'; "
+    "style-src 'unsafe-inline'; "
+    "connect-src 'self'; "
+    "img-src 'self'; "
+    "base-uri 'none'; "
+    "form-action 'none'; "
+    "frame-ancestors 'none'"
+)
+# Baseline security headers applied to EVERY response (HTML, JS and JSON).
+_SECURITY_HEADERS: tuple[tuple[str, str], ...] = (
+    ("X-Content-Type-Options", "nosniff"),
+    ("X-Frame-Options", "DENY"),
+    ("Referrer-Policy", "no-referrer"),
+    ("Cross-Origin-Opener-Policy", "same-origin"),
+    ("Cross-Origin-Resource-Policy", "same-origin"),
+    ("Content-Security-Policy", _CSP),
 )
 
 
@@ -93,6 +116,7 @@ def _json_response(
             ("Content-Type", "application/json; charset=utf-8"),
             ("Content-Length", str(len(body))),
             ("Cache-Control", "no-store"),
+            *_SECURITY_HEADERS,
             *extra_headers,
         ],
     )
@@ -107,7 +131,21 @@ def _html_response(start_response: Callable[..., Any]) -> Iterable[bytes]:
             ("Content-Type", "text/html; charset=utf-8"),
             ("Content-Length", str(len(body))),
             ("Cache-Control", "no-store"),
-            ("X-Content-Type-Options", "nosniff"),
+            *_SECURITY_HEADERS,
+        ],
+    )
+    return [body]
+
+
+def _javascript_response(start_response: Callable[..., Any]) -> Iterable[bytes]:
+    body = APP_JS.encode("utf-8")
+    start_response(
+        "200 OK",
+        [
+            ("Content-Type", "text/javascript; charset=utf-8"),
+            ("Content-Length", str(len(body))),
+            ("Cache-Control", "no-store"),
+            *_SECURITY_HEADERS,
         ],
     )
     return [body]
@@ -126,6 +164,15 @@ def make_app(service: RagService):
             )
         if method == "GET" and path == "/":
             return _html_response(start_response)
+        if path == "/app.js":
+            if method != "GET":
+                return _json_response(
+                    start_response,
+                    "405 Method Not Allowed",
+                    {"error": "method_not_allowed"},
+                    extra_headers=(("Allow", "GET"),),
+                )
+            return _javascript_response(start_response)
         api_paths = {"/api/documents", "/api/questions"}
         if path in api_paths and method != "POST":
             return _json_response(

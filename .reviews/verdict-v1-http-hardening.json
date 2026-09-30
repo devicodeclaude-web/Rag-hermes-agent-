@@ -1,0 +1,23 @@
+{
+  "passed": true,
+  "date_utc": "2026-09-30",
+  "repo": "/root/rag-hermes-agent",
+  "branch": "feat/local-v1-web",
+  "head_at_review": "40d5255",
+  "scope": "Durcissement HTTP/UI (axe B). (a) externalisation du JS inline vers /app.js ; (b) en-tetes de securite sur TOUTES les reponses (HTML/JS/JSON) dont CSP stricte ; (c) tests. Fichiers : rag_hermes/http_api.py, rag_hermes/web_ui.py, tests/test_http_api.py, README.md.",
+  "reviewer": "sous-agent independant fail-closed (leaf) — focus CSP/en-tetes/XSS/host-check",
+  "resume": "Sur et fail-closed. 6/6 points satisfaits contre code reel + runtime. En-tetes (dont CSP stricte) sur toutes les reponses, CSP sans unsafe-inline/eval pour script-src, JS externalise, host-check loopback avant routage, aucune insertion innerHTML, 16/16 tests.",
+  "checkpoints": [
+    {"id": 1, "titre": "En-tetes de securite sur toutes les reponses", "verdict": "pass", "preuve": "_SECURITY_HEADERS (nosniff, XFO DENY, Referrer no-referrer, COOP+CORP same-origin, CSP) injecte dans _json_response, _html_response ET _javascript_response. Toutes les erreurs passent par _json_response => aucune n'echappe. Verifie runtime sur 404, 405, /app.js 200, 400 invalid_host."},
+    {"id": 2, "titre": "CSP stricte", "verdict": "pass", "preuve": "default-src 'none'; script-src 'self' SANS unsafe-inline/eval ; base-uri/form-action/frame-ancestors 'none'. Seul style-src 'unsafe-inline' (feuille integree, sans code) tolere. Aucun script inline executable."},
+    {"id": 3, "titre": "Externalisation JS effective", "verdict": "pass", "preuve": "INDEX_HTML ne contient que <script src=/app.js>. Logique dans APP_JS. Route /app.js sert APP_JS en text/javascript, GET uniquement (405+Allow:GET sinon). APP_JS = constante statique, aucune donnee dynamique injectee."},
+    {"id": 4, "titre": "Pas de regression du durcissement", "verdict": "pass", "preuve": "Host loopback-only applique AVANT routage y compris /app.js (runtime : GET /app.js Host=evil -> 400 invalid_host). Content-Type strict (415), cap 1 Mo (413), mapping 400/403/404/405/413/415/502 intacts."},
+    {"id": "4bis", "titre": "Pas d'XSS residuelle", "verdict": "pass", "preuve": "Aucun innerHTML/eval/document.write. answer via textContent, statuts via textContent, citations via createElement+textContent+append. Pas d'insertion innerHTML."},
+    {"id": 5, "titre": "Coherence des tests", "verdict": "pass", "preuve": "4 tests ajoutes (headers stricts + absence addEventListener + src=/app.js ; /app.js javascript+headers ; /app.js rejette non-GET ; en-tetes sur JSON 404). Ran 16 tests OK."},
+    {"id": 6, "titre": "General", "verdict": "pass", "preuve": "Aucun secret ni injection de chemin (egalite stricte de path). Cache-Control:no-store sur les 3 fabricants. Content-Type pose en premier, count=1 sur /app.js. Aucune autre regression."}
+  ],
+  "concerns": [],
+  "tests_cibles": {"total": 16, "ok": 16, "skipped": 0, "failed": 0},
+  "suite_complete": {"total": 304, "ok": 304, "skipped": 0, "failed": 0, "qdrant": "1.19.0 reel"},
+  "bout_en_bout": "Verifie avec un vrai serveur wsgiref : GET / (CSP+XFO, sans inline, ref /app.js) et GET /app.js (text/javascript + logique) repondent 200."
+}

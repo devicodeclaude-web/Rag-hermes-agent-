@@ -48,6 +48,19 @@ locale par défaut. Les options sont visibles avec :
 .venv-audit/bin/python scripts/serve_v1.py --help
 ```
 
+**Durcissement HTTP.** L'API n'accepte que les hôtes loopback (`localhost`,
+`127.0.0.1`, `[::1]`), exige `Content-Type: application/json` sur les routes
+mutantes, plafonne le corps à 1 Mo et mappe chaque erreur (400/403/404/405/413/
+415/502) sans fuite de pile. Toute réponse (HTML, JS, JSON) porte les en-têtes de
+sécurité : `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
+`Referrer-Policy: no-referrer`, `Cross-Origin-Opener-Policy: same-origin`,
+`Cross-Origin-Resource-Policy: same-origin`, `Cache-Control: no-store` et une
+**Content-Security-Policy stricte** (`default-src 'none'; script-src 'self'; …;
+frame-ancestors 'none'`). Le JavaScript de l'interface est servi depuis `/app.js`
+(plus aucun `<script>` inline), de sorte que la CSP interdit toute exécution de
+script inline ou `eval`. Seul `style-src 'unsafe-inline'` reste toléré pour la
+feuille de style intégrée (vecteur sans exécution de code).
+
 ### Backend de stockage (mémoire ou Qdrant)
 
 Par défaut, la V1 stocke les segments en mémoire (perdus au redémarrage). Pour

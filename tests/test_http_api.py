@@ -254,6 +254,45 @@ class HttpApiTests(unittest.TestCase):
         self.assertIn('id="document-form"', html)
         self.assertIn('id="question-form"', html)
 
+    def test_home_page_carries_strict_security_headers(self) -> None:
+        _, headers, html = request(self.app, "GET", "/")
+        # Anti-clickjacking, MIME sniffing, referrer leakage and a strict CSP.
+        self.assertEqual(headers["X-Frame-Options"], "DENY")
+        self.assertEqual(headers["X-Content-Type-Options"], "nosniff")
+        self.assertEqual(headers["Referrer-Policy"], "no-referrer")
+        csp = headers["Content-Security-Policy"]
+        self.assertIn("default-src 'none'", csp)
+        self.assertIn("script-src 'self'", csp)
+        # The critical vector — scripts — must never allow inline execution.
+        self.assertNotIn("script-src 'unsafe-inline'", csp)
+        self.assertNotIn("'unsafe-eval'", csp)
+        self.assertIn("frame-ancestors 'none'", csp)
+        # The JS is externalised so the strict CSP is honoured: no inline <script> body.
+        self.assertNotIn("addEventListener", html)
+        self.assertIn('src="/app.js"', html)
+
+    def test_app_js_is_served_as_javascript_with_security_headers(self) -> None:
+        status, headers, body = request(self.app, "GET", "/app.js")
+        self.assertEqual(status, "200 OK")
+        self.assertIn("javascript", headers["Content-Type"])
+        self.assertEqual(headers["X-Content-Type-Options"], "nosniff")
+        # The externalised script holds the form logic.
+        self.assertIn("addEventListener", body)
+        self.assertIn("/api/questions", body)
+
+    def test_app_js_rejects_non_get(self) -> None:
+        status, headers, _ = request(self.app, "POST", "/app.js")
+        self.assertEqual(status, "405 Method Not Allowed")
+        self.assertEqual(headers.get("Allow"), "GET")
+
+    def test_json_responses_carry_security_headers(self) -> None:
+        # Even an error JSON response must carry the baseline security headers.
+        status, headers, _ = request(self.app, "GET", "/does-not-exist")
+        self.assertEqual(status, "404 Not Found")
+        self.assertEqual(headers["X-Content-Type-Options"], "nosniff")
+        self.assertEqual(headers["X-Frame-Options"], "DENY")
+        self.assertEqual(headers["Referrer-Policy"], "no-referrer")
+
     def test_mutating_route_rejects_non_json_content_type(self) -> None:
         status, _, response = request(
             self.app,

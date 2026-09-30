@@ -63,7 +63,14 @@ INDEX_HTML = """<!doctype html>
     <div id="citations"></div>
   </section>
 </main>
-<script>
+<script src="/app.js"></script>
+</body>
+</html>
+"""
+
+APP_JS = """\
+'use strict';
+(() => {
   const byId = (id) => document.getElementById(id);
   const context = () => ({
     tenant_id: byId('tenant').value.trim(),
@@ -136,7 +143,6 @@ INDEX_HTML = """<!doctype html>
       byId('question-status').textContent = `Échec : ${error.message}`;
     } finally { button.disabled = false; }
   });
-</script>
-</body>
-</html>
+})();
 """
+
