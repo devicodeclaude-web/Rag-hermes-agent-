@@ -6,6 +6,7 @@ import re
 from typing import Any, Callable, Iterable
 
 from .acl import AuthorizationContext
+from .generator import GenerationError
 from .ingestion import Document
 from .service import RagService
 from .web_ui import INDEX_HTML
@@ -169,6 +170,12 @@ def make_app(service: RagService):
             question = _string(payload["question"], "question")
             result = service.answer(question, context=context)
             return _json_response(start_response, "200 OK", asdict(result))
+        except GenerationError:
+            return _json_response(
+                start_response,
+                "502 Bad Gateway",
+                {"error": "generation_failed"},
+            )
         except PermissionError as exc:
             return _json_response(
                 start_response,

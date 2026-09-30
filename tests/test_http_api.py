@@ -7,6 +7,7 @@ from typing import Any
 import unittest
 
 from rag_hermes.http_api import make_app
+from rag_hermes.generator import GenerationError, OpenAICompatibleGenerator
 from rag_hermes.service import RagService
 
 
@@ -87,6 +88,162 @@ class HttpApiTests(unittest.TestCase):
         self.assertEqual(answer_status, "200 OK")
         self.assertFalse(answered["abstained"])
         self.assertEqual(answered["citations"][0]["document_id"], "guide-installation")
+
+    def test_generator_failure_returns_bad_gateway_not_abstention(self) -> None:
+        def fail_generator(question, evidence):
+            raise GenerationError("provider unavailable")
+
+        service = RagService(generator=fail_generator)
+        app = make_app(service)
+        document = {
+            "document_id": "guide",
+            "content": "Hermes s'installe avec pipx install hermes-agent.",
+            "tenant_id": "alpha",
+            "visibility": "private",
+            "owner_id": "alice",
+            "allowed_groups": ["support"],
+            "allowed_users": [],
+            "classification": 1,
+            "doc_version": 1,
+            "source_uri": "local://guide",
+        }
+        request(
+            app,
+            "POST",
+            "/api/documents",
+            {"context": self.context, "document": document},
+        )
+
+        status, _, response = request(
+            app,
+            "POST",
+            "/api/questions",
+            {"context": self.context, "question": "Comment installer Hermes ?"},
+        )
+
+        self.assertEqual(status, "502 Bad Gateway")
+        self.assertEqual(response, {"error": "generation_failed"})
+
+    def test_reranker_failure_returns_bad_gateway_not_bad_request(self) -> None:
+        # A reranker returning the wrong number of scores is a server-side
+        # component failure. It must surface as 502 (generation_failed), never
+        # as a 400 that would misattribute the fault to the client request.
+        def broken_reranker(question, chunks):
+            return [1.0]  # wrong length when more than one candidate
+
+        def generate(question, evidence):
+            return "Réponse [S1]."
+
+        service = RagService(
+            generator=generate,
+            reranker=broken_reranker,
+            retrieval_k=10,
+            top_k=2,
+        )
+        app = make_app(service)
+        for suffix in ("un", "deux"):
+            document = {
+                "document_id": f"guide-{suffix}",
+                "content": f"Hermes s'installe avec la methode {suffix}.",
+                "tenant_id": "alpha",
+                "visibility": "private",
+                "owner_id": "alice",
+                "allowed_groups": ["support"],
+                "allowed_users": [],
+                "classification": 1,
+                "doc_version": 1,
+                "source_uri": f"local://guide-{suffix}",
+            }
+            request(
+                app,
+                "POST",
+                "/api/documents",
+                {"context": self.context, "document": document},
+            )
+
+        status, _, response = request(
+            app,
+            "POST",
+            "/api/questions",
+            {"context": self.context, "question": "Comment installer Hermes ?"},
+        )
+
+        self.assertEqual(status, "502 Bad Gateway")
+        self.assertEqual(response, {"error": "generation_failed"})
+
+    def test_oversized_citation_marker_returns_generic_bad_gateway(self) -> None:
+        content = "Réponse [S" + "9" * 10_000 + "]."
+        raw = json.dumps(
+            {"choices": [{"message": {"content": content}}]}
+        ).encode("utf-8")
+        generator = OpenAICompatibleGenerator(
+            base_url="http://127.0.0.1:8000/v1",
+            model="qwen-local",
+            transport=lambda request, timeout: raw,
+        )
+        app = make_app(RagService(generator=generator))
+        document = {
+            "document_id": "guide",
+            "content": "Hermes s'installe avec pipx install hermes-agent.",
+            "tenant_id": "alpha",
+            "visibility": "private",
+            "owner_id": "alice",
+            "allowed_groups": ["support"],
+            "allowed_users": [],
+            "classification": 1,
+            "doc_version": 1,
+            "source_uri": "local://guide",
+        }
+        request(
+            app,
+            "POST",
+            "/api/documents",
+            {"context": self.context, "document": document},
+        )
+
+        status, _, response = request(
+            app,
+            "POST",
+            "/api/questions",
+            {"context": self.context, "question": "Comment installer Hermes ?"},
+        )
+
+        self.assertEqual(status, "502 Bad Gateway")
+        self.assertEqual(response, {"error": "generation_failed"})
+
+    def test_generator_answer_without_resolved_citation_returns_bad_gateway(self) -> None:
+        def generate(question, evidence):
+            return "Réponse non fondée sans marqueur de source."
+
+        app = make_app(RagService(generator=generate))
+        document = {
+            "document_id": "guide",
+            "content": "Hermes s'installe avec pipx install hermes-agent.",
+            "tenant_id": "alpha",
+            "visibility": "private",
+            "owner_id": "alice",
+            "allowed_groups": ["support"],
+            "allowed_users": [],
+            "classification": 1,
+            "doc_version": 1,
+            "source_uri": "local://guide",
+        }
+        request(
+            app,
+            "POST",
+            "/api/documents",
+            {"context": self.context, "document": document},
+        )
+
+        status, _, response = request(
+            app,
+            "POST",
+            "/api/questions",
+            {"context": self.context, "question": "Comment installer Hermes ?"},
+        )
+
+        self.assertEqual(status, "502 Bad Gateway")
+        self.assertEqual(response, {"error": "generation_failed"})
 
     def test_home_page_exposes_mobile_import_and_question_interface(self) -> None:
         status, headers, html = request(self.app, "GET", "/")

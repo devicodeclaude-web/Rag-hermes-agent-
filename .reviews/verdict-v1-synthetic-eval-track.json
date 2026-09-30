@@ -1,0 +1,23 @@
+{
+  "passed": true,
+  "date_utc": "2026-09-30",
+  "repo": "/root/rag-hermes-agent",
+  "branch": "feat/local-v1-web",
+  "scope": "Piste d'evaluation SYNTHETIQUE separee : extension du schema (provenance synthetic_generated_from_corpus non quality-eligible + is_quality_eligible), migrateur dataset-v1 (100 Q, labels document) -> dataset-synthetic.jsonl (spans document entier), sans contaminer la piste humaine dataset-v2. Fichiers : rag_hermes/evaluation_dataset.py, rag_hermes/synthetic_dataset.py, scripts/migrate_v1_to_synthetic.py, tests/test_synthetic_dataset.py, tests/test_evaluation_dataset.py, README.md, data/benchmark/dataset-synthetic.jsonl.",
+  "reviewer": "sous-agent independant fail-closed (leaf) — revue integrite scientifique",
+  "resume": "Correct, non-circulaire, fail-closed et honnete. 8/8 points satisfaits contre CODE ET DONNEES REELS. 100/100 cas valident le schema strict avec manifeste pinne, 0 quality-eligible, 80 repondables (spans document entier, hashes recalcules independamment conformes) + 20 abstentions propres, migration deterministe byte-identique, gardes fail-closed effectives, piste humaine dataset-v2 absente et non contaminee, README fidele. 19 tests cibles OK, 0 echec, 0 skip. Aucun fichier modifie.",
+  "checkpoints": [
+    {"id": 1, "titre": "Non-circularite stricte", "verdict": "pass", "preuve": "evaluation_dataset.py:9-27 : _QUALITY_ELIGIBLE_PROVENANCE = 2 provenances humaines ; SYNTHETIC_PROVENANCE ajoutee a _ALLOWED_PROVENANCE (acceptee) mais is_quality_eligible() False pour elle. Donnees : 100 cas provenance=synthetic, quality_eligible=0. Provenance inconnue REJETEE (ValueError). test_rejects_unknown_provenance OK."},
+    {"id": 2, "titre": "Separation des pistes", "verdict": "pass", "preuve": "migrateur ecrit UNIQUEMENT dataset-synthetic.jsonl ; validate_dataset_v2.py lit uniquement dataset-v2.jsonl. dataset-v2 absent du depot ; apres migration reelle, toujours absent. Aucun chemin de code n'insere un cas synthetique dans la piste humaine."},
+    {"id": 3, "titre": "Integrite des labels (hashes recalcules)", "verdict": "pass", "preuve": "80 spans verifies independamment : sha256(content complet) recalcule depuis le corpus -> 0 echec ; start=0, end=len(content), grade=2. 20 no_answer : should_abstain=true, spans=[], reason non vide. Correspondance parfaite avec dataset-v1 (mêmes case_id, questions, docs->spans, 0 divergence/100)."},
+    {"id": 4, "titre": "Validation stricte + fail-closed", "verdict": "pass", "preuve": "Manifeste pinne b682a98.../af0631... ; 100 cas passent validate_evaluation_case (0 rejet). build_synthetic_case echoue proprement (ValueError) sur : doc inexistant, no_answer avec docs, categorie repondable sans doc. Revalidation canonique avant retour."},
+    {"id": 5, "titre": "Determinisme + pas d'effet destructeur", "verdict": "pass", "preuve": "Re-run byte-identique (sha256sum -c OK, git diff vide). Ecriture confinee a args.target ; aucune donnee hors dataset-synthetic.jsonl ecrasee ; arbre git inchange."},
+    {"id": 6, "titre": "Honnetete documentaire (README)", "verdict": "pass", "preuve": "README decrit fidelement : granularite document entier (pas passage), provenance synthetique jamais quality-eligible / non probante, piste humaine vide attendant >=30 questions manuelles, gate READY conditionne. Chiffres confirmes par recalcul. Aucune sur-affirmation."},
+    {"id": 7, "titre": "Coherence des tests (compte reel)", "verdict": "pass", "preuve": "unittest tests.test_synthetic_dataset tests.test_evaluation_dataset : Ran 19 tests, OK, 0 echec, 0 skip. Invariants reellement exerces (span+hash+ineligible, abstention, rejets fail-closed, provenances). Pas de faux vert."},
+    {"id": 8, "titre": "Securite / regressions", "verdict": "pass", "preuve": "Aucun secret/eval/exec/subprocess/shell. Chemins confines. Scripts d'annotation V2 inchanges et non affectes. Ajouts au schema purement additifs ; aucune regression (suite schema V2 existante passe)."}
+  ],
+  "concerns": [],
+  "tests_cibles": {"total": 19, "ok": 19, "skipped": 0, "failed": 0},
+  "suite_complete": {"total": 273, "ok": 273, "skipped": 0, "failed": 0, "qdrant": "1.19.0 reel @127.0.0.1:6405"},
+  "donnees": {"dataset_synthetic": "100 cas (80 repondables spans document entier + 20 abstentions), 0 quality-eligible, reference_status=pending", "piste_humaine": "dataset-v2.jsonl absent (vide), gate BLOCKED honnete (exit 2)"}
+}

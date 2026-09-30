@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+import re
 from typing import Any
 
 from .acl import Chunk
@@ -30,17 +31,19 @@ def chunk_document(
     if overlap_tokens < 0 or overlap_tokens >= max_tokens:
         raise ValueError("overlap_tokens must be between 0 and max_tokens - 1")
 
-    words = document.content.split()
-    if not words:
+    word_matches = list(re.finditer(r"\S+", document.content))
+    if not word_matches:
         return []
 
     source_sha = hashlib.sha256(document.content.encode("utf-8")).hexdigest()
     step = max_tokens - overlap_tokens
     chunks: list[Chunk] = []
-    for index, start in enumerate(range(0, len(words), step)):
-        window = words[start : start + max_tokens]
+    for index, start in enumerate(range(0, len(word_matches), step)):
+        window = word_matches[start : start + max_tokens]
         if not window:
             break
+        start_offset = window[0].start()
+        end_offset = window[-1].end()
         chunk_id_material = (
             f"{document.document_id}:{document.doc_version}:{index}:{source_sha}"
         )
@@ -49,7 +52,7 @@ def chunk_document(
             Chunk(
                 chunk_id=chunk_id,
                 document_id=document.document_id,
-                text=" ".join(window),
+                text=document.content[start_offset:end_offset],
                 tenant_id=document.tenant_id,
                 visibility=document.visibility,
                 allowed_groups=document.allowed_groups,
@@ -59,10 +62,12 @@ def chunk_document(
                 doc_version=document.doc_version,
                 source_sha=source_sha,
                 source_uri=document.source_uri,
+                start_offset=start_offset,
+                end_offset=end_offset,
                 acl_version=document.acl_version,
             )
         )
-        if start + max_tokens >= len(words):
+        if start + max_tokens >= len(word_matches):
             break
     return chunks
 

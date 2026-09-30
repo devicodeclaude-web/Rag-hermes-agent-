@@ -24,6 +24,7 @@ class EvaluationCase:
     leaked_chunk_ids: tuple[str, ...]
     technical_failure: Literal["acl_error", "backend_error"] | None = None
     citation_judgments: tuple[CitationJudgment, ...] | None = None
+    retrieved_relevance_ids_by_rank: tuple[tuple[str, ...], ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -47,28 +48,64 @@ def _safe_ratio(numerator: int | float, denominator: int | float) -> float:
 
 
 def evaluate(cases: Iterable[EvaluationCase], k: int) -> EvaluationReport:
+    if type(k) is not int or k < 1:
+        raise ValueError("k must be a positive integer")
     items = list(cases)
     if not items:
         raise ValueError("at least one evaluation case is required")
-    if k < 1:
-        raise ValueError("k must be positive")
     allowed_failures = {None, "acl_error", "backend_error"}
     if any(case.technical_failure not in allowed_failures for case in items):
         raise ValueError("unknown technical failure status")
     if any(case.technical_failure and case.did_abstain for case in items):
         raise ValueError("a technical failure cannot be recorded as an abstention")
+    for case in items:
+        ranked = case.retrieved_relevance_ids_by_rank
+        if ranked is None:
+            continue
+        if len(ranked) != len(case.retrieved_chunk_ids):
+            raise ValueError("ranked relevance map length does not match retrievals")
+        relevant = set(case.relevant_chunk_ids)
+        for retrieved_id, labels in zip(case.retrieved_chunk_ids, ranked):
+            if len(labels) != len(set(labels)):
+                raise ValueError("ranked relevance map contains duplicate labels")
+            if any(label not in relevant for label in labels):
+                raise ValueError("ranked relevance map contains unknown labels")
+            if labels and retrieved_id != labels[0]:
+                raise ValueError("ranked relevance map does not match retrieved labels")
 
     answerable = [case for case in items if case.relevant_chunk_ids]
     recalls: list[float] = []
     reciprocal_ranks: list[float] = []
     for case in answerable:
         relevant = set(case.relevant_chunk_ids)
-        top_k = case.retrieved_chunk_ids[:k]
-        recalls.append(_safe_ratio(len(relevant.intersection(top_k)), len(relevant)))
-        rank = next(
-            (index for index, chunk_id in enumerate(case.retrieved_chunk_ids, 1) if chunk_id in relevant),
-            None,
-        )
+        if case.retrieved_relevance_ids_by_rank is None:
+            top_k = case.retrieved_chunk_ids[:k]
+            covered = relevant.intersection(top_k)
+            rank = next(
+                (
+                    index
+                    for index, chunk_id in enumerate(case.retrieved_chunk_ids, 1)
+                    if chunk_id in relevant
+                ),
+                None,
+            )
+        else:
+            covered = relevant.intersection(
+                label
+                for labels in case.retrieved_relevance_ids_by_rank[:k]
+                for label in labels
+            )
+            rank = next(
+                (
+                    index
+                    for index, labels in enumerate(
+                        case.retrieved_relevance_ids_by_rank, 1
+                    )
+                    if relevant.intersection(labels)
+                ),
+                None,
+            )
+        recalls.append(_safe_ratio(len(covered), len(relevant)))
         reciprocal_ranks.append(1.0 / rank if rank else 0.0)
 
     citation_eligible_cases = [case for case in items if case.technical_failure is None]

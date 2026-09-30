@@ -1,0 +1,26 @@
+{
+  "passed": true,
+  "date_utc": "2026-09-30",
+  "repo": "/root/rag-hermes-agent",
+  "branch": "feat/local-v1-web",
+  "head_at_review": "2d880c1",
+  "scope": "diff Git staged uniquement (17 fichiers, +2154/-40) : generateur OpenAI-compatible optionnel, reranker cross-encodeur budgete, runner d'evaluation chunking-independant, cablage RagService + app_factory (RAG_GENERATOR_*, RAG_TOP_K, RAG_RETRIEVAL_K)",
+  "reviewer": "sous-agent independant fail-closed (leaf)",
+  "resume": "Chaque point de controle obligatoire verifie contre le code reel ET exerce au runtime. Aucune preoccupation de securite reelle ni erreur de logique. Suite complete : 263 tests OK, 0 skip, Qdrant 1.19.0 reel @127.0.0.1:6401.",
+  "checkpoints": [
+    {"id": 1, "titre": "SSRF/exfiltration", "verdict": "pass", "preuve": "generator.py urlsplit + parsed.port ; rejette scheme != http/https, hostname vide, username/password (bloque userinfo bypass), query, fragment ; http seulement sur {localhost,127.0.0.1,::1}. _NoRedirectHandler desactive redirections. Cap : lit MAX+1 puis rejette >1_000_000. api_key ASCII 33-126. 15/15 cas SSRF + 5/5 api_key OK au runtime (::ffff:127.0.0.1, 127.0.0.1.evil.com, 0.0.0.0 rejetes)."},
+    {"id": 2, "titre": "Injection de prompt", "verdict": "pass", "preuve": "_SYSTEM_PROMPT traite sources comme donnees non fiables ; user message = json.dumps({question,sources}) : le texte source reste une valeur JSON, jamais promu en instruction."},
+    {"id": 3, "titre": "Integrite citations + anti-DoS int()", "verdict": "pass", "preuve": "Generateur exige [Sn] valide/abstention exacte. Service : allowed=dict de str, allowed.get(marker) ; 0 citation -> GenerationError. Comparaison PAR CHAINE (aucun int()). Runtime : [S<100000 chiffres>]->GenerationError, [S99]->GenerationError, dedup ordre 1ere citation."},
+    {"id": 4, "titre": "Reranker n'elargit jamais l'autorisation", "verdict": "pass", "preuve": "evidence = results >= minimum_score (deja ACL-filtres) ; rerank reordonne+[:top_k], jamais re-fetch. retrieval_k>=top_k impose. len(scores) validee 2x. assert_pair_fits (truncation=False) rejette avant scoring - model.compute_score jamais appele. Tie-break (-score, chunk_id) deterministe."},
+    {"id": 5, "titre": "Runner d'evaluation", "verdict": "pass", "preuve": "validate_evaluation_case pour TOUS les cas AVANT exec (runtime: stale->0 appel). _validate_chunk : offsets int, 0<=start<end<=len, text==content[start:end]. Fuite -> leaked. Anti-collision: labels 'span:...' vs 'chunk:...' disjoints -> attaquant recall 0.0."},
+    {"id": 6, "titre": "Durcissements de type", "verdict": "pass", "preuve": "evaluate: type(k) is not int (rejette True/1.5/'1'). map rang: longueur/doublons/labels inconnus. dataset: should_abstain bool strict, offsets int stricts (bool exclu), grade int 1/2, intervalles dupliques rejetes."},
+    {"id": 7, "titre": "ingestion offsets/texte canonique", "verdict": "pass", "preuve": "re.finditer(\\S+), start/end offsets reels, text=content[start:end]. chunk_id_material inchange. Runtime: tous chunk.text==content[start:end] (espaces multiples/tab), chunk_id stables."},
+    {"id": 8, "titre": "app_factory/http_api", "verdict": "pass", "preuve": "base_url+model ensemble (XOR->ValueError). RAG_TOP_K/RETRIEVAL_K int strict >=1. GenerationError->502 corps statique, aucune stack/secret. api_key malformee: secret absent du message."},
+    {"id": 9, "titre": "General", "verdict": "pass", "preuve": "Aucun secret en dur (seul 'placeholder-generator-key' en tests). Pas d'injection chemin/filtre. Pas de regression ACL (acl.py inchange). isinstance payload valide. 263 tests OK 0 skip Qdrant reel."}
+  ],
+  "observations_mineures": [
+    "http_api: une ValueError levee par un reranker/generateur injecte defaillant (mauvais nombre de scores) est captee par le except generique -> HTTP 400 au lieu de 5xx. PAS une faille (fail-closed, message generique sans stack/secret). Statut perfectible seulement."
+  ],
+  "tests": {"total": 263, "ok": 263, "skipped": 0, "failed": 0, "qdrant": "1.19.0 reel @127.0.0.1:6401"},
+  "note_chemin": "Depot reel = /root/rag-hermes-agent (feat/local-v1-web, HEAD 2d880c1)."
+}
