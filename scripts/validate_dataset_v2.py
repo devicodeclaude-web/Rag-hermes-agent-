@@ -41,6 +41,46 @@ def span_signature(case: dict) -> tuple:
     ))
 
 
+def gate_report(
+    *,
+    total: int,
+    en: int,
+    fr: int,
+    complete_pairs: int,
+    reviewed: int,
+    target_en: int,
+    target_fr_pairs: int,
+) -> dict:
+    """Build the gate report with an actionable ``remaining`` block.
+
+    Preserves all historical keys (total, en2en, fr2en, complete_en_fr_pairs,
+    reviewed, pending, target_en, target_fr_pairs, structural, status) and adds
+    ``remaining`` (how many EN cases, FR pairs and reviews are still needed) plus
+    a boolean ``targets_met``. Remaining counts never go negative.
+    """
+    targets_met = (
+        en >= target_en and complete_pairs >= target_fr_pairs and reviewed == total
+    )
+    return {
+        "total": total,
+        "en2en": en,
+        "fr2en": fr,
+        "complete_en_fr_pairs": complete_pairs,
+        "reviewed": reviewed,
+        "pending": total - reviewed,
+        "target_en": target_en,
+        "target_fr_pairs": target_fr_pairs,
+        "remaining": {
+            "en2en_cases": max(0, target_en - en),
+            "fr_pairs": max(0, target_fr_pairs - complete_pairs),
+            "to_review": max(0, total - reviewed),
+        },
+        "structural": "valid",
+        "targets_met": targets_met,
+        "status": "READY" if targets_met else "BLOCKED_review_or_volume",
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--require-complete", action="store_true",
@@ -90,23 +130,17 @@ def main() -> int:
     fr = [c for c in cases if c["track"] == "fr2en"]
     reviewed = sum(1 for c in cases if c["reference_status"] in REVIEW_STATUSES_DONE)
 
-    report = {
-        "total": len(cases),
-        "en2en": len(en),
-        "fr2en": len(fr),
-        "complete_en_fr_pairs": complete_pairs,
-        "reviewed": reviewed,
-        "pending": len(cases) - reviewed,
-        "target_en": TARGET_EN,
-        "target_fr_pairs": TARGET_FR_PAIRS,
-        "structural": "valid",
-    }
-
-    targets_met = (len(en) >= TARGET_EN and complete_pairs >= TARGET_FR_PAIRS
-                   and reviewed == len(cases))
-    report["status"] = "READY" if targets_met else "BLOCKED_review_or_volume"
+    report = gate_report(
+        total=len(cases),
+        en=len(en),
+        fr=len(fr),
+        complete_pairs=complete_pairs,
+        reviewed=reviewed,
+        target_en=TARGET_EN,
+        target_fr_pairs=TARGET_FR_PAIRS,
+    )
     print(json.dumps(report, ensure_ascii=False, indent=2))
-    return 0 if targets_met else 2
+    return 0 if report["targets_met"] else 2
 
 
 if __name__ == "__main__":

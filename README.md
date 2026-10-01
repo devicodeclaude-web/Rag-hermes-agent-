@@ -261,7 +261,10 @@ de qualité humaine (non-circularité).
    n’est `READY` qu’avec 100 cas EN, 40 paires FR complètes et **toutes** les
    références revues (`validated`/`arbitrated`). Objectif README : au moins 30 des
    questions écrites à la main. Cette piste est aujourd’hui **vide** et attend les
-   annotations humaines (voir `scripts/annotate_eval_case.py`).
+   annotations humaines (voir `scripts/annotate_eval_case.py`). Le rapport du gate
+   expose un bloc `remaining` actionnable (`en2en_cases`, `fr_pairs`, `to_review`)
+   indiquant exactement ce qu’il reste à produire pour atteindre `READY`, ainsi
+   qu’un booléen `targets_met`.
 
 2. **Piste synthétique — `data/benchmark/dataset-synthetic.jsonl`.** Migration du
    jeu généré `dataset-v1.jsonl` (100 questions) vers le schéma canonique via
