@@ -361,6 +361,25 @@ répondables). Ces chiffres ne mesurent PAS la justesse des réponses : seule la
 réel sera fourni, on remplace les deux callables injectés par les générateurs
 réseau (RAG et baseline).
 
+#### Agrégation des verdicts humains
+
+Une fois le fichier `campaign-review-sample.jsonl` rempli (chaque
+`human_verdict.rag_correct` / `closed_book_correct` mis à `true`/`false`),
+`scripts/aggregate_review.py` calcule la **justesse** de chaque campagne — la
+seule mesure de correction d'une réponse, qu'aucune métrique hors-ligne ne peut
+produire — et écrit `data/results/campaign-review-aggregate.json`.
+
+```bash
+.venv-audit/bin/python scripts/aggregate_review.py            # fail-closed : refuse si une paire reste non revue
+.venv-audit/bin/python scripts/aggregate_review.py --allow-partial  # instantané sur le sous-ensemble revu
+```
+
+Le rapport donne `rag_accuracy`, `closed_book_accuracy` (dénominateur = nombre de
+paires revues), ainsi que `rag_better_count` / `closed_book_better_count` (sur
+combien de cas une campagne est correcte quand l'autre ne l'est pas). Par défaut,
+l'agrégation est **fail-closed** : tant qu'une paire porte un verdict `null`, elle
+refuse de publier une justesse partielle.
+
 ## Architecture du MVP
 
 ```text
