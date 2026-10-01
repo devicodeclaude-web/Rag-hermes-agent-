@@ -48,6 +48,12 @@ locale par défaut. Les options sont visibles avec :
 .venv-audit/bin/python scripts/serve_v1.py --help
 ```
 
+`--port 0` demande au système un port éphémère libre ; le serveur affiche l'URL
+réellement allouée. `SIGTERM` et `Ctrl-C` déclenchent un arrêt propre (message
+`Arrêt du serveur.`, code de sortie 0). Un test d'intégration lance le vrai
+processus HTTP sur un port éphémère, exécute import → question → citation, vérifie
+les en-têtes de sécurité puis confirme l'arrêt propre.
+
 **Durcissement HTTP.** L'API n'accepte que les hôtes loopback (`localhost`,
 `127.0.0.1`, `[::1]`), exige `Content-Type: application/json` sur les routes
 mutantes, plafonne le corps à 1 Mo et mappe chaque erreur (400/403/404/405/413/

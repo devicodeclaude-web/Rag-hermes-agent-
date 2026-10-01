@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import os
 from pathlib import Path
+import signal
 import sys
 from wsgiref.simple_server import make_server
 
@@ -36,26 +37,34 @@ def parse_args() -> argparse.Namespace:
         "--port",
         type=int,
         default=8080,
-        help="port HTTP (défaut : 8080)",
+        help="port HTTP (défaut : 8080 ; 0 = port libre automatique)",
     )
     return parser.parse_args()
 
 
+def _stop_on_signal(_signum, _frame) -> None:
+    """Leave serve_forever cleanly when the process receives SIGTERM."""
+    raise KeyboardInterrupt
+
+
 def main() -> int:
     args = parse_args()
-    if not 1 <= args.port <= 65535:
-        raise SystemExit("--port doit être compris entre 1 et 65535")
+    if not 0 <= args.port <= 65535:
+        raise SystemExit("--port doit être compris entre 0 et 65535")
     app = make_app(build_service(env=os.environ))
     with make_server(args.host, args.port, app) as server:
         backend = "Qdrant" if os.environ.get("RAG_QDRANT_URL", "").strip() else "mémoire"
         print(
-            f"RAG Hermes V1 ({backend}) : http://{args.host}:{args.port}",
+            f"RAG Hermes V1 ({backend}) : http://{args.host}:{server.server_port}",
             flush=True,
         )
+        previous_sigterm = signal.signal(signal.SIGTERM, _stop_on_signal)
         try:
             server.serve_forever()
         except KeyboardInterrupt:
             print("\nArrêt du serveur.", flush=True)
+        finally:
+            signal.signal(signal.SIGTERM, previous_sigterm)
     return 0
 
 
