@@ -24,3 +24,4 @@ id_rsa*
 **/config.toml
 .ssh/
 data/results/campaign-review-aggregate.json
+data/results/campaign-summary.json

@@ -389,6 +389,24 @@ combien de cas une campagne est correcte quand l'autre ne l'est pas). Par défau
 l'agrégation est **fail-closed** : tant qu'une paire porte un verdict `null`, elle
 refuse de publier une justesse partielle.
 
+#### Rapport consolidé de campagne
+
+`scripts/consolidate_campaign.py` réunit les rapports de retrieval synthétique,
+de comparaison d'abstention et de justesse humaine dans
+`data/results/campaign-summary.json`, sans mélanger leurs niveaux de preuve :
+
+```bash
+.venv-audit/bin/python scripts/consolidate_campaign.py
+```
+
+Les sections restent distinctes (`retrieval_technical`,
+`abstention_comparison`, `human_correctness`). Le consolidateur vérifie la
+cohérence des nombres de cas et de la taille de l'échantillon humain. Codes de
+sortie : `0` si la campagne synthétique et sa revue sont complètes, `2` si la
+revue humaine est absente/incomplète, `1` sur incohérence ou échec du gate de
+sécurité. Même complet, ce rapport conserve `quality_evidence=false` : une piste
+synthétique ne devient jamais une preuve de qualité humaine.
+
 ## Architecture du MVP
 
 ```text
