@@ -1,0 +1,20 @@
+{
+  "axis": "L",
+  "title": "Pré-contrôleur de lot (dry-run) pour l'annotation dataset-v2",
+  "passed": true,
+  "review_rounds": 2,
+  "round_1": "passed=false — lot vide faussement READY_TO_INGEST (exit 0) alors que l'ingest le refuse (exit 1). Réserves non bloquantes: alignement TypeError, test d'innocuité faible, index JSON cosmétique.",
+  "round_2": "passed=true, blocking=[] — correctif vérifié sans régression; innocuité prouvée byte-identical (sha256 + st_mtime_ns); 346 tests, 0 skip, Qdrant 1.19.0 réel, exit 0; module seul 10/10 dont 3 nouveaux.",
+  "repo_path": "/root/rag-hermes-agent",
+  "branch": "feat/local-v1-web",
+  "files": [
+    "scripts/precheck_manual_batch.py",
+    "tests/test_precheck_manual_batch.py"
+  ],
+  "suite": {"tests": 346, "skips": 0, "exit": 0, "qdrant": "1.19.0 réel"},
+  "non_blocking_concerns": [
+    "ingest_manual_batch sur fichier illisible sort en exit 1 via traceback non capturé (même code que precheck, pas de divergence d'acceptation; ergonomie améliorable, hors scope).",
+    "data/benchmark/corpus_document_ids.txt et mon_lot_pilote.jsonl non suivis — aides de travail, hors périmètre du diff."
+  ],
+  "summary_source": "/root/.hermes/cache/delegation/subagent-summary-0-20261002_131012_315089.txt"
+}
