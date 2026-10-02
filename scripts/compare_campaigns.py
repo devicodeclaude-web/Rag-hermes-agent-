@@ -22,6 +22,7 @@ import argparse
 import json
 from pathlib import Path
 import sys
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -37,7 +38,10 @@ from rag_hermes.campaign_compare import compare_campaigns
 from rag_hermes.closed_book import CLOSED_BOOK_ABSTENTION
 from rag_hermes.eval_corpus import DEFAULT_CORPUS, corpus_manifest, load_documents
 from rag_hermes.evaluation_dataset import is_quality_eligible
-from rag_hermes.generator import ABSTENTION_ANSWER as RAG_ABSTENTION
+from rag_hermes.generator import (
+    ABSTENTION_ANSWER as RAG_ABSTENTION,
+    GenerationError,
+)
 from rag_hermes.synthetic_report import build_public_service
 
 DATASET = ROOT / "data/benchmark/dataset-synthetic.jsonl"
@@ -53,7 +57,60 @@ def load_cases(path: Path) -> list[dict]:
     ]
 
 
-def main() -> int:
+def _invalidate_outputs(paths: tuple[Path, ...]) -> None:
+    failures: list[OSError] = []
+    for path in paths:
+        if not path.exists():
+            continue
+        try:
+            path.write_text('{"status":"INVALIDATED"}\n', encoding="utf-8")
+        except OSError as exc:
+            failures.append(exc)
+        try:
+            path.unlink()
+        except OSError as exc:
+            failures.append(exc)
+    if failures:
+        raise OSError("campaign artifact invalidation failed")
+
+
+def _staged_text(path: Path, content: str) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        dir=path.parent,
+        prefix=f".{path.name}.tmp.",
+        delete=False,
+    ) as handle:
+        handle.write(content)
+        handle.flush()
+        os.fsync(handle.fileno())
+        return Path(handle.name)
+
+
+def _publish_artifacts(
+    report_path: Path,
+    report_content: str,
+    review_path: Path,
+    review_content: str,
+) -> None:
+    report_tmp: Path | None = None
+    review_tmp: Path | None = None
+    try:
+        report_tmp = _staged_text(report_path, report_content)
+        review_tmp = _staged_text(review_path, review_content)
+        os.replace(review_tmp, review_path)
+        review_tmp = None
+        os.replace(report_tmp, report_path)
+        report_tmp = None
+    finally:
+        for temporary in (report_tmp, review_tmp):
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+
+
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", type=Path, default=DATASET)
     parser.add_argument("--corpus", type=Path, default=DEFAULT_CORPUS)
@@ -62,7 +119,55 @@ def main() -> int:
     parser.add_argument("--review-fraction", type=float, default=0.2)
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--minimum-score", type=float, default=0.05)
-    args = parser.parse_args()
+    return parser
+
+
+def _build_path_parser() -> argparse.ArgumentParser:
+    # Tolerant parser used only to recover the artifact paths *before* strict
+    # parsing. It must accept everything (add_help=False, parse_known_args) so
+    # that even an invalid --seed/--minimum-score still lets us invalidate stale
+    # outputs: a failed run must never leave a consumable, out-of-date report.
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--dataset", type=Path, default=DATASET)
+    parser.add_argument("--corpus", type=Path, default=DEFAULT_CORPUS)
+    parser.add_argument("--report", type=Path, default=REPORT)
+    parser.add_argument("--review", type=Path, default=REVIEW)
+    return parser
+
+
+def main() -> int:
+    # --help must exit before any side effect, so honour it first via the full
+    # parser (argparse raises SystemExit on -h/--help before we touch disk).
+    if any(argument in {"-h", "--help"} for argument in sys.argv[1:]):
+        _build_parser().parse_args()
+
+    # Recover artifact paths tolerantly and invalidate stale outputs *before*
+    # strict parsing, so even an invalid argument fails closed (no consumable
+    # out-of-date report survives the run).
+    path_args, _ = _build_path_parser().parse_known_args()
+
+    input_paths = {path_args.dataset.resolve(), path_args.corpus.resolve()}
+    output_paths = {path_args.report.resolve(), path_args.review.resolve()}
+    all_paths = (path_args.dataset, path_args.corpus, path_args.report, path_args.review)
+    existing_alias = any(
+        left.exists() and right.exists() and left.samefile(right)
+        for index, left in enumerate(all_paths)
+        for right in all_paths[index + 1:]
+    )
+    if len(output_paths) != 2 or output_paths & input_paths or existing_alias:
+        print("VIOLATION: output paths must be distinct from inputs and each other",
+              file=sys.stderr)
+        return 1
+    try:
+        _invalidate_outputs((path_args.report, path_args.review))
+    except OSError:
+        print("VIOLATION: unable to invalidate previous campaign artifacts",
+              file=sys.stderr)
+        return 1
+
+    # Strict parse now; an invalid argument exits with code 2 *after* the stale
+    # artifacts have already been removed above.
+    args = _build_parser().parse_args()
 
     cases = load_cases(args.dataset)
     documents = load_documents(args.corpus)
@@ -86,10 +191,7 @@ def main() -> int:
     baseline = build_baseline_generator(env=os.environ)
     if baseline is not None:
         def closed_book_answer(question: str) -> str:
-            try:
-                return baseline(question)
-            except Exception:
-                return CLOSED_BOOK_ABSTENTION
+            return baseline(question)
     else:
         def closed_book_answer(_question: str) -> str:
             return CLOSED_BOOK_ABSTENTION
@@ -102,6 +204,9 @@ def main() -> int:
             review_fraction=args.review_fraction,
             seed=args.seed,
         )
+    except GenerationError:
+        print("BACKEND_ERROR: generator unavailable", file=sys.stderr)
+        return 1
     except ValueError as exc:
         print(f"VIOLATION: {exc}", file=sys.stderr)
         return 1
@@ -122,10 +227,7 @@ def main() -> int:
         "closed_book_abstention_recall": result.closed_book_abstention_recall,
     }
 
-    args.report.parent.mkdir(parents=True, exist_ok=True)
-    args.report.write_text(
-        json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-    )
+    report_content = json.dumps(report, ensure_ascii=False, indent=2) + "\n"
 
     # Human-review file: one pair per line, with empty verdict fields to fill.
     review_lines = []
@@ -137,7 +239,13 @@ def main() -> int:
             "notes": "",
         }
         review_lines.append(json.dumps(record, ensure_ascii=False))
-    args.review.write_text("\n".join(review_lines) + "\n", encoding="utf-8")
+    review_content = "\n".join(review_lines) + "\n"
+
+    try:
+        _publish_artifacts(args.report, report_content, args.review, review_content)
+    except OSError:
+        print("VIOLATION: unable to publish campaign artifacts", file=sys.stderr)
+        return 1
 
     print(json.dumps(report, ensure_ascii=False, indent=2))
     print(f"\nreview sample -> {args.review} ({len(result.review_sample)} pairs)")

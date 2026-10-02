@@ -367,8 +367,13 @@ défaut. Résultat vérifié (100 cas, seed 1) : `rag_abstention_recall = 0,0`
 1,0` mais `precision = 0,2` (le stub s'abstient partout, y compris à tort sur les
 répondables). Ces chiffres ne mesurent PAS la justesse des réponses : seule la
 **revue humaine ≥20 %** (le fichier de paires produit) le fait. Quand un endpoint
-réel sera fourni, on remplace les deux callables injectés par les générateurs
-réseau (RAG et baseline).
+réel sera fourni, le comparateur utilise le générateur baseline réseau. Une panne
+HTTP, une réponse invalide ou toute autre `GenerationError` produit alors
+`BACKEND_ERROR` et un code de sortie `1`, avant l'écriture des artefacts : une
+panne technique n'est jamais recodée comme abstention. Les anciennes cibles de
+rapport et de revue sont invalidées au démarrage (avec refus des chemins qui
+aliasent les entrées), afin qu'un échec ne laisse pas une campagne obsolète
+consommable comme résultat courant.
 
 #### Agrégation des verdicts humains
 
