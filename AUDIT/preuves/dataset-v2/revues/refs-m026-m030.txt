@@ -1,0 +1,67 @@
+# PRESERVED REVIEW EVIDENCE — verbatim subagent output
+# source: /root/.hermes/cache/delegation/subagent-summary-3-20261004_111714_654259.txt
+# copied_utc: 2026-10-04T11:46:57Z
+# NOTE: do not edit; raw reviewer output (evidence).
+
+[
+  {
+    "case_id": "m-026",
+    "question_en": "Can Hermes execute code in an isolated sandbox?",
+    "question_fr": "Hermes peut-il exécuter du code dans un bac à sable isolé ?",
+    "document_id": "hermes-agent:user-guide/features/code-execution.md",
+    "passage_text": "",
+    "start_char": null,
+    "end_char": null,
+    "sha256": null,
+    "usable": false,
+    "note": "Des documents candidats mentionnant execute_code et plusieurs environnements sandbox ont été trouvés, mais aucun passage central n’a été vérifié avec corpus_lookup.py check."
+  },
+  {
+    "case_id": "m-027",
+    "question_en": "Does Hermes retain a record of its task trajectories?",
+    "question_fr": "Hermes conserve-t-il une trace de ses trajectoires de tâches ?",
+    "document_id": "hermes-agent:developer-guide/trajectory-format.md",
+    "passage_text": "",
+    "start_char": null,
+    "end_char": null,
+    "sha256": null,
+    "usable": false,
+    "note": "Le document candidat indique que Hermes enregistre des trajectoires de conversation au format JSONL compatible ShareGPT, mais aucun passage central n’a été vérifié avec corpus_lookup.py check."
+  },
+  {
+    "case_id": "m-028",
+    "question_en": "Can Hermes switch between multiple models live across multiple platforms?",
+    "question_fr": "Hermes peut-il basculer en direct entre plusieurs modèles sur plusieurs plateformes ?",
+    "document_id": "hermes-agent:user-guide/configuring-models.md",
+    "passage_text": "",
+    "start_char": null,
+    "end_char": null,
+    "sha256": null,
+    "usable": false,
+    "note": "Des documents candidats confirment le changement de modèle en cours de session et la prise en charge de nombreuses plateformes, mais aucun passage central unique couvrant les deux éléments n’a été vérifié avec corpus_lookup.py check."
+  },
+  {
+    "case_id": "m-029",
+    "question_en": "Does Hermes have a desktop application?",
+    "question_fr": "Hermes dispose-t-il d’une application de bureau ?",
+    "document_id": "hermes-agent:getting-started/installation.md",
+    "passage_text": "",
+    "start_char": null,
+    "end_char": null,
+    "sha256": null,
+    "usable": false,
+    "note": "Le document candidat mentionne explicitement le programme d’installation de Hermes Desktop pour macOS et Windows, mais aucun passage central n’a été vérifié avec corpus_lookup.py check."
+  },
+  {
+    "case_id": "m-030",
+    "question_en": "Does Hermes provide an OpenAI-compatible server?",
+    "question_fr": "Hermes fournit-il un serveur compatible avec l’API OpenAI ?",
+    "document_id": "hermes-agent:developer-guide/programmatic-integration.md",
+    "passage_text": "",
+    "start_char": null,
+    "end_char": null,
+    "sha256": null,
+    "usable": false,
+    "note": "Le document candidat mentionne une API HTTP compatible OpenAI, mais aucun passage central n’a été vérifié avec corpus_lookup.py check."
+  }
+]

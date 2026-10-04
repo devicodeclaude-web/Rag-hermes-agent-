@@ -1,0 +1,34 @@
+# audited_commit: 4298b4b27e2efea4f36dc9100ebdb9363a6862a5
+# utc: 2026-10-04T11:42:20Z
+# command: QDRANT_INTEGRATION_URL=http://127.0.0.1:6431 .venv-audit/bin/python -m unittest discover -s tests
+# qdrant: 1.19.0 aarch64 @ 127.0.0.1:6431
+# python: Python 3.14.6
+............................................................................................................................................................................VIOLATION row 1 (m-011-en): passage_text not found verbatim in the canonical document
+...VIOLATION row 0: case_id already in dataset: m-020-en
+...........................................................................................................................................................................
+----------------------------------------------------------------------
+Ran 346 tests in 107.420s
+
+OK
+{
+  "total": 2,
+  "en2en": 1,
+  "fr2en": 1,
+  "complete_en_fr_pairs": 1,
+  "reviewed": 2,
+  "pending": 0,
+  "target_en": 1,
+  "target_fr_pairs": 1,
+  "remaining": {
+    "en2en_cases": 0,
+    "fr_pairs": 0,
+    "to_review": 0
+  },
+  "structural": "valid",
+  "targets_met": true,
+  "status": "READY"
+}
+{"ingested": 1, "dataset": "/data/data/com.termux/files/usr/tmp/tmp9n4e7w5m.jsonl", "case_ids": ["m-001-en"]}
+{"ingested": 1, "dataset": "/data/data/com.termux/files/usr/tmp/tmpnlpqhp0s.jsonl", "case_ids": ["m-002-en"]}
+{"ingested": 1, "dataset": "/data/data/com.termux/files/usr/tmp/tmpvgynsnft.jsonl", "case_ids": ["m-020-en"]}
+# exit: 0

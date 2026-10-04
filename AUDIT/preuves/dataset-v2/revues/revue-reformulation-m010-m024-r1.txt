@@ -1,0 +1,46 @@
+# PRESERVED REVIEW EVIDENCE — verbatim subagent output
+# source: /root/.hermes/cache/delegation/subagent-summary-0-20261004_115032_365599.txt
+# copied_utc: 2026-10-04T11:52:35Z
+# NOTE: do not edit; raw reviewer output (evidence).
+
+Both passages resolve under the `hermes-agent:` prefix (the `claude-code:` prefix in the task is just a display alias — the content matches). Now I have both passages. Let me evaluate each pair.
+
+**m-010** — Passage: `delegate_task — blocked for leaf subagents (the default). Retained for role="orchestrator" children, bounded by max_spawn_depth...`
+- EN: "Which subagent role can still call delegate_task in Hermes?"
+- FR: "Quel rôle de sous-agent peut encore appeler delegate_task dans Hermes ?"
+
+Checks:
+1. EN/FR same sense: ✅ "can still call" ≈ "peut encore appeler", "subagent role" ≈ "rôle de sous-agent". Faithful.
+2. Passage answers directly & sufficiently: ✅ "Retained for role=\"orchestrator\" children" — the answer is `orchestrator`. "Still" maps to "blocked for leaf (default)... Retained for orchestrator". Clear single answer.
+3. Question asks nothing beyond passage: ✅ Asks only which role — passage names exactly one. No over-claim.
+4. Central, not vaguely related: ✅ The passage is precisely about delegate_task availability per role.
+5. Reduction within passage scope: ✅ The reformulated question is strictly narrower, no external detail imported.
+
+m-010 passes cleanly.
+
+**m-024** — Passage: `Turn a mailbox into a bounded queue of decisions. This skill owns thread-aware prioritization and reply policy; connector skills (himalaya, google-workspace) own provider commands.`
+- EN: "What does the Hermes email inbox triage skill own?"
+- FR: "Que gère la skill de tri de boîte mail de Hermes ?"
+
+Checks:
+1. EN/FR same sense: ⚠️ EN uses "own" (precise domain term from passage: "owns thread-aware prioritization and reply policy"). FR uses "gère" (= "manages/handles"), not "possède"/"est responsable de". "Own" vs "gère" is a meaningful drift: the passage draws an explicit ownership boundary ("This skill owns X; connector skills own provider commands"). "Gère" is looser than the passage's "owns" distinction and could be read as including provider commands it handles, blurring the ownership boundary the passage carefully separates. This is a semantic mismatch between EN and FR relative to a passage whose whole point is the ownership distinction.
+2. Passage answers directly: ✅ for EN ("owns thread-aware prioritization and reply policy").
+3. Nothing beyond passage: ✅.
+4. Central: ✅.
+5. Reduction scope: ✅.
+
+The EN/FR divergence on the exact term the passage hinges on ("own"/"owns" vs "gère") is an ambiguity. Under fail-closed, any ambiguity ⇒ passed=false for the pair and globally.
+
+```json
+{"passed":false,"summary":"m-010 passe proprement : le passage nomme exactement un rôle (orchestrator) pouvant encore appeler delegate_task, EN et FR concordent, périmètre réduit et central. m-024 échoue en fail-closed : le passage repose explicitement sur une distinction de PROPRIÉTÉ ('This skill OWNS thread-aware prioritization and reply policy; connector skills OWN provider commands'). L'EN 'own' colle à ce terme, mais le FR 'gère' (manages/handles) est plus large et brouille la frontière de propriété que le passage sépare justement — divergence de sens EN/FR sur le mot-clé central. Note : les document_id réels utilisent le préfixe 'hermes-agent:' (pas 'claude-code:'), mais les passages aux offsets donnés correspondent au contenu attendu.","pairs":[{"pair_id":"m-010","passed":true,"reason":"Passage: 'delegate_task — blocked for leaf subagents (the default). Retained for role=\"orchestrator\" children, bounded by max_spawn_depth'. La question demande quel rôle de sous-agent peut ENCORE appeler delegate_task ; le passage répond directement et uniquement : orchestrator (les leaf étant bloqués par défaut). EN et FR ont le même sens ('can still call' / 'peut encore appeler'). Question strictement réduite, centrale sur le passage, aucune sur-spécificité importée. OK."},{"pair_id":"m-024","passed":false,"reason":"Passage: 'This skill owns thread-aware prioritization and reply policy; connector skills (himalaya, google-workspace) own provider commands.' L'axe du passage est une distinction de PROPRIÉTÉ ('owns'). EN 'own' y colle fidèlement, mais FR 'gère' (= manages/handles) est plus large et ne traduit pas 'own' : il pourrait englober les commandes de connecteur que la skill 'gère' sans les posséder, brouillant la frontière que le passage sépare explicitement. Divergence de sens EN/FR sur le terme central => ambiguïté => fail-closed."}],"blocking":["m-024: divergence sémantique EN/FR sur le terme central 'own' (EN) vs 'gère' (FR); le passage repose sur une distinction de propriété ('this skill owns X; connector skills own provider commands') que 'gère' n'exprime pas fidèlement, ambiguïté non résolue en fail-closed."],"suggestions":["m-024: aligner le FR sur le terme de propriété du passage, p.ex. 'De quoi la skill de tri de boîte mail de Hermes est-elle propriétaire ?' ou 'Que possède/De quoi est responsable la skill de tri de boîte mail de Hermes ?' pour refléter 'owns'.","Note de traçabilité (pas bloquant) : les document_id fournis utilisent le préfixe 'claude-code:' alors que le corpus réel les expose sous 'hermes-agent:'; vérifier que l'alias de préfixe est intentionnel."]}
+```
+
+---
+
+**Résumé pour l'agent parent :**
+
+- **Dépôt réel** : `/root/rag-hermes-agent` (pas `/root/rag-claude-code`). Les `document_id` sont préfixés `hermes-agent:` et non `claude-code:` ; les offsets donnés résolvent bien le bon contenu.
+- **m-010 → PASSED.** Passage nomme exactement un rôle (`orchestrator`) pouvant encore appeler `delegate_task` ; EN/FR concordent ; question réduite, centrale, sans import externe.
+- **m-024 → FAILED (fail-closed).** Le passage repose sur une distinction de **propriété** (« this skill *owns* … ; connector skills *own* provider commands »). L'EN « own » est fidèle, mais le FR « **gère** » (manages/handles) est plus large et brouille la frontière de propriété — divergence de sens EN/FR sur le terme central ⇒ ambiguïté.
+- **Global : passed=false** (une paire bloquante). m-024 listée dans `blocking`.
+- **Aucun fichier modifié** (revue indépendante en lecture seule).

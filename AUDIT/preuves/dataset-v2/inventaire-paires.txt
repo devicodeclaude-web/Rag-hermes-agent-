@@ -1,0 +1,34 @@
+# Inventaire des paires du dataset-v2 (dossier d'audit)
+# audited_commit: 4298b4b27e2efea4f36dc9100ebdb9363a6862a5
+# utc: 2026-10-04T11:52:49Z
+# total_cas: 54  paires: 27  pending: 0
+
+pair_id | statut | catégorie | abstention | document_id (span) | question_en
+--------|--------|-----------|------------|--------------------|------------
+m-004 | validated | no_answer | True | (abstention) | How many countries are there in Africa?
+m-005 | validated | no_answer | True | (abstention) | How many pairs of chromosomes do humans have?
+m-006 | validated | no_answer | True | (abstention) | How many departments are there in metropolitan France?
+m-007 | validated | simple | False | hermes-agent:reference/faq.md [21007:21803] | How can I reduce token usage in Hermes?
+m-008 | validated | simple | False | hermes-agent:guides/work-with-skills.md [191:330] | What is a skill in Hermes?
+m-009 | validated | simple | False | hermes-agent:user-guide/features/cron.md [212:430] | What is a cron job in Hermes?
+m-010 | validated | simple | False | hermes-agent:user-guide/features/delegation.md [22603:22827] | Which subagent role can still call delegate_task in Hermes?
+m-011 | validated | simple | False | hermes-agent:user-guide/features/memory.md [176:919] | How does Hermes Agent persist and retrieve memory across sessions?
+m-012 | validated | simple | False | hermes-agent:user-guide/configuration.md [13689:14003] | Which terminal backend options does Hermes Agent support?
+m-013 | validated | simple | False | hermes-agent:user-guide/features/curator.md [181:845] | How does Hermes Agent create skills from experience, and how does the curator maintain them?
+m-014 | validated | simple | False | hermes-agent:integrations/index.md [555:894] | Is Hermes Agent tied to one language model provider?
+m-015 | validated | simple | False | hermes-agent:user-guide/messaging/index.md [351:739] | On which messaging platforms can users interact with Hermes Agent?
+m-016 | validated | simple | False | hermes-agent:user-guide/security.md [413:1243] | What built-in security protections does Hermes Agent provide?
+m-017 | validated | simple | False | hermes-agent:user-guide/features/cron.md [212:757] | Can Hermes Agent run scheduled tasks and automatically deliver their results?
+m-018 | validated | simple | False | hermes-agent:guides/delegation-patterns.md [218:451] | How does Hermes Agent use subagents to delegate and parallelize tasks?
+m-019 | validated | simple | False | hermes-agent:user-guide/features/voice-mode.md [193:396] | Does Hermes Agent support voice interaction?
+m-020 | validated | simple | False | hermes-agent:user-guide/features/mcp.md [219:532] | Does Hermes Agent support MCP integration with external tool servers?
+m-021 | validated | simple | False | hermes-agent:reference/toolsets-reference.md [4718:4827] | Can Hermes generate images from text prompts?
+m-022 | validated | simple | False | hermes-agent:user-guide/messaging/homeassistant.md [198:494] | Can Hermes integrate with Home Assistant to monitor and control smart-home devices?
+m-023 | validated | simple | False | hermes-agent:user-guide/skills/google-workspace.md [1804:1895] | Can Hermes send emails through Gmail?
+m-024 | validated | simple | False | hermes-agent:user-guide/skills/bundled/email/email-email-inbox-triage.md [1111:1295] | What does the Hermes email inbox triage skill own?
+m-025 | validated | simple | False | hermes-agent:user-guide/skills/bundled/research/research-blogwatcher.md [943:1120] | Can Hermes monitor a blog or website for updates using RSS/Atom feeds or HTML scraping?
+m-026 | validated | simple | False | hermes-agent:user-guide/features/code-execution.md [216:483] | Where does the execute_code tool run Python scripts?
+m-027 | validated | simple | False | hermes-agent:developer-guide/trajectory-format.md [21:185] | Does Hermes retain task trajectories, and in what format?
+m-028 | validated | simple | False | hermes-agent:user-guide/configuring-models.md [3309:3931] | Can Hermes switch models during an active session, including on messaging platforms?
+m-029 | validated | simple | False | hermes-agent:getting-started/installation.md [432:673] | Does Hermes have a desktop application?
+m-030 | validated | simple | False | hermes-agent:developer-guide/programmatic-integration.md [237:1093] | Does Hermes provide an API server for OpenAI-compatible frontends?

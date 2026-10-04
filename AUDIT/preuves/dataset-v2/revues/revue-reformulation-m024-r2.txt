@@ -1,0 +1,33 @@
+# PRESERVED REVIEW EVIDENCE — verbatim subagent output
+# source: /root/.hermes/cache/delegation/subagent-summary-0-20261004_115213_526249.txt
+# copied_utc: 2026-10-04T11:52:35Z
+# NOTE: do not edit; raw reviewer output (evidence).
+
+I have the passage. Let me evaluate against the four criteria.
+
+**Passage:** "Turn a mailbox into a bounded queue of decisions. This skill owns thread-aware prioritization and reply policy; connector skills (`himalaya`, `google-workspace`) own provider commands."
+
+**Pair:**
+- EN: "What does the Hermes email inbox triage skill own?"
+- FR: "Qu'est-ce qui relève de la skill de tri de boîte mail de Hermes ?"
+
+**Analysis:**
+
+1. **Semantic equivalence EN "own" ↔ FR "relève de":** The passage uses "owns" twice — defining a *ownership/responsibility boundary* ("This skill owns X; connector skills own Y"). EN "own" = possession/ownership. FR "relève de" = "falls under the purview/responsibility of" — this is the *ressort/responsabilité* notion, not an enlargement to "gère/manage." The corrected FR ("relève de" replacing earlier "gère") correctly matches the responsibility/ownership scope without broadening. ✓ No enlargement.
+
+2. **Direct & sufficient answer:** The passage directly states what the skill owns: "thread-aware prioritization and reply policy." Fully answerable from passage. ✓
+
+3. **Question asks nothing beyond the passage:** "What does the skill own?" maps exactly to the "This skill owns…" clause. No external knowledge required. ✓
+
+4. **Passage centrality:** The ownership statement is the core, explicit subject of the passage. ✓
+
+All four criteria pass cleanly with no ambiguity.
+
+```json
+{"passed": true, "summary": "m-024 passes fail-closed review: the passage explicitly defines an ownership boundary ('This skill owns thread-aware prioritization and reply policy'), EN 'own' and FR 'relève de' both carry the ownership/responsibility (ressort) notion without the enlargement of the earlier 'gère'; the passage answers directly and sufficiently, the question stays within the passage, and the ownership statement is central.", "pairs": [{"pair_id": "m-024", "passed": true, "reason": "EN 'own' and FR 'relève de' both denote ownership/ressort (responsabilité) — 'relève de' correctly narrows from the earlier over-broad 'gère/manage' to match 'owns'. The passage states verbatim 'This skill owns thread-aware prioritization and reply policy', which answers the question directly and sufficiently; the question asks nothing beyond the passage; the ownership clause is the central content. No ambiguity."}], "blocking": [], "suggestions": []}
+```
+
+**Résumé :**
+- **Dépôt réel :** `/root/rag-hermes-agent` (le chemin `/root/rag-claude-code` du contexte n'existait pas ; l'id de document utilise le préfixe `hermes-agent:`, pas `claude-code:`).
+- **Passage affiché** (`[1111:1295]`) : *"Turn a mailbox into a bounded queue of decisions. This skill owns thread-aware prioritization and reply policy; connector skills (`himalaya`, `google-workspace`) own provider commands."*
+- **Verdict : passed=true.** Les 4 critères sont satisfaits sans ambiguïté — « relève de » rend correctement « own » (ressort/propriété) sans l'élargissement de l'ancien « gère ». Aucun fichier modifié.
