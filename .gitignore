@@ -25,3 +25,11 @@ id_rsa*
 .ssh/
 data/results/campaign-review-aggregate.json
 data/results/campaign-summary.json
+
+# Fichiers de travail du benchmark (lots d'annotation, index) — NE PAS committer.
+# Le dataset suivi data/benchmark/dataset-v2.jsonl est explicitement ré-inclus.
+data/benchmark/lot_*.jsonl
+data/benchmark/mon_lot_*.jsonl
+data/benchmark/corpus_document_ids.txt
+!data/benchmark/dataset-v2.jsonl
+_tmp_*.sh
