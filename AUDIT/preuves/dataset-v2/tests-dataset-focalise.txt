@@ -33,7 +33,7 @@ test_flags_unresolved_placeholder_tokens (tests.test_precheck_manual_batch.Check
 test_typeerror_is_captured_not_raised (tests.test_precheck_manual_batch.CheckBatchTests.test_typeerror_is_captured_not_raised) ... ok
 
 ----------------------------------------------------------------------
-Ran 33 tests in 1.652s
+Ran 33 tests in 2.962s
 
 OK
 {

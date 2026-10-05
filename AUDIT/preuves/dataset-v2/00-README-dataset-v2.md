@@ -9,8 +9,7 @@ annotées à la main selon un protocole anti-circularité).
 Niveau **intégration de composant** (tooling d'annotation + validateur canonique
 + suite de tests). Ce n'est **pas** une preuve de qualité statistique ni de
 production : aucune métrique de retrieval (recall/MRR/abstention) n'est mesurée
-ici. Le volume cible EN (100) n'est pas tout à fait atteint (99) après le
-retrait d'un doublon — voir plus bas.
+ici. Le volume cible est **atteint** : 100 cas EN + 40 paires FR, gate `READY`.
 
 ## Protocole (anti-circularité)
 
@@ -30,11 +29,10 @@ Remède autorisé quand un passage ne couvre pas la question d'origine : on
 
 ## Composition à l'instant de l'audit
 
-- Total : **139 cas** — **99 EN** + **40 paires FR**, tous `validated`, 0 `pending`.
-- Répondables : 121 cas ; abstention (`no_answer`, hors périmètre corpus) : 18 cas.
-- Gate canonique : `structural: valid`, `pending: 0`, `reviewed: 139`,
-  `targets_met: false` → **EXIT 2 = volume EN incomplet (99/100)**, comportement
-  attendu et honnête. Reste 1 cas EN pour la cible.
+- Total : **140 cas** — **100 EN** + **40 paires FR**, tous `validated`, 0 `pending`.
+- Répondables : 122 cas ; abstention (`no_answer`, hors périmètre corpus) : 18 cas.
+- Gate canonique : `structural: valid`, `pending: 0`, `reviewed: 140`,
+  `targets_met: true` → **EXIT 0 = READY** (volume cible atteint).
 - Suite de tests dataset-focalisée : 33 tests, **OK**, 0 skip.
 
 ## Doublon sémantique détecté et corrigé
@@ -59,11 +57,12 @@ pouvoir de détection, pas des échecs à masquer.
 
 | Fichier | Contenu |
 |---|---|
-| `gate-dataset-v2.txt` | Sortie du validateur canonique `validate_dataset_v2.py` (EXIT 2 = volume EN incomplet). |
+| `gate-dataset-v2.txt` | Sortie du validateur canonique `validate_dataset_v2.py` (EXIT 0 = READY, volume atteint). |
 | `tests-dataset-focalise.txt` | Suite `unittest` dataset-focalisée : 33 tests, OK, 0 skip. |
 | `precheck-lot031.txt` | Précontrôle du dernier lot ingéré (m-118, m-121) + note d'honnêteté sur le refus idempotent après ingestion. |
-| `inventaire-paires.txt` | Table des 139 cas : statut, catégorie, abstention, document+span, question. |
+| `inventaire-paires.txt` | Table des 140 cas : statut, catégorie, abstention, document+span, question. |
 | `revues/revue-precommit-lot0{1..6}-*.txt` | Verdicts BRUTS des 6 relecteurs indépendants pré-commit (lots 05/06 = détection du doublon). |
+| `revues/revue-precommit-lot07-m122.txt` | Verdict BRUT de la revue du 100e cas EN (m-122, Ctrl+G → $EDITOR). |
 | `revues/*` (antérieurs) | Verdicts bruts des revues initiales (m-004..m-030). |
 | `SHA256SUMS-dataset-v2` | Empreintes de tous les fichiers de preuve + snapshot du dataset. |
 
@@ -76,4 +75,5 @@ ne pas éditer.
 - Corpus privé réel absent : pas de mesure de qualité privée.
 - Un gate `pending=0` prouve l'état du fichier courant, pas l'existence d'une
   preuve de revue — celle-ci est conservée dans `revues/`.
-- Volume EN à 99/100 : une question EN propre reste à ajouter pour atteindre READY.
+- Volume cible atteint (100 EN / 40 FR, gate READY) ; la qualité statistique de
+  retrieval reste à mesurer séparément.

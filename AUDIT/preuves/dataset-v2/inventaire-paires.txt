@@ -1,6 +1,6 @@
-# Inventaire dataset-v2 — 139 cas
-# EN=99  FR=40  abstentions=18  repondables=121
-# statuts={'validated': 139}
+# Inventaire dataset-v2 — 140 cas
+# EN=100  FR=40  abstentions=18  repondables=122
+# statuts={'validated': 140}
 
 case_id      stat      cat        abst document:span                                           question
 -------------------------------------------------------------------------------------------------------
@@ -143,3 +143,4 @@ m-116-en     validated simple     F    user-guide/cli.md:5292-5400              
 m-117-en     validated simple     F    user-guide/cli.md:8889-9143                             Which Hermes slash command redeems a banked usage-limit reset on the openai-codex provider?
 m-118-en     validated simple     F    user-guide/cli.md:15196-15242                           Which Hermes slash command names the current session?
 m-121-en     validated simple     F    guides/migrate-from-openclaw.md:240-283                 Which Hermes command from the shell migrates a config from OpenClaw?
+m-122-en     validated simple     F    user-guide/cli.md:10302-10355                           Which keybinding opens the Hermes input buffer in your $EDITOR?
