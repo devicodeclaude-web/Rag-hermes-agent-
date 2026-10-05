@@ -1,0 +1,56 @@
+test_accepts_cross_lingual_fr2en_case (tests.test_evaluation_dataset.EvaluationDatasetSchemaTests.test_accepts_cross_lingual_fr2en_case) ... ok
+test_accepts_document_spans_independent_of_chunk_ids (tests.test_evaluation_dataset.EvaluationDatasetSchemaTests.test_accepts_document_spans_independent_of_chunk_ids) ... ok
+test_accepts_synthetic_provenance_but_marks_it_quality_ineligible (tests.test_evaluation_dataset.EvaluationDatasetSchemaTests.test_accepts_synthetic_provenance_but_marks_it_quality_ineligible) ... ok
+test_human_provenances_are_quality_eligible (tests.test_evaluation_dataset.EvaluationDatasetSchemaTests.test_human_provenances_are_quality_eligible) ... ok
+test_language_and_track_are_required (tests.test_evaluation_dataset.EvaluationDatasetSchemaTests.test_language_and_track_are_required) ... ok
+test_manifest_must_pin_revision_and_sha (tests.test_evaluation_dataset.EvaluationDatasetSchemaTests.test_manifest_must_pin_revision_and_sha) ... ok
+test_no_answer_requires_empty_spans_and_a_reason (tests.test_evaluation_dataset.EvaluationDatasetSchemaTests.test_no_answer_requires_empty_spans_and_a_reason) ... ok
+test_public_and_private_quality_scopes_cannot_be_silently_mixed (tests.test_evaluation_dataset.EvaluationDatasetSchemaTests.test_public_and_private_quality_scopes_cannot_be_silently_mixed) ... ok
+test_rejects_chunk_ids_as_primary_labels (tests.test_evaluation_dataset.EvaluationDatasetSchemaTests.test_rejects_chunk_ids_as_primary_labels) ... ok
+test_rejects_span_hash_that_does_not_match_canonical_document (tests.test_evaluation_dataset.EvaluationDatasetSchemaTests.test_rejects_span_hash_that_does_not_match_canonical_document) ... ok
+test_rejects_stale_source_revision (tests.test_evaluation_dataset.EvaluationDatasetSchemaTests.test_rejects_stale_source_revision) ... ok
+test_rejects_unknown_provenance (tests.test_evaluation_dataset.EvaluationDatasetSchemaTests.test_rejects_unknown_provenance) ... ok
+test_rejects_wrong_corpus_manifest_sha (tests.test_evaluation_dataset.EvaluationDatasetSchemaTests.test_rejects_wrong_corpus_manifest_sha) ... ok
+test_track_language_must_be_consistent (tests.test_evaluation_dataset.EvaluationDatasetSchemaTests.test_track_language_must_be_consistent) ... ok
+test_pair_annotation_validates_ready (tests.test_eval_annotation_chain.AnnotateAndValidateChainTests.test_pair_annotation_validates_ready) ... ok
+test_find_passage_span_is_verbatim_and_hashed (tests.test_eval_annotation_chain.EvalCorpusTests.test_find_passage_span_is_verbatim_and_hashed) ... ok
+test_find_passage_span_rejects_absent_text (tests.test_eval_annotation_chain.EvalCorpusTests.test_find_passage_span_rejects_absent_text) ... ok
+test_find_passage_span_rejects_ambiguous_text (tests.test_eval_annotation_chain.EvalCorpusTests.test_find_passage_span_rejects_ambiguous_text) ... ok
+test_manifest_pins_single_revision_and_content_hash (tests.test_eval_annotation_chain.EvalCorpusTests.test_manifest_pins_single_revision_and_content_hash) ... ok
+test_remaining_counts_when_everything_is_short (tests.test_validate_dataset_v2_gate.GateReportTests.test_remaining_counts_when_everything_is_short) ... ok
+test_remaining_is_zero_and_ready_when_targets_met (tests.test_validate_dataset_v2_gate.GateReportTests.test_remaining_is_zero_and_ready_when_targets_met) ... ok
+test_remaining_never_goes_negative_when_exceeding_targets (tests.test_validate_dataset_v2_gate.GateReportTests.test_remaining_never_goes_negative_when_exceeding_targets) ... ok
+test_report_preserves_existing_keys (tests.test_validate_dataset_v2_gate.GateReportTests.test_report_preserves_existing_keys) ... ok
+test_aggregates_all_problems_not_just_the_first (tests.test_precheck_manual_batch.CheckBatchTests.test_aggregates_all_problems_not_just_the_first) ... ok
+test_check_batch_leaves_existing_dataset_byte_identical (tests.test_precheck_manual_batch.CheckBatchTests.test_check_batch_leaves_existing_dataset_byte_identical) ... ok
+test_check_batch_never_writes_dataset (tests.test_precheck_manual_batch.CheckBatchTests.test_check_batch_never_writes_dataset) ... ok
+test_clean_batch_reports_no_problems (tests.test_precheck_manual_batch.CheckBatchTests.test_clean_batch_reports_no_problems) ... ok
+test_cli_exit_zero_on_clean_and_two_on_problems (tests.test_precheck_manual_batch.CheckBatchTests.test_cli_exit_zero_on_clean_and_two_on_problems) ... ok
+test_empty_batch_is_a_problem_aligned_with_ingest (tests.test_precheck_manual_batch.CheckBatchTests.test_empty_batch_is_a_problem_aligned_with_ingest) ... ok
+test_flags_case_id_already_in_dataset (tests.test_precheck_manual_batch.CheckBatchTests.test_flags_case_id_already_in_dataset) ... ok
+test_flags_duplicate_case_id_within_batch (tests.test_precheck_manual_batch.CheckBatchTests.test_flags_duplicate_case_id_within_batch) ... ok
+test_flags_unresolved_placeholder_tokens (tests.test_precheck_manual_batch.CheckBatchTests.test_flags_unresolved_placeholder_tokens) ... ok
+test_typeerror_is_captured_not_raised (tests.test_precheck_manual_batch.CheckBatchTests.test_typeerror_is_captured_not_raised) ... ok
+
+----------------------------------------------------------------------
+Ran 33 tests in 1.652s
+
+OK
+{
+  "total": 2,
+  "en2en": 1,
+  "fr2en": 1,
+  "complete_en_fr_pairs": 1,
+  "reviewed": 2,
+  "pending": 0,
+  "target_en": 1,
+  "target_fr_pairs": 1,
+  "remaining": {
+    "en2en_cases": 0,
+    "fr_pairs": 0,
+    "to_review": 0
+  },
+  "structural": "valid",
+  "targets_met": true,
+  "status": "READY"
+}

@@ -1,34 +1,145 @@
-# Inventaire des paires du dataset-v2 (dossier d'audit)
-# audited_commit: 4298b4b27e2efea4f36dc9100ebdb9363a6862a5
-# utc: 2026-10-04T11:52:49Z
-# total_cas: 54  paires: 27  pending: 0
+# Inventaire dataset-v2 — 139 cas
+# EN=99  FR=40  abstentions=18  repondables=121
+# statuts={'validated': 139}
 
-pair_id | statut | catégorie | abstention | document_id (span) | question_en
---------|--------|-----------|------------|--------------------|------------
-m-004 | validated | no_answer | True | (abstention) | How many countries are there in Africa?
-m-005 | validated | no_answer | True | (abstention) | How many pairs of chromosomes do humans have?
-m-006 | validated | no_answer | True | (abstention) | How many departments are there in metropolitan France?
-m-007 | validated | simple | False | hermes-agent:reference/faq.md [21007:21803] | How can I reduce token usage in Hermes?
-m-008 | validated | simple | False | hermes-agent:guides/work-with-skills.md [191:330] | What is a skill in Hermes?
-m-009 | validated | simple | False | hermes-agent:user-guide/features/cron.md [212:430] | What is a cron job in Hermes?
-m-010 | validated | simple | False | hermes-agent:user-guide/features/delegation.md [22603:22827] | Which subagent role can still call delegate_task in Hermes?
-m-011 | validated | simple | False | hermes-agent:user-guide/features/memory.md [176:919] | How does Hermes Agent persist and retrieve memory across sessions?
-m-012 | validated | simple | False | hermes-agent:user-guide/configuration.md [13689:14003] | Which terminal backend options does Hermes Agent support?
-m-013 | validated | simple | False | hermes-agent:user-guide/features/curator.md [181:845] | How does Hermes Agent create skills from experience, and how does the curator maintain them?
-m-014 | validated | simple | False | hermes-agent:integrations/index.md [555:894] | Is Hermes Agent tied to one language model provider?
-m-015 | validated | simple | False | hermes-agent:user-guide/messaging/index.md [351:739] | On which messaging platforms can users interact with Hermes Agent?
-m-016 | validated | simple | False | hermes-agent:user-guide/security.md [413:1243] | What built-in security protections does Hermes Agent provide?
-m-017 | validated | simple | False | hermes-agent:user-guide/features/cron.md [212:757] | Can Hermes Agent run scheduled tasks and automatically deliver their results?
-m-018 | validated | simple | False | hermes-agent:guides/delegation-patterns.md [218:451] | How does Hermes Agent use subagents to delegate and parallelize tasks?
-m-019 | validated | simple | False | hermes-agent:user-guide/features/voice-mode.md [193:396] | Does Hermes Agent support voice interaction?
-m-020 | validated | simple | False | hermes-agent:user-guide/features/mcp.md [219:532] | Does Hermes Agent support MCP integration with external tool servers?
-m-021 | validated | simple | False | hermes-agent:reference/toolsets-reference.md [4718:4827] | Can Hermes generate images from text prompts?
-m-022 | validated | simple | False | hermes-agent:user-guide/messaging/homeassistant.md [198:494] | Can Hermes integrate with Home Assistant to monitor and control smart-home devices?
-m-023 | validated | simple | False | hermes-agent:user-guide/skills/google-workspace.md [1804:1895] | Can Hermes send emails through Gmail?
-m-024 | validated | simple | False | hermes-agent:user-guide/skills/bundled/email/email-email-inbox-triage.md [1111:1295] | What does the Hermes email inbox triage skill own?
-m-025 | validated | simple | False | hermes-agent:user-guide/skills/bundled/research/research-blogwatcher.md [943:1120] | Can Hermes monitor a blog or website for updates using RSS/Atom feeds or HTML scraping?
-m-026 | validated | simple | False | hermes-agent:user-guide/features/code-execution.md [216:483] | Where does the execute_code tool run Python scripts?
-m-027 | validated | simple | False | hermes-agent:developer-guide/trajectory-format.md [21:185] | Does Hermes retain task trajectories, and in what format?
-m-028 | validated | simple | False | hermes-agent:user-guide/configuring-models.md [3309:3931] | Can Hermes switch models during an active session, including on messaging platforms?
-m-029 | validated | simple | False | hermes-agent:getting-started/installation.md [432:673] | Does Hermes have a desktop application?
-m-030 | validated | simple | False | hermes-agent:developer-guide/programmatic-integration.md [237:1093] | Does Hermes provide an API server for OpenAI-compatible frontends?
+case_id      stat      cat        abst document:span                                           question
+-------------------------------------------------------------------------------------------------------
+m-004-en     validated no_answer  T    (abstain)                                               How many countries are there in Africa?
+m-004-fr     validated no_answer  T    (abstain)                                               Combien de pays y a-t-il en Afrique ?
+m-005-en     validated no_answer  T    (abstain)                                               How many pairs of chromosomes do humans have?
+m-005-fr     validated no_answer  T    (abstain)                                               Combien de paires de chromosomes l’être humain possède-t-il ?
+m-006-en     validated no_answer  T    (abstain)                                               How many departments are there in metropolitan France?
+m-006-fr     validated no_answer  T    (abstain)                                               Combien de départements y a-t-il en France métropolitaine ?
+m-007-en     validated simple     F    reference/faq.md:21007-21803                            How can I reduce token usage in Hermes?
+m-007-fr     validated simple     F    reference/faq.md:21007-21803                            Comment réduire l’utilisation de tokens dans Hermes ?
+m-008-en     validated simple     F    guides/work-with-skills.md:191-330                      What is a skill in Hermes?
+m-008-fr     validated simple     F    guides/work-with-skills.md:191-330                      Qu’est-ce qu’une skill dans Hermes ?
+m-009-en     validated simple     F    user-guide/features/cron.md:212-430                     What is a cron job in Hermes?
+m-009-fr     validated simple     F    user-guide/features/cron.md:212-430                     Qu’est-ce qu’une tâche cron dans Hermes ?
+m-010-en     validated simple     F    user-guide/features/delegation.md:22603-22827           Which subagent role can still call delegate_task in Hermes?
+m-010-fr     validated simple     F    user-guide/features/delegation.md:22603-22827           Quel rôle de sous-agent peut encore appeler delegate_task dans Hermes ?
+m-011-en     validated simple     F    user-guide/features/memory.md:176-919                   How does Hermes Agent persist and retrieve memory across sessions?
+m-011-fr     validated simple     F    user-guide/features/memory.md:176-919                   Comment Hermes Agent conserve-t-il et récupère-t-il sa mémoire persistante entre les sessions ?
+m-012-en     validated simple     F    user-guide/configuration.md:13689-14003                 Which terminal backend options does Hermes Agent support?
+m-012-fr     validated simple     F    user-guide/configuration.md:13689-14003                 Quelles options de backend terminal Hermes Agent prend-il en charge ?
+m-013-en     validated simple     F    user-guide/features/curator.md:181-845                  How does Hermes Agent create skills from experience, and how does the curator maintain them?
+m-013-fr     validated simple     F    user-guide/features/curator.md:181-845                  Comment Hermes Agent crée-t-il des skills à partir de son expérience et comment le curator les entretient-il ?
+m-014-en     validated simple     F    integrations/index.md:555-894                           Is Hermes Agent tied to one language model provider?
+m-014-fr     validated simple     F    integrations/index.md:555-894                           Hermes Agent est-il lié à un seul fournisseur de modèles de langage ?
+m-015-en     validated simple     F    user-guide/messaging/index.md:351-739                   On which messaging platforms can users interact with Hermes Agent?
+m-015-fr     validated simple     F    user-guide/messaging/index.md:351-739                   Sur quelles plateformes de messagerie les utilisateurs peuvent-ils interagir avec Hermes Agent ?
+m-016-en     validated simple     F    user-guide/security.md:413-1243                         What built-in security protections does Hermes Agent provide?
+m-016-fr     validated simple     F    user-guide/security.md:413-1243                         Quelles protections de sécurité intégrées Hermes Agent fournit-il ?
+m-017-en     validated simple     F    user-guide/features/cron.md:212-757                     Can Hermes Agent run scheduled tasks and automatically deliver their results?
+m-017-fr     validated simple     F    user-guide/features/cron.md:212-757                     Hermes Agent peut-il exécuter des tâches planifiées et envoyer automatiquement leurs résultats ?
+m-018-en     validated simple     F    guides/delegation-patterns.md:218-451                   How does Hermes Agent use subagents to delegate and parallelize tasks?
+m-018-fr     validated simple     F    guides/delegation-patterns.md:218-451                   Comment Hermes Agent utilise-t-il des sous-agents pour déléguer et paralléliser des tâches ?
+m-019-en     validated simple     F    user-guide/features/voice-mode.md:193-396               Does Hermes Agent support voice interaction?
+m-019-fr     validated simple     F    user-guide/features/voice-mode.md:193-396               Hermes Agent prend-il en charge les interactions vocales ?
+m-020-en     validated simple     F    user-guide/features/mcp.md:219-532                      Does Hermes Agent support MCP integration with external tool servers?
+m-020-fr     validated simple     F    user-guide/features/mcp.md:219-532                      Hermes Agent prend-il en charge l’intégration MCP avec des serveurs d’outils externes ?
+m-021-en     validated simple     F    reference/toolsets-reference.md:4718-4827               Can Hermes generate images from text prompts?
+m-021-fr     validated simple     F    reference/toolsets-reference.md:4718-4827               Hermes peut-il générer des images à partir de descriptions textuelles ?
+m-022-en     validated simple     F    user-guide/messaging/homeassistant.md:198-494           Can Hermes integrate with Home Assistant to monitor and control smart-home devices?
+m-022-fr     validated simple     F    user-guide/messaging/homeassistant.md:198-494           Hermes peut-il s’intégrer à Home Assistant pour surveiller et piloter des appareils domotiques ?
+m-023-en     validated simple     F    user-guide/skills/google-workspace.md:1804-1895         Can Hermes send emails through Gmail?
+m-023-fr     validated simple     F    user-guide/skills/google-workspace.md:1804-1895         Hermes peut-il envoyer des e-mails avec Gmail ?
+m-024-en     validated simple     F    user-guide/skills/bundled/email/email-email-inbox-triage.md:1111-1295 What does the Hermes email inbox triage skill own?
+m-024-fr     validated simple     F    user-guide/skills/bundled/email/email-email-inbox-triage.md:1111-1295 Qu’est-ce qui relève de la skill de tri de boîte mail de Hermes ?
+m-025-en     validated simple     F    user-guide/skills/bundled/research/research-blogwatcher.md:943-1120 Can Hermes monitor a blog or website for updates using RSS/Atom feeds or HTML scraping?
+m-025-fr     validated simple     F    user-guide/skills/bundled/research/research-blogwatcher.md:943-1120 Hermes peut-il surveiller les mises à jour d’un blog ou d’un site web au moyen de flux RSS/Atom ou de l’extraction HTML ?
+m-026-en     validated simple     F    user-guide/features/code-execution.md:216-483           Where does the execute_code tool run Python scripts?
+m-026-fr     validated simple     F    user-guide/features/code-execution.md:216-483           Où l’outil execute_code exécute-t-il les scripts Python ?
+m-027-en     validated simple     F    developer-guide/trajectory-format.md:21-185             Does Hermes retain task trajectories, and in what format?
+m-027-fr     validated simple     F    developer-guide/trajectory-format.md:21-185             Hermes conserve-t-il les trajectoires de tâches et dans quel format ?
+m-028-en     validated simple     F    user-guide/configuring-models.md:3309-3931              Can Hermes switch models during an active session, including on messaging platforms?
+m-028-fr     validated simple     F    user-guide/configuring-models.md:3309-3931              Hermes peut-il changer de modèle pendant une session active, y compris sur les plateformes de messagerie ?
+m-029-en     validated simple     F    getting-started/installation.md:432-673                 Does Hermes have a desktop application?
+m-029-fr     validated simple     F    getting-started/installation.md:432-673                 Hermes dispose-t-il d’une application de bureau ?
+m-030-en     validated simple     F    developer-guide/programmatic-integration.md:237-1093    Does Hermes provide an API server for OpenAI-compatible frontends?
+m-030-fr     validated simple     F    developer-guide/programmatic-integration.md:237-1093    Hermes fournit-il un serveur API pour les interfaces compatibles OpenAI ?
+m-031-en     validated simple     F    developer-guide/cli-internals.md:4435-4574              What is a profile in Hermes?
+m-031-fr     validated simple     F    developer-guide/cli-internals.md:4435-4574              Qu’est-ce qu’un profil dans Hermes ?
+m-032-en     validated simple     F    developer-guide/context-compression-and-caching.md:35-177 What does context compression do in Hermes?
+m-032-fr     validated simple     F    developer-guide/context-compression-and-caching.md:35-177 À quoi sert la compression de contexte dans Hermes ?
+m-033-en     validated simple     F    user-guide/features/credential-pools.md:218-468         What is a credential pool in Hermes?
+m-033-fr     validated simple     F    user-guide/features/credential-pools.md:218-468         Qu’est-ce qu’un credential pool dans Hermes ?
+m-034-en     validated simple     F    user-guide/features/credential-pools.md:470-681         How does Hermes key rotation differ from fallback providers?
+m-034-fr     validated simple     F    user-guide/features/credential-pools.md:470-681         En quoi la rotation de clés de Hermes diffère-t-elle des fournisseurs de secours ?
+m-035-en     validated simple     F    user-guide/messaging/webhooks.md:159-488                What is a webhook in Hermes?
+m-035-fr     validated simple     F    user-guide/messaging/webhooks.md:159-488                Qu’est-ce qu’un webhook dans Hermes ?
+m-036-en     validated simple     F    user-guide/features/kanban.md:459-633                   What is Hermes Kanban?
+m-036-fr     validated simple     F    user-guide/features/kanban.md:459-633                   Qu’est-ce que le Kanban de Hermes ?
+m-037-en     validated simple     F    user-guide/security.md:1276-1426                        What is dangerous command approval in Hermes?
+m-037-fr     validated simple     F    user-guide/security.md:1276-1426                        Qu’est-ce que l’approbation des commandes dangereuses dans Hermes ?
+m-038-en     validated simple     F    user-guide/features/context-files.md:800-915            What is an AGENTS.md file used for in Hermes?
+m-038-fr     validated simple     F    user-guide/features/context-files.md:800-915            À quoi sert un fichier AGENTS.md dans Hermes ?
+m-039-en     validated simple     F    integrations/index.md:4436-4643                         How does Hermes integrate with IDEs?
+m-039-fr     validated simple     F    integrations/index.md:4436-4643                         Comment Hermes s’intègre-t-il aux IDE ?
+m-040-en     validated simple     F    user-guide/features/skins.md:149-315                    What do skins control in the Hermes CLI?
+m-040-fr     validated simple     F    user-guide/features/skins.md:149-315                    Que contrôlent les skins dans l’interface Hermes ?
+m-041-en     validated simple     F    user-guide/features/plugins.md:177-281                  What is the Hermes plugin system for?
+m-041-fr     validated simple     F    user-guide/features/plugins.md:177-281                  À quoi sert le système de plugins de Hermes ?
+m-042-en     validated simple     F    developer-guide/context-compression-and-caching.md:35698-35841 What does Anthropic prompt caching do in Hermes?
+m-042-fr     validated simple     F    developer-guide/context-compression-and-caching.md:35698-35841 À quoi sert le cache de prompt Anthropic dans Hermes ?
+m-043-en     validated simple     F    user-guide/features/context-files.md:224-311            What are project context files in Hermes?
+m-043-fr     validated simple     F    user-guide/features/context-files.md:224-311            Que sont les fichiers de contexte projet dans Hermes ?
+m-044-en     validated simple     F    getting-started/quickstart.md:11996-12083               What flag resumes your last session?
+m-046-en     validated simple     F    user-guide/features/codex-app-server-runtime.md:3874-3986 Which command adds a plugin marketplace?
+m-049-en     validated no_answer  T    (abstain)                                               What prompt format do Hermes models use for chat?
+m-050-en     validated no_answer  T    (abstain)                                               What's the point of a "system prompt steerability" claim in Hermes?
+m-051-en     validated no_answer  T    (abstain)                                               What does the function-calling output of Hermes 2 Pro look like, structurally?
+m-053-en     validated no_answer  T    (abstain)                                               Hermes 3 shipped in which parameter sizes?
+m-056-en     validated no_answer  T    (abstain)                                               What context length does Hermes 3 support?
+m-057-en     validated no_answer  T    (abstain)                                               What's one benchmark where Hermes beats its base Llama model?
+m-063-en     validated no_answer  T    (abstain)                                               How do you verify a downloaded Hermes GGUF isn't corrupted?
+m-064-en     validated no_answer  T    (abstain)                                               What's the difference between a GGUF and a safetensors checkpoint?
+m-065-en     validated no_answer  T    (abstain)                                               Which is cheaper to run at scale: Hermes 8B or 70B, and what's the trade?
+m-066-en     validated no_answer  T    (abstain)                                               How does speculative decoding speed up Hermes inference?
+m-068-en     validated simple     F    getting-started/quickstart.md:10218-10288               How do you change the backing model provider?
+m-069-en     validated no_answer  T    (abstain)                                               Where does user-scoped config live vs project-scoped?
+m-070-en     validated no_answer  T    (abstain)                                               What's a webhook, in a bot-messaging context?
+m-071-en     validated simple     F    getting-started/quickstart.md:10525-10576               In which file does Hermes store non-secret settings?
+m-072-en     validated simple     F    getting-started/quickstart.md:10481-10524               In which file does Hermes store secrets and tokens?
+m-074-en     validated simple     F    reference/cli-commands.md:5674-5734                     What does hermes doctor do?
+m-076-en     validated simple     F    user-guide/cli.md:15016-15082                           Which slash command enables CLI voice mode?
+m-077-en     validated simple     F    user-guide/cli.md:10191-10299                           What key combo records audio once voice mode is on?
+m-079-en     validated simple     F    reference/cli-commands.md:9052-9209                     How do you update Hermes to the latest version?
+m-080-en     validated simple     F    reference/cli-commands.md:78327-78410                   Which Hermes command prints a single config value?
+m-081-en     validated simple     F    reference/cli-commands.md:1181-1269                     What flag starts Hermes in an isolated git worktree?
+m-082-en     validated simple     F    reference/cli-commands.md:11466-11505                   Which hermes chat flag turns on verbose output?
+m-083-en     validated simple     F    reference/environment-variables.md:10520-10557          Which env var does Hermes read for a NovitaAI key?
+m-085-en     validated simple     F    user-guide/cli.md:1197-1249                             How do you tell Hermes to use the Nous Portal as provider on a single chat?
+m-086-en     validated simple     F    guides/run-hermes-with-nous-portal.md:4133-4192         Which config key does hermes config set use to set Hermes' default model?
+m-087-en     validated simple     F    reference/environment-variables.md:680-755              Which env var holds the OpenRouter API key for Hermes?
+m-088-en     validated simple     F    getting-started/quickstart.md:9191-9334                 Which Hermes provider backend spawns a local copilot CLI?
+m-089-en     validated simple     F    user-guide/profiles.md:15514-15954                      Which Hermes command restarts the gateway for a named profile?
+m-090-en     validated simple     F    user-guide/windows-native.md:7591-7923                  Which single Hermes feature still requires WSL2 on Windows?
+m-091-en     validated simple     F    integrations/nous-portal.md:3304-3519                   Which provider powers image generation in Hermes' Tool Gateway?
+m-092-en     validated simple     F    integrations/nous-portal.md:3693-3874                   Which service powers the cloud browser in Hermes' Tool Gateway?
+m-093-en     validated simple     F    user-guide/cli.md:2685-2760                             Which flag on hermes worktree prune shows the plan without changing anything?
+m-094-en     validated simple     F    user-guide/cli.md:2027-2087                             Which flag on hermes -w runs a single query inside the worktree?
+m-095-en     validated simple     F    user-guide/cli.md:2434-2512                             Which Hermes command audits each worktree's age, size, and prune verdict?
+m-096-en     validated simple     F    user-guide/features/plugins.md:25651-25736              Which Hermes command installs a plugin but leaves it disabled?
+m-097-en     validated simple     F    user-guide/features/plugins.md:9983-10036               Which Hermes command enables an already-installed plugin by name?
+m-098-en     validated simple     F    user-guide/cli.md:26301-26336                           Which Hermes command renames a past session from the shell?
+m-099-en     validated simple     F    user-guide/cli.md:1681-1756                             Which hermes --resume argument is the exact equivalent of -c?
+m-100-en     validated simple     F    user-guide/features/memory.md:10576-10622               Which Hermes command lists past sessions from the shell?
+m-101-en     validated simple     F    user-guide/cli.md:10593-10713                           Which key stashes the current prompt draft in the Hermes CLI?
+m-102-en     validated simple     F    user-guide/cli.md:11886-11975                           Which key suspends Hermes to the background on Unix?
+m-103-en     validated simple     F    user-guide/cli.md:27035-27101                           At what fraction of the context limit does Hermes auto-compress by default?
+m-104-en     validated simple     F    user-guide/cli.md:27316-27428                           When compression fires, how many of the most recent turns are always preserved?
+m-105-en     validated simple     F    user-guide/cli.md:14801-14867                           Which Hermes slash command runs a prompt in a separate background session?
+m-106-en     validated simple     F    user-guide/cli.md:14868-14966                           Which Hermes slash command asks a side question without interrupting the current conversation?
+m-107-en     validated simple     F    user-guide/cli.md:15144-15193                           Which Hermes slash command increases reasoning effort?
+m-108-en     validated simple     F    user-guide/cli.md:23105-23174                           Which Hermes slash command cancels the current turn and its foreground work?
+m-109-en     validated simple     F    user-guide/cli.md:21863-21974                           Which config key controls what happens when you press Enter while the agent is working?
+m-110-en     validated simple     F    user-guide/cli.md:24704-24939                           What is the default value of the display.tool_preview_length config key?
+m-111-en     validated simple     F    user-guide/cli.md:17888-18063                           Which env var, set to 1, makes Hermes skip auto-load, AGENTS.md, SOUL.md and memory injection?
+m-113-en     validated simple     F    user-guide/cli.md:24487-24560                           Which Hermes slash command toggles between off → new → all → verbose tool display modes?
+m-114-en     validated simple     F    user-guide/cli.md:4736-4819                             Under which ~/.hermes/ subfolder does Hermes archive untracked-only scratch before pruning a worktree?
+m-115-en     validated simple     F    user-guide/configuration.md:188431-188715               Which Hermes config section lets you define custom shell shortcuts usable in both CLI and messaging (e.g. /gpu)?
+m-116-en     validated simple     F    user-guide/cli.md:5292-5400                             At what tree count or total size does .worktrees/ trigger Hermes' startup prune notice?
+m-117-en     validated simple     F    user-guide/cli.md:8889-9143                             Which Hermes slash command redeems a banked usage-limit reset on the openai-codex provider?
+m-118-en     validated simple     F    user-guide/cli.md:15196-15242                           Which Hermes slash command names the current session?
+m-121-en     validated simple     F    guides/migrate-from-openclaw.md:240-283                 Which Hermes command from the shell migrates a config from OpenClaw?

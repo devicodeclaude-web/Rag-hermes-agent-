@@ -1,23 +1,19 @@
-# audited_commit: 4298b4b27e2efea4f36dc9100ebdb9363a6862a5
-# utc: 2026-10-04T11:53:08Z
-# command: .venv-audit/bin/python scripts/validate_dataset_v2.py
-# cwd: /root/rag-hermes-agent
 {
-  "total": 54,
-  "en2en": 27,
-  "fr2en": 27,
-  "complete_en_fr_pairs": 27,
-  "reviewed": 54,
+  "total": 139,
+  "en2en": 99,
+  "fr2en": 40,
+  "complete_en_fr_pairs": 40,
+  "reviewed": 139,
   "pending": 0,
   "target_en": 100,
   "target_fr_pairs": 40,
   "remaining": {
-    "en2en_cases": 73,
-    "fr_pairs": 13,
+    "en2en_cases": 1,
+    "fr_pairs": 0,
     "to_review": 0
   },
   "structural": "valid",
   "targets_met": false,
   "status": "BLOCKED_review_or_volume"
 }
-# exit: 2
+GATE_EXIT=2

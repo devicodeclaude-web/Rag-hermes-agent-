@@ -1,0 +1,35 @@
+# Précontrôle — lot_031.jsonl (m-118-en, m-121-en)
+
+NOTE D'HONNÊTETÉ DES PREUVES
+----------------------------
+Ce fichier documente le précontrôle du dernier lot ingéré (lot_031.jsonl).
+Au moment de l'ingestion, le précontrôle renvoyait READY_TO_INGEST (2 lignes,
+0 problème). Après ingestion, re-lancer le précontrôle sur le même fichier de
+lot renvoie désormais « case_id already in dataset » — c'est le comportement
+ATTENDU (le précontrôleur refuse un case_id déjà présent), pas une régression.
+
+Précontrôle au moment de l'ingestion (avant que m-118/m-121 soient dans le dataset) :
+
+{
+  "batch": "data/benchmark/lot_031.jsonl",
+  "rows_parsed": 2,
+  "problem_count": 0,
+  "status": "READY_TO_INGEST",
+  "problems": []
+}
+
+Précontrôle actuel (après ingestion — refus idempotent attendu) :
+
+{
+  "batch": "data/benchmark/lot_031.jsonl",
+  "rows_parsed": 2,
+  "problem_count": 2,
+  "status": "HAS_PROBLEMS",
+  "problems": [
+    {"index": 0, "case_id": "m-118-en", "message": "case_id already in dataset: m-118-en"},
+    {"index": 1, "case_id": "m-121-en", "message": "case_id already in dataset: m-121-en"}
+  ]
+}
+
+L'intégrité des 139 cas (structure valide, pending=0, reviewed=139) est prouvée
+par gate-dataset-v2.txt et la suite de tests tests-dataset-focalise.txt.
