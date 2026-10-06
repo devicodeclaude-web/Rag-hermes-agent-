@@ -1,6 +1,6 @@
-# Inventaire dataset-v2 — 140 cas
-# EN=100  FR=40  abstentions=18  repondables=122
-# statuts={'validated': 140}
+# Inventaire dataset-v2 — 154 cas
+# EN=107  FR=47  abstentions=32  repondables=122
+# statuts={'validated': 154}
 
 case_id      stat      cat        abst document:span                                           question
 -------------------------------------------------------------------------------------------------------
@@ -144,3 +144,17 @@ m-117-en     validated simple     F    user-guide/cli.md:8889-9143              
 m-118-en     validated simple     F    user-guide/cli.md:15196-15242                           Which Hermes slash command names the current session?
 m-121-en     validated simple     F    guides/migrate-from-openclaw.md:240-283                 Which Hermes command from the shell migrates a config from OpenClaw?
 m-122-en     validated simple     F    user-guide/cli.md:10302-10355                           Which keybinding opens the Hermes input buffer in your $EDITOR?
+m-123-en     validated no_answer  T    (abstain)                                               Which planet in our solar system has the most moons as of 2026?
+m-123-fr     validated no_answer  T    (abstain)                                               En 2026, quelle planète de notre système solaire possède le plus de lunes ?
+m-124-en     validated no_answer  T    (abstain)                                               What is the atomic number of gold?
+m-124-fr     validated no_answer  T    (abstain)                                               Quel est le numéro atomique de l’or ?
+m-126-en     validated no_answer  T    (abstain)                                               Who wrote the novel *Pride and Prejudice*?
+m-126-fr     validated no_answer  T    (abstain)                                               Qui a écrit le roman *Pride and Prejudice* ?
+m-127-en     validated no_answer  T    (abstain)                                               What is the largest ocean on Earth?
+m-127-fr     validated no_answer  T    (abstain)                                               Quel est le plus grand océan de la Terre ?
+m-128-en     validated no_answer  T    (abstain)                                               How many strings does a standard violin have?
+m-128-fr     validated no_answer  T    (abstain)                                               Combien de cordes possède un violon standard ?
+m-129-en     validated no_answer  T    (abstain)                                               How many players are on a soccer team on the field at one time?
+m-129-fr     validated no_answer  T    (abstain)                                               Combien de joueurs d’une équipe de football sont sur le terrain en même temps ?
+m-130-en     validated no_answer  T    (abstain)                                               Which pigment in plants is primarily responsible for absorbing light during photosynthesis?
+m-130-fr     validated no_answer  T    (abstain)                                               Quel pigment des plantes est principalement responsable de l’absorption de la lumière pendant la photosynthèse ?

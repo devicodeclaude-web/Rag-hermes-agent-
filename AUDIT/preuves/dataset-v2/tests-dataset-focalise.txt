@@ -17,10 +17,6 @@ test_find_passage_span_is_verbatim_and_hashed (tests.test_eval_annotation_chain.
 test_find_passage_span_rejects_absent_text (tests.test_eval_annotation_chain.EvalCorpusTests.test_find_passage_span_rejects_absent_text) ... ok
 test_find_passage_span_rejects_ambiguous_text (tests.test_eval_annotation_chain.EvalCorpusTests.test_find_passage_span_rejects_ambiguous_text) ... ok
 test_manifest_pins_single_revision_and_content_hash (tests.test_eval_annotation_chain.EvalCorpusTests.test_manifest_pins_single_revision_and_content_hash) ... ok
-test_remaining_counts_when_everything_is_short (tests.test_validate_dataset_v2_gate.GateReportTests.test_remaining_counts_when_everything_is_short) ... ok
-test_remaining_is_zero_and_ready_when_targets_met (tests.test_validate_dataset_v2_gate.GateReportTests.test_remaining_is_zero_and_ready_when_targets_met) ... ok
-test_remaining_never_goes_negative_when_exceeding_targets (tests.test_validate_dataset_v2_gate.GateReportTests.test_remaining_never_goes_negative_when_exceeding_targets) ... ok
-test_report_preserves_existing_keys (tests.test_validate_dataset_v2_gate.GateReportTests.test_report_preserves_existing_keys) ... ok
 test_aggregates_all_problems_not_just_the_first (tests.test_precheck_manual_batch.CheckBatchTests.test_aggregates_all_problems_not_just_the_first) ... ok
 test_check_batch_leaves_existing_dataset_byte_identical (tests.test_precheck_manual_batch.CheckBatchTests.test_check_batch_leaves_existing_dataset_byte_identical) ... ok
 test_check_batch_never_writes_dataset (tests.test_precheck_manual_batch.CheckBatchTests.test_check_batch_never_writes_dataset) ... ok
@@ -31,9 +27,21 @@ test_flags_case_id_already_in_dataset (tests.test_precheck_manual_batch.CheckBat
 test_flags_duplicate_case_id_within_batch (tests.test_precheck_manual_batch.CheckBatchTests.test_flags_duplicate_case_id_within_batch) ... ok
 test_flags_unresolved_placeholder_tokens (tests.test_precheck_manual_batch.CheckBatchTests.test_flags_unresolved_placeholder_tokens) ... ok
 test_typeerror_is_captured_not_raised (tests.test_precheck_manual_batch.CheckBatchTests.test_typeerror_is_captured_not_raised) ... ok
+test_fails_closed_and_writes_nothing_on_an_invalid_row (tests.test_ingest_manual_batch.IngestManualBatchTests.test_fails_closed_and_writes_nothing_on_an_invalid_row) ... VIOLATION row 1 (m-011-en): passage_text not found verbatim in the canonical document
+ok
+test_ingests_a_valid_answerable_row (tests.test_ingest_manual_batch.IngestManualBatchTests.test_ingests_a_valid_answerable_row) ... ok
+test_ingests_an_abstention_row (tests.test_ingest_manual_batch.IngestManualBatchTests.test_ingests_an_abstention_row) ... ok
+test_rejects_duplicate_case_id_against_existing_dataset (tests.test_ingest_manual_batch.IngestManualBatchTests.test_rejects_duplicate_case_id_against_existing_dataset) ... VIOLATION row 0: case_id already in dataset: m-020-en
+ok
+test_blocks_when_either_language_is_below_minimum_abstention_rate (tests.test_validate_dataset_v2_gate.GateReportTests.test_blocks_when_either_language_is_below_minimum_abstention_rate) ... ok
+test_ready_when_both_languages_meet_minimum_abstention_rate (tests.test_validate_dataset_v2_gate.GateReportTests.test_ready_when_both_languages_meet_minimum_abstention_rate) ... ok
+test_remaining_counts_when_everything_is_short (tests.test_validate_dataset_v2_gate.GateReportTests.test_remaining_counts_when_everything_is_short) ... ok
+test_remaining_is_zero_and_ready_when_targets_met (tests.test_validate_dataset_v2_gate.GateReportTests.test_remaining_is_zero_and_ready_when_targets_met) ... ok
+test_remaining_never_goes_negative_when_exceeding_targets (tests.test_validate_dataset_v2_gate.GateReportTests.test_remaining_never_goes_negative_when_exceeding_targets) ... ok
+test_report_preserves_existing_keys (tests.test_validate_dataset_v2_gate.GateReportTests.test_report_preserves_existing_keys) ... ok
 
 ----------------------------------------------------------------------
-Ran 33 tests in 2.962s
+Ran 39 tests in 1.496s
 
 OK
 {
@@ -45,6 +53,21 @@ OK
   "pending": 0,
   "target_en": 1,
   "target_fr_pairs": 1,
+  "target_min_abstention_rate": 0.0,
+  "abstention": {
+    "en2en": {
+      "count": 0,
+      "rate": 0.0,
+      "required": 0,
+      "remaining": 0
+    },
+    "fr2en": {
+      "count": 0,
+      "rate": 0.0,
+      "required": 0,
+      "remaining": 0
+    }
+  },
   "remaining": {
     "en2en_cases": 0,
     "fr_pairs": 0,
@@ -54,3 +77,6 @@ OK
   "targets_met": true,
   "status": "READY"
 }
+{"ingested": 1, "dataset": "/data/data/com.termux/files/usr/tmp/tmp6naxd5x2.jsonl", "case_ids": ["m-001-en"]}
+{"ingested": 1, "dataset": "/data/data/com.termux/files/usr/tmp/tmpcx9mwkot.jsonl", "case_ids": ["m-002-en"]}
+{"ingested": 1, "dataset": "/data/data/com.termux/files/usr/tmp/tmpenkett1c.jsonl", "case_ids": ["m-020-en"]}

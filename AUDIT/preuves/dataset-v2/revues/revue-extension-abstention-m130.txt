@@ -1,0 +1,30 @@
+{
+  "pair_id": "m-130",
+  "passed": true,
+  "checks": {
+    "en_fr_same_central_meaning": {
+      "passed": true,
+      "finding": "Les deux formulations demandent le même pigment végétal principalement responsable de l’absorption de la lumière pendant la photosynthèse, sans élargissement ni restriction sémantique notable."
+    },
+    "factual_precise_unique_answer": {
+      "passed": true,
+      "finding": "Question factuelle, stable et suffisamment précise, visant une seule réponse conventionnelle."
+    },
+    "corpus_answerable": {
+      "passed": true,
+      "value": false,
+      "finding": "Aucun passage du corpus Hermes canonique ne fournit la réponse. corpus_lookup.py retourne zéro document pour « pigment », « pigments », « absorbing light », « photosynthesis », « chlorophyll », « green pigment », « plantes », « lumière », « photosynthèse », « chlorophylle » et « absorber ». L’unique résultat pour « plants » a été inspecté : il emploie le verbe anglais « plants » à propos d’un nonce iron-proxy et est sans rapport. Les résultats plus larges pour « plant », « absorb » et « light » sont des occurrences techniques ou figurées, sans contenu botanique pertinent."
+    },
+    "semantic_duplicate": {
+      "passed": true,
+      "value": false,
+      "finding": "Aucun autre cas du dataset ne demande ce fait. Les cas d’abstention voisins portent sur des faits généraux distincts, et la comparaison avec l’ensemble des questions n’a révélé aucun doublon sémantique."
+    },
+    "abstention_metadata": {
+      "passed": true,
+      "finding": "Les deux cas ont pair_id=m-130, category=no_answer, should_abstain=true, unanswerable_reason=outside_corpus_scope, question_provenance=human_task_without_corpus_view, reference_status=pending, access_scope=public et relevance_spans vide ; ces métadonnées sont cohérentes avec une paire d’abstention en attente de validation."
+    }
+  },
+  "blocking_findings": [],
+  "summary": "La paire m-130 satisfait les cinq contrôles fail-closed et peut être approuvée. Aucun fichier n’a été créé ou modifié pendant la revue."
+}

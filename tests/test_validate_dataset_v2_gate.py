@@ -38,6 +38,32 @@ class GateReportTests(unittest.TestCase):
         self.assertEqual(report["remaining"]["fr_pairs"], 0)     # not -10
         self.assertTrue(report["targets_met"])
 
+    def test_blocks_when_either_language_is_below_minimum_abstention_rate(self):
+        report = v.gate_report(
+            total=140, en=100, fr=40, complete_pairs=40, reviewed=140,
+            target_en=100, target_fr_pairs=40,
+            en_abstentions=15, fr_abstentions=3,
+            target_min_abstention_rate=0.20,
+        )
+        self.assertEqual(report["status"], "BLOCKED_review_or_volume")
+        self.assertFalse(report["targets_met"])
+        self.assertEqual(report["abstention"]["en2en"]["required"], 20)
+        self.assertEqual(report["abstention"]["en2en"]["remaining"], 5)
+        self.assertEqual(report["abstention"]["fr2en"]["required"], 8)
+        self.assertEqual(report["abstention"]["fr2en"]["remaining"], 5)
+
+    def test_ready_when_both_languages_meet_minimum_abstention_rate(self):
+        report = v.gate_report(
+            total=154, en=107, fr=47, complete_pairs=47, reviewed=154,
+            target_en=100, target_fr_pairs=40,
+            en_abstentions=22, fr_abstentions=10,
+            target_min_abstention_rate=0.20,
+        )
+        self.assertEqual(report["status"], "READY")
+        self.assertTrue(report["targets_met"])
+        self.assertEqual(report["abstention"]["en2en"]["remaining"], 0)
+        self.assertEqual(report["abstention"]["fr2en"]["remaining"], 0)
+
     def test_report_preserves_existing_keys(self):
         # Backward compatibility: the historical keys must still be present.
         report = v.gate_report(

@@ -2,7 +2,7 @@
 """Validate the whole v2 evaluation dataset and report human-review readiness.
 
 Exit codes:
-  0  all target invariants satisfied AND human review complete on the 100 refs;
+  0  all target invariants satisfied AND human review complete;
   2  structurally valid but review/volume targets not yet met (expected, honest gate);
   1  a structural / anti-circularity violation was found.
 """
@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from pathlib import Path
 import sys
 
@@ -25,6 +26,7 @@ CORPUS = DEFAULT_CORPUS
 
 TARGET_EN = 100
 TARGET_FR_PAIRS = 40
+TARGET_MIN_ABSTENTION_RATE = 0.20
 REVIEW_STATUSES_DONE = {"validated", "arbitrated"}
 
 
@@ -50,16 +52,29 @@ def gate_report(
     reviewed: int,
     target_en: int,
     target_fr_pairs: int,
+    en_abstentions: int = 0,
+    fr_abstentions: int = 0,
+    target_min_abstention_rate: float = 0.0,
 ) -> dict:
     """Build the gate report with an actionable ``remaining`` block.
 
     Preserves all historical keys (total, en2en, fr2en, complete_en_fr_pairs,
     reviewed, pending, target_en, target_fr_pairs, structural, status) and adds
-    ``remaining`` (how many EN cases, FR pairs and reviews are still needed) plus
-    a boolean ``targets_met``. Remaining counts never go negative.
+    ``remaining`` (how many EN cases, FR pairs and reviews are still needed),
+    per-language abstention targets, plus a boolean ``targets_met``. Remaining
+    counts never go negative.
     """
+    required_en_abstentions = math.ceil(en * target_min_abstention_rate)
+    required_fr_abstentions = math.ceil(fr * target_min_abstention_rate)
+    abstention_targets_met = (
+        en_abstentions >= required_en_abstentions
+        and fr_abstentions >= required_fr_abstentions
+    )
     targets_met = (
-        en >= target_en and complete_pairs >= target_fr_pairs and reviewed == total
+        en >= target_en
+        and complete_pairs >= target_fr_pairs
+        and reviewed == total
+        and abstention_targets_met
     )
     return {
         "total": total,
@@ -70,6 +85,21 @@ def gate_report(
         "pending": total - reviewed,
         "target_en": target_en,
         "target_fr_pairs": target_fr_pairs,
+        "target_min_abstention_rate": target_min_abstention_rate,
+        "abstention": {
+            "en2en": {
+                "count": en_abstentions,
+                "rate": en_abstentions / en if en else 0.0,
+                "required": required_en_abstentions,
+                "remaining": max(0, required_en_abstentions - en_abstentions),
+            },
+            "fr2en": {
+                "count": fr_abstentions,
+                "rate": fr_abstentions / fr if fr else 0.0,
+                "required": required_fr_abstentions,
+                "remaining": max(0, required_fr_abstentions - fr_abstentions),
+            },
+        },
         "remaining": {
             "en2en_cases": max(0, target_en - en),
             "fr_pairs": max(0, target_fr_pairs - complete_pairs),
@@ -138,6 +168,9 @@ def main() -> int:
         reviewed=reviewed,
         target_en=TARGET_EN,
         target_fr_pairs=TARGET_FR_PAIRS,
+        en_abstentions=sum(1 for case in en if case["should_abstain"]),
+        fr_abstentions=sum(1 for case in fr if case["should_abstain"]),
+        target_min_abstention_rate=TARGET_MIN_ABSTENTION_RATE,
     )
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0 if report["targets_met"] else 2

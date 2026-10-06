@@ -1,0 +1,47 @@
+{
+  "passed": false,
+  "pairs": [
+    {
+      "pair_id": "m-123",
+      "passed": true,
+      "reason": "Les formulations EN « as of 2026 » et FR « En 2026 » préservent le même sens central et le même repère temporel. La question est factuelle et suffisamment déterminée. Les recherches du corpus sur « solar system », « planet », « moons », « moon » et « solar » n’ont trouvé aucun passage répondant à la question : les occurrences concernent notamment Moonshot/Kimi, des thèmes créatifs ou une personne marchant sur la Lune. Aucun doublon sémantique parmi les 140 cas antérieurs. no_answer, should_abstain=true, outside_corpus_scope et l’absence de spans sont appropriés."
+    },
+    {
+      "pair_id": "m-124",
+      "passed": true,
+      "reason": "EN et FR demandent exactement le numéro atomique de l’or. La question factuelle admet une réponse unique. « atomic number », « periodic table » et « chemical element » ne produisent aucun résultat; les occurrences de « atomic » portent sur les écritures atomiques logicielles et celles de « gold » sur des couleurs, niveaux ou expressions sans rapport. Aucun doublon sémantique antérieur. La classification no_answer avec spans vides est appropriée."
+    },
+    {
+      "pair_id": "m-125",
+      "passed": false,
+      "reason": "L’alignement EN/FR est exact, la question est factuelle et déterminée, et elle ne duplique aucun des 140 cas antérieurs. En revanche, le corpus canonique fournit directement la réponse : hermes-agent:user-guide/skills/optional/productivity/productivity-memento-flashcards.md, autour des caractères 5950–6850, contient exactement « What year did the Berlin Wall fall? », puis corrige l’utilisateur en indiquant explicitement l’année. Ce cas est donc answerable; no_answer, should_abstain=true, outside_corpus_scope et les spans vides sont inappropriés."
+    },
+    {
+      "pair_id": "m-126",
+      "passed": true,
+      "reason": "Les deux langues demandent le même auteur du même roman; la question est factuelle, précise et à réponse unique. « Pride and Prejudice » et « Jane Austen » ne donnent aucun résultat. Les occurrences génériques de « novel » concernent la nouveauté et non l’œuvre littéraire. Aucun doublon sémantique antérieur. L’abstention no_answer sans spans est appropriée."
+    },
+    {
+      "pair_id": "m-127",
+      "passed": true,
+      "reason": "EN et FR demandent le même plus grand océan terrestre. La formulation est factuelle et suffisamment précise pour une réponse unique dans son sens conventionnel. « largest ocean » et « Pacific Ocean » ne donnent aucun résultat; « ocean » et « Earth » ne renvoient qu’à des thèmes, palettes ou exemples créatifs sans fait géographique répondant. Aucun doublon sémantique antérieur. no_answer et les spans vides sont appropriés."
+    },
+    {
+      "pair_id": "m-128",
+      "passed": true,
+      "reason": "Les formulations EN et FR ont le même sens central : le nombre de cordes d’un violon standard. La qualification « standard » rend la question factuelle et déterminée. « violin », « standard violin », « musical instrument » et « four strings » ne donnent aucun résultat; les occurrences de « strings » concernent principalement des chaînes logicielles ou des descriptions musicales génériques, sans répondre. Aucun doublon sémantique antérieur, y compris avec les autres questions « How many ». La classification no_answer avec spans vides est appropriée."
+    },
+    {
+      "pair_id": "m-129",
+      "passed": true,
+      "reason": "Dans ce contexte, EN « soccer » et FR « football » désignent le même sport, et les deux formulations demandent le nombre de joueurs d’une seule équipe présents simultanément sur le terrain. La question est factuelle et suffisamment déterminée. « soccer », « soccer team », « football team », « on the field » et « eleven players » ne donnent aucun passage répondant; l’unique occurrence de « football » est un nom de fichier d’image de terrain et les occurrences de « players » concernent la délégation ou des jeux. Aucun doublon sémantique antérieur. no_answer et l’absence de spans sont appropriés."
+    }
+  ],
+  "blocking": [
+    {
+      "pair_id": "m-125",
+      "reason": "Le corpus canonique contient la question elle-même et fournit explicitement sa réponse dans productivity-memento-flashcards.md; la paire ne peut pas être une abstention."
+    }
+  ],
+  "files_modified": []
+}

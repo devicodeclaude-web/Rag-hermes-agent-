@@ -1,12 +1,27 @@
 {
-  "total": 140,
-  "en2en": 100,
-  "fr2en": 40,
-  "complete_en_fr_pairs": 40,
-  "reviewed": 140,
+  "total": 154,
+  "en2en": 107,
+  "fr2en": 47,
+  "complete_en_fr_pairs": 47,
+  "reviewed": 154,
   "pending": 0,
   "target_en": 100,
   "target_fr_pairs": 40,
+  "target_min_abstention_rate": 0.2,
+  "abstention": {
+    "en2en": {
+      "count": 22,
+      "rate": 0.205607476635514,
+      "required": 22,
+      "remaining": 0
+    },
+    "fr2en": {
+      "count": 10,
+      "rate": 0.2127659574468085,
+      "required": 10,
+      "remaining": 0
+    }
+  },
   "remaining": {
     "en2en_cases": 0,
     "fr_pairs": 0,
