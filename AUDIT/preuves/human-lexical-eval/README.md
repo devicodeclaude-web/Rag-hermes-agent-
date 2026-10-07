@@ -29,8 +29,8 @@ Ce dossier ne démontre ni qualité statistique complète ni aptitude à la prod
 
 ## Limites
 
-- Le rapport brut initial porte `working_tree_dirty: true` : il a été produit avant le commit du code qui crée ce runner.
-- Après autorisation du commit de code, le rapport doit être rejoué depuis un arbre propre puis republié avec son empreinte finale.
+- Le rapport définitif porte `working_tree_dirty: false` et référence le commit de code vérifié `4b84bcaefc28b7be25d095c67330197355385bcd`.
+- Le commit de preuves qui suit ne modifie pas le code évalué ; `code_revision` reste donc volontairement le commit précédent.
 - Aucun intervalle bootstrap n’est calculé.
 - Le score FR→EN lexical n’est pas une baseline translingue équitable.
 - Les jugements humains de validité et de support des citations ne sont pas instrumentés (`null`).
