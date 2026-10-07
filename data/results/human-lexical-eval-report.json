@@ -1,0 +1,136 @@
+{
+  "schema_version": 1,
+  "track": "human",
+  "question_provenance_counts": {
+    "human_task_without_corpus_view": 154
+  },
+  "quality_eligible": true,
+  "evidence_level": "component_integration",
+  "granularity": "passage_span_overlap",
+  "retriever": "in_memory_lexical_baseline",
+  "generator": null,
+  "embedding_model": null,
+  "reranker": null,
+  "tokenizer": null,
+  "hardware": "local_cpu",
+  "precision": null,
+  "k": 10,
+  "minimum_score": 0.05,
+  "cases_total": 154,
+  "corpus_documents": 461,
+  "source_revision": "b682a98ab8cb30c4f0561021e0ff9f41e5156526",
+  "corpus_manifest_sha": "af0631abbffaab14b180abc4531497665a6104d6685328d6abbe53a565c53866",
+  "dataset_sha256": "4613e8b3b84fb7b24ad66cf01329f40d95934bec189fe7f6cddf1eb751c767d4",
+  "code_revision": "3db23b14f6f600c3dca4d4991b1c65cb76af9f10",
+  "working_tree_dirty": true,
+  "elapsed_seconds": 416.0,
+  "results": {
+    "overall": {
+      "cases_total": 154,
+      "cases_answerable": 122,
+      "cases_abstention": 32,
+      "metrics": {
+        "case_count": 154,
+        "recall_at_k": 0.3360655737704918,
+        "mrr": 0.17369893312516263,
+        "citation_precision": 0.09090909090909091,
+        "citation_validity_precision": null,
+        "citation_support_precision": null,
+        "abstention_precision": 0.0,
+        "abstention_recall": 0.0,
+        "leak_count": 0,
+        "security_gate_passed": true,
+        "acl_error_count": 0,
+        "backend_error_count": 0
+      }
+    },
+    "by_track": {
+      "en2en": {
+        "cases_total": 107,
+        "cases_answerable": 85,
+        "cases_abstention": 22,
+        "metrics": {
+          "case_count": 107,
+          "recall_at_k": 0.4470588235294118,
+          "mrr": 0.23388422035480858,
+          "citation_precision": 0.12149532710280374,
+          "citation_validity_precision": null,
+          "citation_support_precision": null,
+          "abstention_precision": 0.0,
+          "abstention_recall": 0.0,
+          "leak_count": 0,
+          "security_gate_passed": true,
+          "acl_error_count": 0,
+          "backend_error_count": 0
+        },
+        "comparison_role": "primary_lexical_baseline"
+      },
+      "fr2en": {
+        "cases_total": 47,
+        "cases_answerable": 37,
+        "cases_abstention": 10,
+        "metrics": {
+          "case_count": 47,
+          "recall_at_k": 0.08108108108108109,
+          "mrr": 0.03543543543543544,
+          "citation_precision": 0.02127659574468085,
+          "citation_validity_precision": null,
+          "citation_support_precision": null,
+          "abstention_precision": 0.0,
+          "abstention_recall": 0.0,
+          "leak_count": 0,
+          "security_gate_passed": true,
+          "acl_error_count": 0,
+          "backend_error_count": 0
+        },
+        "comparison_role": "cross_lingual_diagnostic_only"
+      }
+    },
+    "by_category": {
+      "no_answer": {
+        "cases_total": 32,
+        "cases_answerable": 0,
+        "cases_abstention": 32,
+        "metrics": {
+          "case_count": 32,
+          "recall_at_k": 0.0,
+          "mrr": 0.0,
+          "citation_precision": 0.0,
+          "citation_validity_precision": null,
+          "citation_support_precision": null,
+          "abstention_precision": 0.0,
+          "abstention_recall": 0.0,
+          "leak_count": 0,
+          "security_gate_passed": true,
+          "acl_error_count": 0,
+          "backend_error_count": 0
+        }
+      },
+      "simple": {
+        "cases_total": 122,
+        "cases_answerable": 122,
+        "cases_abstention": 0,
+        "metrics": {
+          "case_count": 122,
+          "recall_at_k": 0.3360655737704918,
+          "mrr": 0.17369893312516263,
+          "citation_precision": 0.11475409836065574,
+          "citation_validity_precision": null,
+          "citation_support_precision": null,
+          "abstention_precision": 0.0,
+          "abstention_recall": 0.0,
+          "leak_count": 0,
+          "security_gate_passed": true,
+          "acl_error_count": 0,
+          "backend_error_count": 0
+        }
+      }
+    }
+  },
+  "limitations": [
+    "Descriptive metrics only; no bootstrap confidence intervals in this report.",
+    "FR->EN lexical scores are diagnostic only and not an equitable cross-lingual baseline.",
+    "No dense embeddings, reranker, generator, private corpus, or production deployment is exercised.",
+    "Citation support is span-overlap retrieval evidence, not a human judgment of generated claims."
+  ]
+}

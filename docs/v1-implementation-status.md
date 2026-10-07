@@ -17,6 +17,7 @@ humaine annotée et les jeux gelés de 100 puis 300 questions.
 | Comparateur RAG vs closed-book | `rag_hermes/campaign_compare.py`, `scripts/compare_campaigns.py` | Abstention des deux campagnes (sentinelles distinctes) ; échantillon de revue humaine déterministe ≥ 20 % |
 | Piste d'évaluation synthétique | `rag_hermes/synthetic_dataset.py`, `scripts/migrate_v1_to_synthetic.py` | 100 cas, provenance `synthetic_generated_from_corpus` jamais quality-eligible (non-circularité), spans document entier |
 | Rapport-témoin synthétique | `rag_hermes/synthetic_report.py`, `scripts/synthetic_eval_report.py` | recall@k document-niveau sur corpus réel ; leak_count 0, gate actif |
+| Rapport lexical humain | `rag_hermes/human_report.py`, `scripts/human_eval_report.py` | 154 cas humains revus ; résultats globaux, EN→EN, FR→EN et catégories ; publication checksum puis rapport-marqueur + vérification SHA-256 ; FR→EN diagnostic seulement |
 | Outillage d'annotation humaine | `scripts/ingest_manual_batch.py`, `scripts/corpus_lookup.py`, `templates/manual_eval_batch.template.jsonl` | Ingestion atomique fail-closed ; provenance humaine ; validation stricte du schéma |
 | Durcissement HTTP / UI | `rag_hermes/http_api.py`, `rag_hermes/web_ui.py` | En-têtes de sécurité sur toutes les réponses, CSP stricte, JS externalisé (`/app.js`), host loopback-only |
 
@@ -29,14 +30,14 @@ humaine annotée et les jeux gelés de 100 puis 300 questions.
 | Fuite inter-tenant 0 absolu | Barrière ACL Qdrant réelle validée par ailleurs ; le rapport synthétique confirme leak_count 0 (corpus 100 % public) |
 | Élargissement de recherche après erreur ACL 0 absolu | Garanti par le service (refus fermé) ; couvert par la suite de tests |
 | Validité structurelle des citations 1,00 | Générateur RAG fail-closed sur citations invalides |
-| ≥ 300 questions gelées + couverture (privé, abstention, contradictions, injections) | **À faire** (piste humaine vide ; jeu intermédiaire de 100 dont ≥ 30 manuelles d'abord) |
-| Seuils de recall/MRR/abstention | Non probants tant que la piste humaine annotée et un récupérateur dense/reranké réels ne sont pas en place |
+| ≥ 300 questions gelées + couverture (privé, abstention, contradictions, injections) | **Intermédiaire atteint** : 154 cas humains validés (107 EN, 47 FR), dont 32 abstentions ; 146 cas et les catégories de couverture manquent encore pour 300 |
+| Seuils de recall/MRR/abstention | Baseline lexicale humaine mesurée : Recall@10 global 0,3361, MRR 0,1737, rappel d'abstention 0 ; comparaison dense/rerankée et intervalles de confiance encore absents |
 
 ## Reste à faire
 
-1. **Piste humaine** : rédiger ≥ 30 questions écrites à la main (sans voir le
-   corpus), puis atteindre les cibles du gate `scripts/validate_dataset_v2.py`
-   (100 EN + 40 paires FR, toutes revues). Outillage prêt.
+1. **Étendre le jeu final** : le gate intermédiaire est `READY` avec 154 cas
+   humains validés ; ajouter 146 cas pour atteindre 300 et couvrir explicitement
+   privé, contradictions et injections, avec la même revue fail-closed.
 2. **Endpoint LLM réel** : brancher `RAG_GENERATOR_*` et `RAG_BASELINE_*` sur un
    serveur OpenAI-compatible pour produire de vraies réponses RAG et closed-book,
    puis relancer le comparateur.

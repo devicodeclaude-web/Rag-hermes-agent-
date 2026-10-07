@@ -263,14 +263,12 @@ de qualité humaine (non-circularité).
    humain sans voir le corpus (`human_task_without_corpus_view`) ou questions
    réelles anonymisées (`anonymized_real_user_question`), annotées au **passage**
    (span exact + `passage_sha256`), avec paires EN/FR. C’est la seule piste
-   éligible comme preuve de qualité. Le gate `scripts/validate_dataset_v2.py`
-   n’est `READY` qu’avec 100 cas EN, 40 paires FR complètes et **toutes** les
-   références revues (`validated`/`arbitrated`). Objectif README : au moins 30 des
-   questions écrites à la main. Cette piste est aujourd’hui **vide** et attend les
-   annotations humaines (voir `scripts/annotate_eval_case.py`). Le rapport du gate
-   expose un bloc `remaining` actionnable (`en2en_cases`, `fr_pairs`, `to_review`)
-   indiquant exactement ce qu’il reste à produire pour atteindre `READY`, ainsi
-   qu’un booléen `targets_met`.
+   éligible comme preuve de qualité. État vérifié : **154 cas validés** (107 EN,
+   47 FR), dont 32 abstentions (22 EN, 10 FR), soit au moins 20 % dans chaque
+   langue. Le gate `scripts/validate_dataset_v2.py` est `READY` : les cibles
+   intermédiaires de 100 cas EN et 40 paires FR sont dépassées, toutes les
+   références sont revues et le bloc `remaining` est nul. Le jeu final de 300 cas
+   et les catégories privées/contradictions/injections restent à compléter.
 
 2. **Piste synthétique — `data/benchmark/dataset-synthetic.jsonl`.** Migration du
    jeu généré `dataset-v1.jsonl` (100 questions) vers le schéma canonique via
@@ -287,6 +285,28 @@ de qualité humaine (non-circularité).
 # Migrer/rafraîchir la piste synthétique (déterministe)
 .venv-audit/bin/python scripts/migrate_v1_to_synthetic.py
 ```
+
+#### Rapport lexical de la piste humaine
+
+`scripts/human_eval_report.py` exécute les 154 cas humains sur le corpus public
+complet avec la baseline lexicale locale. Il prépare les deux artefacts, publie
+le checksum d’abord puis `data/results/human-lexical-eval-report.json` en dernier
+comme marqueur de commit. Un consommateur ne doit accepter le résultat que si le
+rapport existe et correspond à son SHA-256. Le script sépare les résultats EN→EN
+et FR→EN et refuse toute question synthétique ou référence non revue.
+
+```bash
+.venv-audit/bin/python scripts/human_eval_report.py --k 10 --minimum-score 0.05
+```
+
+Mesure descriptive obtenue sur 154 cas (122 répondables, 32 abstentions) :
+Recall@10 global `0,3361`, MRR `0,1737`; EN→EN Recall@10 `0,4471`, MRR
+`0,2339`; FR→EN Recall@10 `0,0811`, MRR `0,0354`. La baseline ne s’abstient
+jamais à ce seuil (`abstention_recall = 0`) et ne produit aucune fuite
+(`leak_count = 0`). Le score FR→EN est un diagnostic seulement : une recherche
+lexicale française sur un corpus anglais n’est pas une comparaison translingue
+équitable. Les champs de jugement humain des citations restent `null`, car ils
+ne sont pas instrumentés dans ce rapport de retrieval.
 
 #### Rapport-témoin de la piste synthétique
 

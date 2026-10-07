@@ -1,0 +1,5 @@
+a947e90162a716cc00b3e3547f84298ad3df07cbc8c2af02da9e996aea3bbb35  AUDIT/preuves/human-lexical-eval/README.md
+df65870b9cbc8aa9b484943a772ad40a374c871b43b005e6bcb15a5b12cf50f7  AUDIT/preuves/human-lexical-eval/tests-full-qdrant.txt
+b820b0b51a8567ef5f6ceb18bcb725938e61cf491bc3ba5278a4c28d256ec622  AUDIT/preuves/human-lexical-eval/tests-targeted.txt
+85db7ee5686301725efc56c9248929be75e4d61dc2c68727b2cda9e3d7e2dcf1  AUDIT/preuves/human-lexical-eval/gate-dataset-v2.txt
+df739d774aa1e8ee865f07904bbdb2678e7cac50002de0326b92543de7ded903  data/results/human-lexical-eval-report.json
