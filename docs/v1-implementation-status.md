@@ -18,6 +18,7 @@ humaine annotée et les jeux gelés de 100 puis 300 questions.
 | Piste d'évaluation synthétique | `rag_hermes/synthetic_dataset.py`, `scripts/migrate_v1_to_synthetic.py` | 100 cas, provenance `synthetic_generated_from_corpus` jamais quality-eligible (non-circularité), spans document entier |
 | Rapport-témoin synthétique | `rag_hermes/synthetic_report.py`, `scripts/synthetic_eval_report.py` | recall@k document-niveau sur corpus réel ; leak_count 0, gate actif |
 | Rapport lexical humain | `rag_hermes/human_report.py`, `scripts/human_eval_report.py` | 154 cas humains revus ; résultats globaux, EN→EN, FR→EN et catégories ; publication checksum puis rapport-marqueur + vérification SHA-256 ; FR→EN diagnostic seulement |
+| Rapport dense persisté (plomberie) | `rag_hermes/dense_report.py`, `scripts/dense_eval_report.py` | Pipeline persisté réel : ingestion corpus → Qdrant 1.19.0 → recherche ANN → préfiltre ACL → scoring ; embedder **déterministe, pas une embedding sémantique** → `quality_eligible=false`, `retriever=qdrant_deterministic_not_an_embedding` ; prouve la plomberie (leak_count 0), pas la qualité ; BGE-M3 réel injecté seulement au smoke GPU |
 | Outillage d'annotation humaine | `scripts/ingest_manual_batch.py`, `scripts/corpus_lookup.py`, `templates/manual_eval_batch.template.jsonl` | Ingestion atomique fail-closed ; provenance humaine ; validation stricte du schéma |
 | Durcissement HTTP / UI | `rag_hermes/http_api.py`, `rag_hermes/web_ui.py` | En-têtes de sécurité sur toutes les réponses, CSP stricte, JS externalisé (`/app.js`), host loopback-only |
 
@@ -45,8 +46,10 @@ humaine annotée et les jeux gelés de 100 puis 300 questions.
    (fichier `data/results/campaign-review-sample.jsonl`).
 4. **Smoke GPU** : réexécuter avec `rejected_pairs = 0` avant de retenir le
    reranker (nécessite un GPU cloud ; voir `docs/smoke-gpu-runbook.md`).
-5. **Récupérateur dense/reranké réel** : persister les sorties dense+sparse dans
-   Qdrant et mesurer le gain par rapport au plancher lexical.
+5. **Récupérateur dense/reranké réel** : la **plomberie** dense persistée est
+   faite et vérifiée sur Qdrant réel (`scripts/dense_eval_report.py`, embedder
+   déterministe, `leak_count 0`). Reste à injecter le **vrai** BGE-M3 au smoke
+   GPU pour mesurer le gain sémantique par rapport au plancher lexical.
 
 ## Discipline de développement
 
