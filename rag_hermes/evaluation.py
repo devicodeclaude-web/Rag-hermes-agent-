@@ -22,7 +22,7 @@ class EvaluationCase:
     should_abstain: bool
     did_abstain: bool
     leaked_chunk_ids: tuple[str, ...]
-    technical_failure: Literal["acl_error", "backend_error"] | None = None
+    technical_failure: Literal["acl_error", "backend_error", "token_budget_error"] | None = None
     citation_judgments: tuple[CitationJudgment, ...] | None = None
 
 
@@ -40,6 +40,7 @@ class EvaluationReport:
     security_gate_passed: bool
     acl_error_count: int
     backend_error_count: int
+    token_budget_error_count: int
 
 
 def _safe_ratio(numerator: int | float, denominator: int | float) -> float:
@@ -52,7 +53,7 @@ def evaluate(cases: Iterable[EvaluationCase], k: int) -> EvaluationReport:
         raise ValueError("at least one evaluation case is required")
     if k < 1:
         raise ValueError("k must be positive")
-    allowed_failures = {None, "acl_error", "backend_error"}
+    allowed_failures = {None, "acl_error", "backend_error", "token_budget_error"}
     if any(case.technical_failure not in allowed_failures for case in items):
         raise ValueError("unknown technical failure status")
     if any(case.technical_failure and case.did_abstain for case in items):
@@ -103,6 +104,9 @@ def evaluate(cases: Iterable[EvaluationCase], k: int) -> EvaluationReport:
     backend_error_count = sum(
         case.technical_failure == "backend_error" for case in items
     )
+    token_budget_error_count = sum(
+        case.technical_failure == "token_budget_error" for case in items
+    )
 
     return EvaluationReport(
         case_count=len(items),
@@ -134,4 +138,5 @@ def evaluate(cases: Iterable[EvaluationCase], k: int) -> EvaluationReport:
         security_gate_passed=leak_count == 0,
         acl_error_count=acl_error_count,
         backend_error_count=backend_error_count,
+        token_budget_error_count=token_budget_error_count,
     )

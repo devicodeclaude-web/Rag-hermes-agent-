@@ -8,7 +8,7 @@ from typing import Any, Iterable
 from .acl import AuthorizationContext, Chunk, filter_authorized
 from .acl_authority import CanonicalAclAuthority
 from .qdrant_filter import build_qdrant_filter
-from .reranker_budget import assert_pair_fits
+from .reranker_budget import RejectedPair, RerankerBudgetExceeded, pair_fits
 
 _TOKEN_RE = re.compile(r"\w+", re.UNICODE)
 
@@ -59,6 +59,8 @@ class RerankerBudgetCounters:
     checked_pairs: int
     maximum_pair_tokens: int
     rejected_pairs: int
+    rejected: tuple[RejectedPair, ...] = ()
+    scored: tuple[dict[str, Any], ...] = ()
 
 
 def postfilter_candidates(candidates: Iterable[dict[str, Any]], context: AuthorizationContext, authority: CanonicalAclAuthority) -> tuple[list[dict[str, Any]], AclBarrierCounters]:
@@ -123,14 +125,51 @@ def hybrid_rrf_indices(
 
 
 def score_authorized_pairs(reranker: Any, tokenizer: Any, query: str, candidates: list[dict[str, Any]], *, max_length: int, batch_size: int) -> tuple[list[float], RerankerBudgetCounters]:
-    pairs: list[list[str]] = []
-    lengths: list[int] = []
-    for candidate in candidates:
-        passage = str((candidate.get("payload") or {}).get("text", ""))
-        lengths.append(assert_pair_fits(tokenizer, query, passage, max_length=max_length))
-        pairs.append([query, passage])
-    if not pairs:
-        return [], RerankerBudgetCounters(0, 0, 0)
-    raw = reranker.compute_score(pairs, batch_size=batch_size, max_length=max_length, normalize=True)
+    """Option A : écarte par paire ce qui dépasse le budget, scorie le reste.
+
+    Chaque paire hors budget est journalisée (document + nb de tokens) sans
+    troncature. Si TOUTES les paires dépassent, lève RerankerBudgetExceeded
+    (statut requête ERROR_TOKEN_BUDGET) ; jamais une abstention silencieuse.
+    """
+    kept: list[dict[str, Any]] = []
+    kept_pairs: list[list[str]] = []
+    kept_lengths: list[int] = []
+    rejected: list[RejectedPair] = []
+    checked = 0
+    for index, candidate in enumerate(candidates):
+        checked += 1
+        payload = candidate.get("payload") or {}
+        passage = str(payload.get("text", ""))
+        fits, token_count = pair_fits(tokenizer, query, passage, max_length=max_length)
+        if fits:
+            kept.append(candidate)
+            kept_pairs.append([query, passage])
+            kept_lengths.append(token_count)
+        else:
+            rejected.append(
+                RejectedPair(
+                    index=index,
+                    document_id=str(payload.get("document_id", "")),
+                    token_count=token_count,
+                    max_length=max_length,
+                )
+            )
+    if not kept:
+        if checked:
+            raise RerankerBudgetExceeded(
+                f"all {checked} candidate pairs exceed max_length {max_length}"
+            )
+        return [], RerankerBudgetCounters(0, 0, 0, (), ())
+    raw = reranker.compute_score(kept_pairs, batch_size=batch_size, max_length=max_length, normalize=True)
     scores = [float(raw)] if isinstance(raw, (float, int)) else [float(item) for item in raw]
-    return scores, RerankerBudgetCounters(len(pairs), max(lengths), 0)
+    # Maximum sur TOUTES les paires vérifiées (conservées + rejetées), afin que
+    # le maximum observé reflète aussi les dépassements.
+    all_checked_lengths = kept_lengths + [pair.token_count for pair in rejected]
+    counters = RerankerBudgetCounters(
+        checked_pairs=checked,
+        maximum_pair_tokens=max(all_checked_lengths),
+        rejected_pairs=len(rejected),
+        rejected=tuple(rejected),
+        scored=tuple(kept),
+    )
+    return scores, counters
