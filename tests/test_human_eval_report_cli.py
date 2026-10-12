@@ -105,6 +105,7 @@ class HumanEvalReportCliTests(unittest.TestCase):
             self.assertEqual(completed.returncode, 0, completed.stderr)
             payload = json.loads(results.read_text(encoding="utf-8"))
             self.assertEqual(payload["track"], "human")
+            self.assertEqual(payload["retriever"], "in_memory_bm25")
             self.assertTrue(payload["quality_eligible"])
             self.assertEqual(payload["cases_total"], 1)
             expected = hashlib.sha256(results.read_bytes()).hexdigest()

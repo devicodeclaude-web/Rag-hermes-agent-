@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+import subprocess
+import tempfile
 import unittest
 
 from rag_hermes.synthetic_report import (
@@ -9,6 +13,9 @@ from rag_hermes.synthetic_report import (
 
 PINNED_REVISION = "b682a98ab8cb30c4f0561021e0ff9f41e5156526"
 PINNED_SHA = "af0631abbffaab14b180abc4531497665a6104d6685328d6abbe53a565c53866"
+ROOT = Path(__file__).resolve().parents[1]
+PYTHON = ROOT / ".venv-audit/bin/python"
+SCRIPT = ROOT / "scripts/synthetic_eval_report.py"
 
 
 def _manifest():
@@ -77,6 +84,58 @@ def _abstention_case():
 
 
 class SyntheticReportTests(unittest.TestCase):
+    def test_cli_identifies_bm25_retriever_in_report_metadata(self):
+        with tempfile.TemporaryDirectory() as raw:
+            directory = Path(raw)
+            corpus = directory / "corpus.jsonl"
+            rows = []
+            for document_id, document in _documents().items():
+                rows.append(
+                    {
+                        "document_id": document_id,
+                        **document,
+                        "source_uri": (
+                            "git+https://example.invalid/hermes.git@"
+                            f"{PINNED_REVISION}#{document_id}.md"
+                        ),
+                    }
+                )
+            corpus.write_text(
+                "".join(json.dumps(row) + "\n" for row in rows),
+                encoding="utf-8",
+            )
+            import hashlib
+
+            case = _answerable_case()
+            case["corpus_manifest_sha"] = hashlib.sha256(corpus.read_bytes()).hexdigest()
+            dataset = directory / "dataset.jsonl"
+            dataset.write_text(json.dumps(case) + "\n", encoding="utf-8")
+            results = directory / "report.json"
+
+            completed = subprocess.run(
+                [
+                    str(PYTHON),
+                    str(SCRIPT),
+                    "--dataset",
+                    str(dataset),
+                    "--corpus",
+                    str(corpus),
+                    "--results",
+                    str(results),
+                    "--k",
+                    "1",
+                ],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+                timeout=30,
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            payload = json.loads(results.read_text(encoding="utf-8"))
+            self.assertEqual(payload["retriever"], "in_memory_bm25")
+            self.assertIn("BM25", payload["note"])
+
     def test_build_public_service_ingests_documents_and_retrieves(self):
         service = build_public_service(_documents(), minimum_score=0.05)
         # A public evaluator context can retrieve the answering document.

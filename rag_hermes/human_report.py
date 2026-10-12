@@ -1,7 +1,7 @@
 """Human-authored evaluation track over the canonical public corpus.
 
 This module is intentionally separate from the synthetic report. It accepts only
-quality-eligible, reviewed cases and reports the in-memory lexical baseline
+quality-eligible, reviewed cases and reports the in-memory BM25 baseline
 without claiming that the cross-lingual FR->EN track is comparable to EN->EN.
 """
 from __future__ import annotations

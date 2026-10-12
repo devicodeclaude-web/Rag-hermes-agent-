@@ -32,7 +32,7 @@ class RetrievalTests(unittest.TestCase):
         results = retriever.search("ultrasecretterm", context=context, limit=10)
         self.assertEqual(results, [])
 
-    def test_results_are_ranked_by_lexical_overlap(self):
+    def test_results_are_ranked_by_bm25_score(self):
         retriever = LexicalRetriever(
             [
                 make_chunk("a-one", "tenant-a", "installer Hermes sous Linux"),
@@ -45,6 +45,34 @@ class RetrievalTests(unittest.TestCase):
         )
         self.assertEqual([result.chunk.chunk_id for result in results], ["b-two", "a-one"])
         self.assertGreater(results[0].score, results[1].score)
+
+    def test_rare_discriminative_term_outranks_repeated_common_term(self):
+        retriever = LexicalRetriever(
+            [
+                make_chunk("a-common", "tenant-a", "common common common filler"),
+                make_chunk("b-rare", "tenant-a", "common rare"),
+                make_chunk("c-background", "tenant-a", "common background"),
+            ]
+        )
+        context = AuthorizationContext("tenant-a", "alice", ("users",), 1)
+        results = retriever.search("common common rare", context=context, limit=2)
+        self.assertEqual(results[0].chunk.chunk_id, "b-rare")
+
+    def test_bm25_rank_order_keeps_public_scores_monotonic(self):
+        retriever = LexicalRetriever(
+            [
+                make_chunk("a-common", "tenant-a", "common common common filler"),
+                make_chunk("b-rare", "tenant-a", "common rare"),
+                make_chunk("c-background", "tenant-a", "common background"),
+            ]
+        )
+        context = AuthorizationContext("tenant-a", "alice", ("users",), 1)
+        results = retriever.search("common common common rare", context=context, limit=3)
+        self.assertEqual(results[0].chunk.chunk_id, "b-rare")
+        self.assertEqual(
+            [result.score for result in results],
+            sorted((result.score for result in results), reverse=True),
+        )
 
     def test_query_without_matching_terms_returns_no_results(self):
         retriever = LexicalRetriever(

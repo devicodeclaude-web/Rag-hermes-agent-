@@ -270,7 +270,7 @@ def main() -> int:
             "quality_eligible": True,
             "evidence_level": "component_integration",
             "granularity": "passage_span_overlap",
-            "retriever": "in_memory_lexical_baseline",
+            "retriever": "in_memory_bm25",
             "generator": None,
             "embedding_model": None,
             "reranker": None,

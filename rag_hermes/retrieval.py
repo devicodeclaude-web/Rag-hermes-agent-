@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
+import math
 import re
 from typing import Any, Iterable
 
@@ -17,6 +18,11 @@ _TOKEN_RE = re.compile(r"\w+", re.UNICODE)
 class SearchResult:
     chunk: Chunk
     score: float
+    threshold_score: float | None = None
+
+    @property
+    def effective_threshold_score(self) -> float:
+        return self.score if self.threshold_score is None else self.threshold_score
 
 
 def _tokens(text: str) -> Counter[str]:
@@ -36,14 +42,57 @@ class LexicalRetriever:
         if not query_terms:
             return []
         authorized = filter_authorized(self._chunks, context)
-        scored: list[SearchResult] = []
-        for chunk in authorized:
-            document_terms = _tokens(chunk.text)
-            overlap = sum(min(count, document_terms.get(term, 0)) for term, count in query_terms.items())
-            if overlap:
-                scored.append(SearchResult(chunk=chunk, score=overlap / sum(query_terms.values())))
-        scored.sort(key=lambda result: (-result.score, result.chunk.chunk_id))
-        return scored[:limit]
+        document_terms = [_tokens(chunk.text) for chunk in authorized]
+        if not document_terms:
+            return []
+        document_frequency: Counter[str] = Counter()
+        for terms in document_terms:
+            document_frequency.update(terms.keys())
+        document_count = len(document_terms)
+        average_length = sum(sum(terms.values()) for terms in document_terms) / document_count
+        k1 = 1.2
+        b = 0.75
+        scored: list[tuple[float, SearchResult]] = []
+        query_length = sum(query_terms.values())
+        for chunk, terms in zip(authorized, document_terms):
+            document_length = sum(terms.values())
+            raw_score = 0.0
+            overlap = 0
+            for term, query_count in query_terms.items():
+                term_frequency = terms.get(term, 0)
+                if not term_frequency:
+                    continue
+                overlap += min(query_count, term_frequency)
+                inverse_document_frequency = math.log(
+                    1.0
+                    + (document_count - document_frequency[term] + 0.5)
+                    / (document_frequency[term] + 0.5)
+                )
+                saturation = (
+                    term_frequency * (k1 + 1.0)
+                    / (
+                        term_frequency
+                        + k1 * (1.0 - b + b * document_length / average_length)
+                    )
+                )
+                raw_score += inverse_document_frequency * saturation * query_count
+            if raw_score:
+                # BM25 determines rank and the public score order. Keep the
+                # established overlap ratio separately for minimum_score.
+                score = raw_score / (raw_score + 1.0)
+                threshold_score = overlap / query_length
+                scored.append(
+                    (
+                        raw_score,
+                        SearchResult(
+                            chunk=chunk,
+                            score=score,
+                            threshold_score=threshold_score,
+                        ),
+                    )
+                )
+        scored.sort(key=lambda item: (-item[0], item[1].chunk.chunk_id))
+        return [result for _rank_score, result in scored[:limit]]
 
 
 @dataclass(frozen=True)

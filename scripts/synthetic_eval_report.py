@@ -7,8 +7,8 @@ path over the full public corpus, and writes a JSON report to data/results/.
 HONESTY: the synthetic questions are corpus-generated and labelled at whole-
 document granularity, so this report is a TECHNICAL WITNESS of lexical document
 retrieval — NOT human-grade quality evidence. The default retriever is the
-in-memory lexical baseline (no embeddings, no reranker), which is exactly why
-numbers here are a floor, not a quality claim.
+in-memory BM25 baseline (no embeddings, no reranker), which is exactly why
+numbers here are not a human-grade quality claim.
 
 Exit codes: 0 on success, 1 on any violation (e.g. stale corpus hash).
 """
@@ -83,7 +83,7 @@ def main() -> int:
         "provenance": "synthetic_generated_from_corpus",
         "quality_eligible": False,
         "granularity": "document",
-        "retriever": "in_memory_lexical_baseline",
+        "retriever": "in_memory_bm25",
         "k": args.k,
         "minimum_score": args.minimum_score,
         "corpus_documents": len(documents),
@@ -96,7 +96,7 @@ def main() -> int:
         "metrics": asdict(report),
         "note": (
             "TECHNICAL WITNESS ONLY. Corpus-generated questions, whole-document "
-            "relevance, lexical baseline retriever. Not human-grade quality evidence."
+            "relevance, in-memory BM25 retriever. Not human-grade quality evidence."
         ),
     }
 

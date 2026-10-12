@@ -39,7 +39,7 @@ def run_lexical_benchmark(
             for result in retriever.search(
                 question.question, context=question.context, limit=k
             )
-            if result.score >= minimum_score
+            if result.effective_threshold_score >= minimum_score
         ]
         retrieved_ids = tuple(dict.fromkeys(result.chunk.document_id for result in results))
         relevant_ids = question.relevant_document_ids

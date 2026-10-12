@@ -138,7 +138,10 @@ class RagService:
     ) -> AnswerTrace:
         """Answer through the normal path and expose evidence for evaluation."""
         results = self._search(question, context=context)
-        if not results or results[0].score < self._minimum_score:
+        if not results or not any(
+            result.effective_threshold_score >= self._minimum_score
+            for result in results
+        ):
             response = AnswerResponse(
                 answer=ABSTENTION_ANSWER,
                 abstained=True,
@@ -149,7 +152,7 @@ class RagService:
         evidence = tuple(
             result.chunk
             for result in results
-            if result.score >= self._minimum_score
+            if result.effective_threshold_score >= self._minimum_score
         )
         # Optional reranking: rescore the authorized candidates with the
         # injected cross-encoder, then keep the best top_k. The reranker never
