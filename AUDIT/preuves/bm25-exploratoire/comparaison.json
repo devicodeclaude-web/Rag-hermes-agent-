@@ -4,8 +4,9 @@
   "baseline_report_git_revision": "3294a6b35ed944a5c7d7d7046693ab02dd9b4cd2",
   "baseline_report_path_at_that_revision": "data/results/human-lexical-eval-report.json",
   "candidate_report": "AUDIT/preuves/bm25-exploratoire/human-lexical-bm25-report.json",
-  "candidate_code_revision": "657d1fe1dd3ace9ba1a9253273b4ef3219e5e00c",
-  "candidate_sha256": "933d962ad22c5ac0e8f7f41e6b5456efaaca7e296d28082db0ca7e64bb67e2da",
+  "candidate_code_revision": "7638fc065c95329a448fa69953d15601cbd48083",
+  "candidate_sha256": "f67d8c021d19db0076c4bb592eade80b5a3b8f017884e14df4c6257a46e68b49",
+  "candidate_working_tree_dirty": false,
   "cases_total": 154,
   "comparison": {
     "overall": {
@@ -24,7 +25,7 @@
   "security": {"leak_count_before": 0, "leak_count_after": 0},
   "limitations": [
     "Le 'before' est le rapport lexical naif a la revision git 3294a6b; il n'est plus sur disque, seul l'historique git et ce fichier le conservent.",
-    "Le candidat a ete regenere sur l'arbre apres commit du code BM25 (code_revision 657d1fe); le champ working_tree_dirty du rapport reste true car le rapport s'ecrit dans un fichier versionne et les preuves d'audit etaient encore non commitees au moment de la generation.",
+    "Le candidat a ete regenere sur un arbre propre apres les commits BM25 et le correctif working_tree_dirty (code_revision 7638fc0); le rapport enregistre desormais working_tree_dirty=false de maniere honnete.",
     "Le meme dataset de 154 cas a servi au diagnostic et a la mesure; c'est une mesure descriptive, pas une preuve de qualite held-out.",
     "FR->EN reste un diagnostic lexical non equitable.",
     "Aucun embedding dense, reranker, generateur, corpus prive ou deploiement de production n'a ete exerce.",

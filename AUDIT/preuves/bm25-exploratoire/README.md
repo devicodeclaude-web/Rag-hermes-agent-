@@ -26,7 +26,7 @@ Défaut de qualité ouvert, non traité ici : `abstention_recall = 0` sur les 32
 ## Environnement et commandes
 
 - `before` : rapport lexical naïf à la revision git `3294a6b35ed944a5c7d7d7046693ab02dd9b4cd2`
-- `after` / candidat : `code_revision` = `657d1fe1dd3ace9ba1a9253273b4ef3219e5e00c` (commit BM25)
+- `after` / candidat : `code_revision` = `7638fc065c95329a448fa69953d15601cbd48083`, régénéré sur arbre propre
 - Dataset : 154 cas humains validés (`dataset_sha256` 4613e8b3…)
 - Corpus : 461 documents
 - Matériel : CPU local
@@ -51,7 +51,7 @@ QDRANT_INTEGRATION_URL=http://127.0.0.1:6333 \
 
 Résultat conservé : **378 tests réussis en 178,592 s**, sans skip déclaré. Les tests nommés d'intégration Qdrant sont visibles dans `tests-full-qdrant-reel.txt`.
 
-Note sur `working_tree_dirty` : le rapport candidat enregistre `working_tree_dirty: true`. C'est honnête et attendu — le script lit `git status --porcelain` avant d'écrire, or (a) il réécrit lui-même un fichier versionné et (b) les preuves d'audit étaient encore non commitées à ce moment. Un re-run de validation après ce commit, sur un arbre réellement propre, produira `working_tree_dirty: false` avec un rapport identique octet pour octet (génération déterministe).
+Note sur `working_tree_dirty` : le rapport candidat enregistre désormais `working_tree_dirty: false`. Le script a été corrigé (commit `7638fc0`) pour capturer l'état git AVANT l'invalidation du rapport et exclure du calcul les seuls fichiers de sortie qu'il régénère (voir `rag_hermes/git_status.py`). Un vrai changement non commité hors de ces fichiers resterait détecté comme `dirty` (jamais de faux négatif).
 
 ## Artefacts
 

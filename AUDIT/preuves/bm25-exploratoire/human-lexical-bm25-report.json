@@ -21,9 +21,9 @@
   "source_revision": "b682a98ab8cb30c4f0561021e0ff9f41e5156526",
   "corpus_manifest_sha": "af0631abbffaab14b180abc4531497665a6104d6685328d6abbe53a565c53866",
   "dataset_sha256": "4613e8b3b84fb7b24ad66cf01329f40d95934bec189fe7f6cddf1eb751c767d4",
-  "code_revision": "657d1fe1dd3ace9ba1a9253273b4ef3219e5e00c",
-  "working_tree_dirty": true,
-  "elapsed_seconds": 440.47,
+  "code_revision": "7638fc065c95329a448fa69953d15601cbd48083",
+  "working_tree_dirty": false,
+  "elapsed_seconds": 581.5,
   "results": {
     "overall": {
       "cases_total": 154,
