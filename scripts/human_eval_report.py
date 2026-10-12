@@ -28,6 +28,7 @@ from rag_hermes.eval_corpus import (
     load_documents,
     sha256_of_file,
 )
+from rag_hermes.git_status import working_tree_dirty_excluding
 from rag_hermes.human_report import run_human_evaluation
 
 DATASET = ROOT / "data/benchmark/dataset-v2.jsonl"
@@ -83,7 +84,15 @@ def _invalidate(outputs: tuple[Path, ...]) -> None:
         raise OSError("one or more outputs could not be fully invalidated") from failures[0]
 
 
-def _git_revision() -> tuple[str, bool]:
+def _git_revision(excluded_outputs: tuple[Path, ...] = ()) -> tuple[str, bool]:
+    """Return (HEAD sha, working_tree_dirty).
+
+    ``working_tree_dirty`` ignores the report artifacts this script
+    regenerates (``excluded_outputs``): the report writes its own versioned
+    files, so counting those as "dirty" would make the field permanently true
+    and therefore meaningless. Capture this BEFORE invalidating outputs so the
+    pending deletion of a prior report does not itself flip the flag.
+    """
     revision = subprocess.run(
         ["git", "rev-parse", "HEAD"],
         cwd=ROOT,
@@ -92,16 +101,23 @@ def _git_revision() -> tuple[str, bool]:
         check=True,
         timeout=10,
     ).stdout.strip()
-    dirty = bool(
-        subprocess.run(
-            ["git", "status", "--porcelain=v1"],
-            cwd=ROOT,
-            text=True,
-            capture_output=True,
-            check=True,
-            timeout=10,
-        ).stdout.strip()
-    )
+    porcelain = subprocess.run(
+        ["git", "status", "--porcelain=v1"],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=True,
+        timeout=10,
+    ).stdout
+    # Only repo-relative outputs can appear in ``git status``; outputs written
+    # outside the repo (e.g. a temp dir in tests) simply have nothing to exclude.
+    excluded: list[str] = []
+    for path in excluded_outputs:
+        try:
+            excluded.append(str(path.resolve().relative_to(ROOT)))
+        except ValueError:
+            continue
+    dirty = working_tree_dirty_excluding(porcelain, excluded=excluded)
     return revision, dirty
 
 
@@ -228,6 +244,7 @@ def main() -> int:
 
     path_args = _recover_path_args(sys.argv[1:])
     outputs_safe = False
+    git_state: tuple[str, bool] | None = None
     try:
         _validate_paths(
             path_args.dataset,
@@ -236,6 +253,12 @@ def main() -> int:
             path_args.checksum,
         )
         outputs_safe = True
+        # Capture the working-tree state BEFORE invalidating outputs, ignoring
+        # the report artifacts we are about to rewrite. Done after path
+        # validation so excluded paths are known and trustworthy.
+        git_state = _git_revision(
+            (path_args.results, path_args.checksum)
+        )
         _invalidate((path_args.results, path_args.checksum))
     except (OSError, ValueError) as exc:
         print(f"VIOLATION: {exc}", file=sys.stderr)
@@ -249,7 +272,9 @@ def main() -> int:
         cases = load_cases(args.dataset)
         documents = load_documents(args.corpus)
         manifest = corpus_manifest(args.corpus)
-        code_revision, working_tree_dirty = _git_revision()
+        # git_state was captured before invalidation; outputs_safe guarantees it.
+        assert git_state is not None
+        code_revision, working_tree_dirty = git_state
 
         started = time.time()
         results = run_human_evaluation(
