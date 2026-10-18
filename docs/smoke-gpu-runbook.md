@@ -3,6 +3,12 @@
 Ce runbook est la seule procédure autorisée pour relancer le smoke GPU après l’audit.
 Aucun Pod ne doit être créé tant que les portes 0 à 3 ne sont pas vertes.
 
+> **État live au 2026-10-18 : porte 3 fermée.** `runpodctl 3.0.1` et
+> l’API/MCP de création inspectée n’exposent aucune expiration automatique de Pod.
+> La campagne Pod est donc bloquée sans dépense. L’alternative Serverless est
+> analysée dans `docs/serverless-gpu-campaign-feasibility.md` et reste `PARTIAL`,
+> non autorisée au déploiement.
+
 ## Porte 0 — Prérequis secrets (préparés par l’utilisateur, jamais transmis)
 
 1. Clé API RunPod temporaire dédiée au smoke. Dans l’interface actuelle,
