@@ -182,4 +182,6 @@ def score_authorized_pairs(reranker: Any, tokenizer: Any, query: str, candidates
         return [], RerankerBudgetCounters(0, 0, 0)
     raw = reranker.compute_score(pairs, batch_size=batch_size, max_length=max_length, normalize=True)
     scores = [float(raw)] if isinstance(raw, (float, int)) else [float(item) for item in raw]
+    if len(scores) != len(pairs) or any(not math.isfinite(score) for score in scores):
+        raise ValueError("reranker must return exactly one finite score per pair")
     return scores, RerankerBudgetCounters(len(pairs), max(lengths), 0)

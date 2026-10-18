@@ -23,14 +23,19 @@ def sha256_of_file(path: Path) -> str:
 
 def load_documents(corpus_path: Path = DEFAULT_CORPUS) -> dict[str, dict[str, Any]]:
     """Load canonical documents indexed by document_id."""
+    return load_documents_payload(corpus_path.read_bytes())
+
+
+def load_documents_payload(payload: bytes) -> dict[str, dict[str, Any]]:
+    """Load canonical documents from one immutable byte snapshot."""
     documents: dict[str, dict[str, Any]] = {}
-    for line in corpus_path.read_text(encoding="utf-8").splitlines():
+    for line in payload.decode("utf-8").splitlines():
         if not line.strip():
             continue
         doc = json.loads(line)
         documents[doc["document_id"]] = doc
     if not documents:
-        raise ValueError(f"empty corpus: {corpus_path}")
+        raise ValueError("empty corpus snapshot")
     return documents
 
 
@@ -55,6 +60,15 @@ def corpus_manifest(corpus_path: Path = DEFAULT_CORPUS) -> dict[str, str]:
     return {
         "source_revision": _extract_revision(documents),
         "corpus_manifest_sha": sha256_of_file(corpus_path),
+    }
+
+
+def corpus_manifest_payload(payload: bytes) -> dict[str, str]:
+    """Return corpus identity derived only from the supplied byte snapshot."""
+    documents = load_documents_payload(payload)
+    return {
+        "source_revision": _extract_revision(documents),
+        "corpus_manifest_sha": hashlib.sha256(payload).hexdigest(),
     }
 
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+import math
 
 
 @dataclass(frozen=True)
@@ -20,6 +21,10 @@ def plan_pod_budget(
     max_total_cost_usd: float,
     starts_at: datetime | None = None,
 ) -> PodBudgetPlan:
+    if not math.isfinite(hourly_rate_usd):
+        raise ValueError("hourly_rate_usd must be finite")
+    if not math.isfinite(max_total_cost_usd):
+        raise ValueError("max_total_cost_usd must be finite")
     if hourly_rate_usd <= 0:
         raise ValueError("hourly_rate_usd must be positive")
     if max_duration_minutes <= 0:

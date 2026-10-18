@@ -1,5 +1,9 @@
 import unittest
 from datetime import datetime, timezone
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
 
 from rag_hermes.pod_budget import plan_pod_budget
 
@@ -33,6 +37,45 @@ class PodBudgetTests(unittest.TestCase):
                         max_duration_minutes=duration,
                         max_total_cost_usd=cap,
                     )
+
+    def test_plan_rejects_non_finite_money_values(self):
+        for field in ("hourly_rate_usd", "max_total_cost_usd"):
+            for value in (float("nan"), float("inf"), float("-inf")):
+                arguments = {
+                    "hourly_rate_usd": 0.74,
+                    "max_duration_minutes": 30,
+                    "max_total_cost_usd": 0.50,
+                }
+                arguments[field] = value
+                with self.subTest(field=field, value=value):
+                    with self.assertRaisesRegex(ValueError, f"{field} must be finite"):
+                        plan_pod_budget(**arguments)
+
+    def test_watchdog_argparse_rejects_non_finite_money_values(self):
+        module = "scripts.pod_watchdog"
+        for flag, value in (
+            ("--hourly-rate-usd", "nan"),
+            ("--hourly-rate-usd", "inf"),
+            ("--hourly-rate-usd", "-inf"),
+            ("--max-total-cost-usd", "nan"),
+            ("--max-total-cost-usd", "inf"),
+            ("--max-total-cost-usd", "-inf"),
+        ):
+            with self.subTest(flag=flag, value=value), tempfile.TemporaryDirectory() as directory:
+                arguments = [
+                    sys.executable,
+                    "-m", module,
+                    "--name", "guarded",
+                    "--created-after", "2026-09-20T14:00:00Z",
+                    f"--hourly-rate-usd={value if flag == '--hourly-rate-usd' else '0.74'}",
+                    "--max-duration-minutes", "30",
+                    f"--max-total-cost-usd={value if flag == '--max-total-cost-usd' else '0.50'}",
+                    "--provider-deadline", "2026-09-20T14:31:00Z",
+                    "--ready-file", str(Path(directory) / "ready.json"),
+                ]
+                completed = subprocess.run(arguments, capture_output=True, text=True)
+                self.assertNotEqual(completed.returncode, 0)
+                self.assertIn("must be a finite number", completed.stderr)
 
 
 if __name__ == "__main__":

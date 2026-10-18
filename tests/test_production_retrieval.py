@@ -99,6 +99,48 @@ class ProductionAclBarrierTests(unittest.TestCase):
         self.assertEqual(reranker.calls[0][1]["max_length"], 6)
         self.assertFalse(tokenizer.calls[0][2]["truncation"])
 
+    def test_reranker_rejects_wrong_score_cardinality(self):
+        candidates = [
+            {"payload": {"text": "one", "document_id": "a"}},
+            {"payload": {"text": "two", "document_id": "b"}},
+        ]
+        for raw_scores in (0.9, [0.9], [0.9, 0.8, 0.7]):
+            with self.subTest(raw_scores=raw_scores):
+                tokenizer = FakeTokenizer([5, 6])
+
+                class WrongCardinalityReranker:
+                    def compute_score(self, pairs, **kwargs):
+                        return raw_scores
+
+                with self.assertRaisesRegex(ValueError, "one finite score per pair"):
+                    score_authorized_pairs(
+                        WrongCardinalityReranker(),
+                        tokenizer,
+                        "q",
+                        candidates,
+                        max_length=6,
+                        batch_size=2,
+                    )
+
+    def test_reranker_rejects_non_finite_scores(self):
+        for raw_score in (float("nan"), float("inf"), float("-inf")):
+            with self.subTest(raw_score=raw_score):
+                tokenizer = FakeTokenizer([5])
+
+                class NonFiniteReranker:
+                    def compute_score(self, pairs, **kwargs):
+                        return [raw_score]
+
+                with self.assertRaisesRegex(ValueError, "one finite score per pair"):
+                    score_authorized_pairs(
+                        NonFiniteReranker(),
+                        tokenizer,
+                        "q",
+                        [{"payload": {"text": "one", "document_id": "a"}}],
+                        max_length=6,
+                        batch_size=1,
+                    )
+
     def test_over_budget_raises_before_compute_score(self):
         tokenizer = FakeTokenizer([7])
         reranker = FakeReranker()
