@@ -18,19 +18,20 @@ Ce dépôt est un harnais de preuve, pas encore une plateforme de production. Il
 - Métriques : recall@k, MRR, précision des citations, précision/rappel d’abstention et fuite absolue.
 - Deux profils d’inférence exacts : GGUF + llama.cpp et BF16 + vLLM.
 - Baseline lexicale exécutée : recall@10 `0,667`, rappel d’abstention `0,25`, fuite `0`.
-- Smoke d’infrastructure BGE-M3 exécuté sur RTX 4090 : 2 945 chunks en `24,88 s`, soit `118,38 chunks/s`, pic CUDA alloué `1,11 Gio`.
-- Signal de smoke dense+sparse avant reranking : recall@10 `1,0` et MRR `1,0` sur seulement 10 questions, dont certaines dérivées du corpus ; ce n’est pas une preuve de qualité générale.
+- Smoke d’infrastructure BGE-M3 exécuté sur **NVIDIA A40** (run `bge-m3-smoke-rtx4090-v1` du 2026-09-21 ; le manifeste est nommé « rtx4090 » mais le matériel réel est une A40 44,4 Gio) : **7 371 chunks** (découpage tokenizer exact 384/64) encodés en `54,37 s`, soit `135,58 chunks/s`, pic CUDA alloué `1,085 Gio`.
+- Signal de smoke dense+sparse avant reranking : recall@10 `1,0` et MRR `1,0` sur seulement 10 questions, dont certaines dérivées du corpus ; ce n’est pas une preuve de qualité générale (`quality_gate_passed: false`).
 - Le filtrage ACL de ce runner a été appliqué en mémoire Python avant scoring. Il n’a pas exercé Qdrant et ne valide donc pas la barrière ACL du moteur réel.
-- Le contrôle exact du reranker a refusé `190/200` paires dépassant 512 tokens. Le recall post-reranking `0,667` correspond à `4/6` questions répondables ; le reranker n’a pas été valablement évalué.
-- La cause est une déviation de spécification : `max_tokens=420` comptait des mots via `str.split()`, alors que le contrat exigeait des tokens du tokenizer exact.
+- Sur ce run committé (découpage tokenizer exact), le reranker a refusé **0** paire sur budget : nombre maximal de tokens par paire observé `396` ≤ 512. Recall@10 et MRR post-reranking valent `1,0` et `0,917` sur ces 10 questions ; le reranker n’est toujours pas valablement évalué à cette échelle.
+- Historique, non committé dans ce dépôt : un run antérieur en découpage par **mots** (`max_tokens=420` comptés via `str.split()`) rejetait `190/200` paires dépassant 512 tokens et donnait un recall post-reranking de `0,667`. C’était une déviation de spécification, corrigée par le découpage tokenizer exact. Voir `docs/audit-reconciliation.md`.
 
 La baseline et le smoke restent des témoins techniques. Aucun score de qualité n’est considéré probant avant les jeux indépendants de 100 puis 300 questions. Voir `docs/audit-reconciliation.md`.
 
 ## Exécution locale
 
-Aucune dépendance Python externe n’est nécessaire pour les tests du cœur :
+Les tests du cœur nécessitent une seule dépendance externe, `hypothesis` (test différentiel ACL), épinglée avec empreinte dans `requirements-audit.lock.txt`. Installe-la, puis lance la suite (115 tests ; 4 `skipped` sont les tests d’intégration Qdrant qui exigent un serveur réel) :
 
 ```bash
+python -m pip install --require-hashes -r requirements-audit.lock.txt
 python -m unittest discover -s tests -v
 ```
 
@@ -136,9 +137,9 @@ python -m pip install -e '.[gpu]'
 PYTHONPATH=. python scripts/run_bge_gpu_smoke.py
 ```
 
-Rapport historique corrigé après audit : `data/results/bge_m3_gpu_smoke_report.json` (SHA-256 actuel `c82589b1cb2b6da5f7a374f76846d87b068406c82088cb3bea5270e00193dbf2`, SHA-256 original conservé dans le rapport). Les artefacts principaux des deux checkpoints ont été vérifiés par taille et SHA-256 lorsqu’une empreinte LFS était présente dans les locks.
+Rapport historique corrigé après audit : `data/results/bge_m3_gpu_smoke_report.json` (SHA-256 actuel `9e929ea58c8f9df0a83681ed27aee58c022909d19f37617010fddb9a8d536ff3`, identique à l’empreinte enregistrée dans `AUDIT/preuves/SHA256SUMS`). Les artefacts principaux des deux checkpoints ont été vérifiés par taille et SHA-256 lorsqu’une empreinte LFS était présente dans les locks.
 
-Ce smoke valide l’exécution matérielle et le câblage, pas la qualité statistique : il ne contient que 10 questions. Il révèle surtout que la limite actuelle de 420 mots produit des passages trop longs pour le budget exact de 512 tokens du reranker.
+Ce smoke valide l’exécution matérielle et le câblage, pas la qualité statistique : il ne contient que 10 questions et `quality_gate_passed` vaut `false`. Avec le découpage tokenizer exact, aucune paire ne dépasse le budget de 512 tokens (0 rejet, maximum observé 396) ; le problème de passages trop longs concernait l’ancien découpage par mots.
 
 ## Règles non négociables
 
