@@ -1,6 +1,11 @@
 # DOSSIER D'AUDIT — Harnais RAG sécurisé (rag-hermes-agent)
 
-Point d'étape au commit `5970956` (branche `main`).
+Provenance des commits (corrigée après l’audit de réconciliation du 2026-10-08) :
+les preuves brutes de `preuves/` ont été capturées au commit `ad1bc3c` (2026-09-23,
+en-tête `audited_commit:` de chaque fichier). Ce dossier narratif cite plus bas le
+commit `5970956` comme point d’étape, mais la branche a depuis avancé ; l’état réel
+au HEAD courant et la réconciliation des écarts sont documentés dans
+`AUDIT/2026-10-08-etat-reel/registre.md` et `AUDIT/2026-10-08-lot4-install-dataset/findings.md`.
 Ce dossier est autoportant : il te permet d'auditer le travail sans relancer
 l'historique de conversation. Toutes les preuves brutes sont dans `preuves/`.
 
