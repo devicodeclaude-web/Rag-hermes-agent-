@@ -1,0 +1,30 @@
+name: dataset-qa
+
+on:
+  pull_request:
+    paths:
+      - "data/benchmark/**"
+      - "data/generated/**"
+      - "data/fixtures/**"
+      - "scripts/check_dataset_qa.py"
+      - "scripts/check_title_leak.py"
+      - ".github/workflows/dataset-qa.yml"
+  push:
+    branches: [main]
+    paths:
+      - "data/benchmark/**"
+      - "scripts/check_dataset_qa.py"
+      - "scripts/check_title_leak.py"
+
+jobs:
+  qa:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Porte dataset : structure, existence des documents, et 0 fuite de titre.
+      # Dépendances : aucune (stdlib pure).
+      - name: QA dataset v2 (0 fuite de titre exigée)
+        run: PYTHONPATH=. python3 scripts/check_dataset_qa.py --dataset data/benchmark/dataset-v2.jsonl
