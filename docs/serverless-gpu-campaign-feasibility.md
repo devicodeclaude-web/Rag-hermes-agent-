@@ -8,9 +8,12 @@ Date de vérification : 2026-10-18
 
 RunPod Serverless fournit des limites côté fournisseur (`executionTimeout`, TTL du
 job et `workersMin=0`) qui répondent mieux au risque d’un Pod restant facturé.
-Cependant, la campagne humaine de 154 cas n’a encore ni image Serverless, ni
-handler, ni mesure de durée réelle. Le plafond financier de 0,50 USD n’est pas
-compatible avec une fenêtre A40 de 30 minutes au tarif vérifié.
+Un scaffold local de handler queue-based existe désormais dans
+`scripts/runpod_serverless_handler.py` et sa logique locale est testée. Il ne
+constitue toutefois pas un worker déployable : aucune image Serverless ni aucun
+lock SDK/CUDA cible n’a été construit ou validé, et la durée réelle de la campagne
+reste inconnue. Le plafond financier de 0,50 USD n’est pas compatible avec une
+fenêtre A40 de 30 minutes au tarif vérifié.
 
 Aucun endpoint, worker, Pod ou autre ressource payante n’a été créé pendant cette
 étude.
