@@ -88,14 +88,14 @@ v2-086,no_answer,What is the maximum number of cron jobs a single profile may sc
 v2-087,no_answer,"What is the default speaking rate, in words per minute, of the synthesized voice?",,hermes-agent:user-guide/features/tts.md,validate,,devicodeclaude-web,2026-10-24,absence confirmée: 0 occurrence wpm/words per minute/débit dans le corpus
 v2-088,no_answer,Which TCP port does the gateway listen on by default?,,hermes-agent:developer-guide/gateway-internals.md,reject,,devicodeclaude-web,2026-10-24,"répondable: port 8642 documenté (docker.md, matrix.md, api-server.md) -> faux no_answer"
 v2-089,no_answer,"What does the HERMES_MAX_TURNS environment variable do, and what is its default value?",,hermes-agent:reference/environment-variables.md,validate,,devicodeclaude-web,2026-10-24,absence confirmée: HERMES_MAX_TURNS absent de reference/environment-variables.md
-v2-090,no_answer,At most how many external tool-protocol servers can be connected to a single agent at once?,,hermes-agent:user-guide/features/mcp.md,,,,,
-v2-091,no_answer,After how long is an inactive session automatically purged by default?,,hermes-agent:developer-guide/session-storage.md,,,,,
-v2-092,no_answer,What is the minimum amount of RAM required to install and run Hermes?,,hermes-agent:getting-started/installation.md,,,,,
-v2-093,no_answer,How many extra tokens does each subagent consume on top of the main agent?,,hermes-agent:user-guide/features/delegation.md,,,,,
-v2-094,no_answer,What first-audio-byte latency does the streaming voice output guarantee?,,hermes-agent:developer-guide/streaming-tts.md,,,,,
-v2-095,no_answer,What is the maximum size of a single entry that a memory provider can store?,,hermes-agent:developer-guide/memory-provider-plugin.md,,,,,
-v2-096,no_answer,What default request timeout does Hermes apply to Bedrock API calls before giving up?,,hermes-agent:guides/aws-bedrock.md,,,,,
-v2-097,no_answer,Which domains are on the outbound proxy's default allow-list?,,hermes-agent:developer-guide/egress-internals.md,,,,,
-v2-098,no_answer,"Does the relay encrypt messages end-to-end, and if so with which algorithm?",,hermes-agent:user-guide/messaging/relay.md,,,,,
-v2-099,no_answer,What is the maximum number of plugins that can be installed at once?,,hermes-agent:user-guide/features/plugins.md,,,,,
-v2-100,no_answer,What cable-tension setting do you recommend for adjusting a bike's rear derailleur?,,,,,,,
+v2-090,no_answer,At most how many external tool-protocol servers can be connected to a single agent at once?,,hermes-agent:user-guide/features/mcp.md,validate,,devicodeclaude-web,2026-10-24,
+v2-091,no_answer,After how long is an inactive session automatically purged by default?,,hermes-agent:developer-guide/session-storage.md,validate,,devicodeclaude-web,2026-10-24,absence confirmée: aucune durée d'inactivité/purge par défaut chiffrée dans session-storage.md
+v2-092,no_answer,What is the minimum amount of RAM required to install and run Hermes?,,hermes-agent:getting-started/installation.md,validate,,devicodeclaude-web,2026-10-24,
+v2-093,no_answer,How many extra tokens does each subagent consume on top of the main agent?,,hermes-agent:user-guide/features/delegation.md,validate,,devicodeclaude-web,2026-10-24,
+v2-094,no_answer,What first-audio-byte latency does the streaming voice output guarantee?,,hermes-agent:developer-guide/streaming-tts.md,validate,,devicodeclaude-web,2026-10-24,
+v2-095,no_answer,What is the maximum size of a single entry that a memory provider can store?,,hermes-agent:developer-guide/memory-provider-plugin.md,validate,,devicodeclaude-web,2026-10-24,
+v2-096,no_answer,What default request timeout does Hermes apply to Bedrock API calls before giving up?,,hermes-agent:guides/aws-bedrock.md,validate,,devicodeclaude-web,2026-10-24,
+v2-097,no_answer,Which domains are on the outbound proxy's default allow-list?,,hermes-agent:developer-guide/egress-internals.md,validate,,devicodeclaude-web,2026-10-24,absence confirmée: _DEFAULT_ALLOWED_HOSTS nommée mais domaines non énumérés
+v2-098,no_answer,"Does the relay encrypt messages end-to-end, and if so with which algorithm?",,hermes-agent:user-guide/messaging/relay.md,validate,,devicodeclaude-web,2026-10-24,"absence confirmée: relay.md mentionne TLS en transport, pas de E2E ni d'algorithme"
+v2-099,no_answer,What is the maximum number of plugins that can be installed at once?,,hermes-agent:user-guide/features/plugins.md,validate,,devicodeclaude-web,2026-10-24,
+v2-100,no_answer,What cable-tension setting do you recommend for adjusting a bike's rear derailleur?,,,validate,,devicodeclaude-web,2026-10-24,hors-domaine (vélo) — no_answer évident
