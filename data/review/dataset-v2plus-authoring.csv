@@ -1,0 +1,9 @@
+case_id,category,relevant_document_ids,distractor_document_ids,intent_hint,question,author,notes
+v2p-001,simple,hermes-agent:getting-started/quickstart.md,hermes-agent:getting-started/installation.md,intention: atteindre un premier chat qui marche juste après l'install + quoi vérifier si pas de réponse,,,
+v2p-002,simple,hermes-agent:user-guide/features/vision.md,hermes-agent:user-guide/features/deliverable-mode.md,intention: coller une capture d'écran dans le terminal et faire lire l'image par l'agent,,,
+v2p-003,simple,hermes-agent:user-guide/features/honcho.md,hermes-agent:developer-guide/memory-provider-plugin.md,"intention: backend mémoire qui modélise l'utilisateur dans le temps vs clé-valeur, et comment l'activer",,,
+v2p-004,simple,hermes-agent:user-guide/secrets/onepassword.md,hermes-agent:reference/environment-variables.md,"intention: garder les clés API dans un gestionnaire de mots de passe, résolues au démarrage, pas en clair",,,
+v2p-005,simple,hermes-agent:user-guide/messaging/simplex.md,hermes-agent:user-guide/messaging/matrix.md,"intention: brancher l'agent en bot sur un réseau de chat décentralisé et privé, sans IDs persistants",,,
+v2p-006,simple,hermes-agent:reference/toolsets-reference.md,hermes-agent:user-guide/features/tool-gateway.md,"intention: contrôler quels outils l'agent peut utiliser, par plateforme ou par session",,,
+v2p-007,simple,hermes-agent:guides/daily-briefing-bot.md,hermes-agent:guides/automation-blueprints.md,intention: bot qui recherche des sujets chaque matin et envoie un résumé court sur Telegram,,,
+v2p-008,simple,hermes-agent:guides/automation-blueprints.md,hermes-agent:guides/daily-briefing-bot.md,intention: trouver des recettes copier-coller d'automatisations (déclenchées par horaire ET par événement),,,
