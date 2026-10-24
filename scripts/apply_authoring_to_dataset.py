@@ -94,6 +94,9 @@ def main() -> int:
         for did in rel + dis:
             if did not in corpus_ids:
                 errors.append(f"{cid}: doc introuvable dans le corpus: {did}")
+        overlap = set(rel) & set(dis)
+        if overlap:
+            errors.append(f"{cid}: cible et piège se recoupent: {sorted(overlap)}")
         qtok = _guard.tokens(q)
         for did in rel:
             if _guard.is_contiguous_sublist(_guard.tokens(titles.get(did, "")), qtok):
