@@ -23,6 +23,7 @@ from rag_hermes.dataset import load_documents, load_questions
 from rag_hermes.evaluation import EvaluationCase, evaluate
 from rag_hermes.ingestion import chunk_document_tokens
 from rag_hermes.retrieval import hybrid_rrf_indices, postfilter_candidates, score_authorized_pairs
+from rag_hermes.reranker_budget import RerankerBudgetExceeded, passage_token_budget
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "manifests/gpu/bge-m3-smoke-rtx4090.json"
@@ -97,6 +98,25 @@ def main() -> None:
     questions = load_questions(ROOT / manifest["corpus"]["questions"])
     chunking = manifest["chunking"]
     tokenizer = AutoTokenizer.from_pretrained(str(rerank_dir), local_files_only=True)
+    # Provenance : le tokenizer declare dans le manifest doit etre celui verrouille
+    # (meme objet servant au chunking ET au budget du reranker).
+    if chunking["tokenizer"] != rerank_lock["repo_id"] or chunking["tokenizer_revision"] != rerank_lock["revision"]:
+        raise RuntimeError(
+            "chunking tokenizer/revision diverge du reranker verrouille: "
+            f"{chunking['tokenizer']}@{chunking['tokenizer_revision']} != "
+            f"{rerank_lock['repo_id']}@{rerank_lock['revision']}"
+        )
+    # Garantie structurelle : passage + marge question + reserve speciaux <= budget.
+    structural_passage_budget = passage_token_budget(
+        reranker_max_length=int(manifest["reranker"]["max_length"]),
+        question_token_margin=int(chunking["question_max_tokens"]),
+        special_token_reserve=int(chunking["special_token_reserve"]),
+    )
+    if int(chunking["passage_max_tokens"]) > structural_passage_budget:
+        raise RuntimeError(
+            f"passage_max_tokens {chunking['passage_max_tokens']} exceeds structural budget "
+            f"{structural_passage_budget}"
+        )
     question_token_counts = [
         len(tokenizer(question.question, add_special_tokens=False, truncation=False)["input_ids"])
         for question in questions
@@ -224,21 +244,34 @@ def main() -> None:
         authorized, acl_counters = postfilter_candidates(candidates, question.context, authority)
         for key in acl_barrier_totals:
             acl_barrier_totals[key] += getattr(acl_counters, key)
+        token_budget_error = False
+        rejected_count = 0
         if authorized:
-            scores, budget_counters = score_authorized_pairs(
-                reranker, tokenizer, question.question, authorized,
-                batch_size=int(manifest["reranker"]["batch_size"]),
-                max_length=int(manifest["reranker"]["max_length"]),
-            )
-            observed_lengths.append(budget_counters.maximum_pair_tokens)
-            accepted_indices = [int(item["payload"]["chunk_index"]) for item in authorized]
-            ordered = sorted(zip(accepted_indices, scores), key=lambda item: item[1], reverse=True)
+            try:
+                scores, budget_counters = score_authorized_pairs(
+                    reranker, tokenizer, question.question, authorized,
+                    batch_size=int(manifest["reranker"]["batch_size"]),
+                    max_length=int(manifest["reranker"]["max_length"]),
+                )
+            except RerankerBudgetExceeded:
+                # Toutes les paires hors budget -> ERROR_TOKEN_BUDGET
+                # (echec, jamais une abstention, jamais retire du denominateur).
+                token_budget_error = True
+                rejected_count = len(authorized)
+                rejected_pairs += rejected_count
+                ordered = []
+            else:
+                observed_lengths.append(budget_counters.maximum_pair_tokens)
+                rejected_count = budget_counters.rejected_pairs
+                rejected_pairs += rejected_count
+                accepted_indices = [int(item["payload"]["chunk_index"]) for item in budget_counters.scored]
+                ordered = sorted(zip(accepted_indices, scores), key=lambda item: item[1], reverse=True)
         else:
             ordered = []
         top = ordered[:10]
         retrieved_docs = tuple(dict.fromkeys(chunks[i].document_id for i, _ in top))
         best_score = top[0][1] if top else None
-        did_abstain = best_score is None or best_score < 0.5
+        did_abstain = (not token_budget_error) and (best_score is None or best_score < 0.5)
         leaked_docs = tuple(doc for doc in retrieved_docs if chunks[next(i for i, _ in top if chunks[i].document_id == doc)].tenant_id not in {question.context.tenant_id, "public"})
         post_cases.append(EvaluationCase(
             case_id=question.case_id,
@@ -246,6 +279,7 @@ def main() -> None:
             retrieved_chunk_ids=retrieved_docs,
             cited_chunk_ids=(), should_abstain=question.should_abstain,
             did_abstain=did_abstain, leaked_chunk_ids=leaked_docs,
+            technical_failure="token_budget_error" if token_budget_error else None,
         ))
         relevant = set(question.relevant_document_ids)
         first_relevant_rank = next(
@@ -260,6 +294,8 @@ def main() -> None:
             "pre_rerank": pre_detail,
             "best_score": best_score,
             "did_abstain": did_abstain,
+            "rejected_candidates": rejected_count,
+            "technical_failure": "token_budget_error" if token_budget_error else None,
             "post_rerank": {
                 "retrieved_document_ids": list(retrieved_docs),
                 "first_relevant_rank": first_relevant_rank,

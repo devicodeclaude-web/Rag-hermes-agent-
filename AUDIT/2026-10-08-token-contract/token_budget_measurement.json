@@ -1,0 +1,55 @@
+{
+  "executed_utc": "2026-10-08",
+  "classification": "exact_token_count_cpu_only_no_gpu",
+  "tokenizer": {
+    "name": "BAAI/bge-reranker-v2-m3",
+    "revision": "953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e",
+    "special_tokens_per_pair": 4
+  },
+  "corpus": {
+    "documents": 465,
+    "questions": 10
+  },
+  "reranker_max_length": 512,
+  "derived_passage_budget_from_named_question_margin": 384,
+  "before_word_chunking_420_40": {
+    "chunks": 2945,
+    "passage_tokens": {
+      "count": 2945,
+      "min": 28,
+      "p50": 873,
+      "p95": 1252,
+      "max": 2054
+    },
+    "pair_tokens": {
+      "count": 29450,
+      "min": 35,
+      "p50": 882,
+      "p95": 1261,
+      "max": 2065
+    },
+    "pairs_over_budget": 26761,
+    "pairs_total": 29450,
+    "fraction_over": 0.9087
+  },
+  "after_token_chunking_384_64": {
+    "chunks": 7371,
+    "passage_tokens": {
+      "count": 7371,
+      "min": 28,
+      "p50": 384,
+      "p95": 385,
+      "max": 386
+    },
+    "pair_tokens": {
+      "count": 73710,
+      "min": 35,
+      "p50": 393,
+      "p95": 395,
+      "max": 397
+    },
+    "pairs_over_budget": 0,
+    "pairs_total": 73710,
+    "fraction_over": 0.0
+  }
+}
