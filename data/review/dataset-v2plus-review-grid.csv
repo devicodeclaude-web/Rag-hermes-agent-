@@ -1,10 +1,10 @@
 case_id,category,provenance_detail,reviewer_decision,reviewer_name,review_date_utc,notes
 # évaluateur DISTINCT des rédacteurs ; decision ∈ validate|rewrite|reject|arbitrate,,,,,,
-v2p-001,simple,claude_written,,,,
-v2p-002,simple,claude_written,,,,
-v2p-003,simple,claude_written,,,,
-v2p-004,simple,claude_written,,,,
-v2p-005,simple,claude_written,,,,
+v2p-001,simple,claude_written,validate,devicodeclaude-web,2026-10-25,
+v2p-002,simple,claude_written,validate,devicodeclaude-web,2026-10-25,présentation: doublon de texte à supprimer dans l'extrait (n'affecte pas la question)
+v2p-003,simple,claude_written,validate,devicodeclaude-web,2026-10-25,
+v2p-004,simple,claude_written,rewrite,devicodeclaude-web,2026-10-25,« mon gestionnaire de mots de passe » suppose une compatibilité non précisée ; préciser quelle intégration (ex. 1Password) permet la récupération des secrets au lancement. à reformuler (texte de reformulation à fournir)
+v2p-005,simple,claude_written,validate,devicodeclaude-web,2026-10-25,
 v2p-006,simple,claude_written,,,,
 v2p-007,simple,claude_written,,,,
 v2p-008,simple,claude_written,,,,
