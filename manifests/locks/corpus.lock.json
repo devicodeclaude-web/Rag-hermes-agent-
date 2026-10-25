@@ -1,0 +1,8 @@
+{
+  "corpus_path": "data/generated/hermes_public_documents.jsonl",
+  "source_repo": "git+https://github.com/NousResearch/hermes-agent.git",
+  "source_revision": "b682a98ab8cb30c4f0561021e0ff9f41e5156526",
+  "corpus_manifest_sha": "793e3b9c24bf706e8590386e6306e1819243e6d09b0040b4423c18c095cfe586",
+  "document_count": 461,
+  "note": "Identité épinglée du corpus d'évaluation public. La porte CI dataset-qa vérifie que le fichier versionné correspond exactement (révision source + sha256) avant de contrôler l'existence des documents référencés par le dataset."
+}
