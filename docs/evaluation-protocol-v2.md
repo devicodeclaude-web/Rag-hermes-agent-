@@ -247,3 +247,44 @@ service, mémoire ni skill Hermes exécute le produit comme un utilisateur :
 La preuve conserve les commandes exactes, codes de sortie, versions, sorties
 brutes et hashes. Une règle écrite ou un test lancé depuis l'environnement de
 construction Hermes ne remplace pas cette exécution indépendante.
+
+## 11. État réel du jeu courant et provenance des questions (annexe)
+
+Cette annexe décrit le **schéma actif** de `data/benchmark/dataset-v2.jsonl`
+(simple : `case_id`, `category`, `question`, `relevant_document_ids`,
+`distractor_document_ids`, `multi_hop`, `authorship`, statuts de revue), distinct
+du schéma cible des sections 3–9 (`track`, `language`, `relevance_spans`,
+`question_provenance`…) non encore en vigueur. Portes actives : `check_dataset_qa.py`
+et `check_title_leak.py`.
+
+### 11.1 Effectifs après intégration du lot v2+
+
+126 cas (94 → 126, +32). Répartition par catégorie :
+`simple` 40 · `paraphrase` 25 · `close_distractor` 28 · `chunk_boundary` 14 ·
+`no_answer` 19. La cible d'origine 25/20/20/15/20 % n'est plus tenue : les
+vraies frontières de chunk étant rares (vérification au tokenizer BGE-M3 384/64,
+« aucun chunk unique ne contient les deux faits »), le quota `chunk_boundary` est
+volontairement bas plutôt que gonflé par de faux cas.
+
+### 11.2 Provenance `scaffold_assisted_llm_written`
+
+Les 32 questions du lot v2+ portent `authorship: scaffold_assisted_llm_written` :
+cibles, distracteurs, intentions et faits visés préparés par Hermes ; formulations
+rédigées par un LLM ; sélection et exclusions arbitrées par l'utilisateur.
+**Construction assistée, pas une collecte indépendante.** Statuts honnêtes
+`decision_reference_status: pending_human_validation` et
+`manual_review_status: pending_initial_control` : une revue indépendante reste
+due avant tout passage à `validated`. Un champ par cas `provenance_detail`
+précise le rédacteur :
+
+| Rédacteur (`provenance_detail`)      | Cas                                   |
+|--------------------------------------|---------------------------------------|
+| `claude_written`                     | v2p-001 à 026 (hors 014, exclu), 018  |
+| `chatgpt_draft_claude_verbatim`      | v2p-027, 029, 030, 032, 033           |
+| `chatgpt_draft_claude_rewritten`     | v2p-028, 031                          |
+
+Exclus du lot : **v2p-034** (juxtaposition de deux besoins indépendants, pas une
+vraie frontière) et **v2p-014** (la règle anti-fuite bloque le nom de plateforme
+« Discord », titre mono-token, nécessaire à une formulation non ambiguë vs
+Telegram ; aucune fuite démontrée sur ce seul critère — la porte n'a pas été
+affaiblie pour le débloquer).

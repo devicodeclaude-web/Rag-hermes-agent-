@@ -38,6 +38,18 @@ CORPUS = [
 ]
 ALLOWED = {"simple", "paraphrase", "close_distractor", "chunk_boundary", "no_answer"}
 
+# Provenance par cas pour le lot v2+ (scaffold Hermes ; redaction LLM ; arbitrage utilisateur).
+# 001-026 redigees par Claude ; 027-033 brouillons ChatGPT (verbatim ou reecrits par Claude).
+_WRITER_OVERRIDE = {
+    "v2p-027": "chatgpt_draft_claude_verbatim",
+    "v2p-029": "chatgpt_draft_claude_verbatim",
+    "v2p-030": "chatgpt_draft_claude_verbatim",
+    "v2p-032": "chatgpt_draft_claude_verbatim",
+    "v2p-033": "chatgpt_draft_claude_verbatim",
+    "v2p-028": "chatgpt_draft_claude_rewritten",
+    "v2p-031": "chatgpt_draft_claude_rewritten",
+}
+
 _spec = importlib.util.spec_from_file_location("check_title_leak", ROOT / "scripts" / "check_title_leak.py")
 assert _spec is not None and _spec.loader is not None
 _guard = importlib.util.module_from_spec(_spec)
@@ -109,7 +121,8 @@ def main() -> int:
             "decision_reference_status": "pending_human_validation",
             "distractor_document_ids": dis,
             "distractor_miner": "handpicked_review_v2plus",
-            "authorship": "human_authored",
+            "authorship": "scaffold_assisted_llm_written",
+            "provenance_detail": _WRITER_OVERRIDE.get(cid, "claude_written"),
             "manual_review_status": "pending_initial_control",
             "question": q,
             "relevant_document_ids": rel,
