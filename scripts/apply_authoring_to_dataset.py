@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
-"""Intègre les questions rédigées (humain) depuis un CSV d'authoring vers le dataset v2 JSONL.
+"""Intègre les questions du CSV d'authoring (lot v2+) vers le dataset v2 JSONL.
 
-Ne traite QUE les lignes dont `question` ET `author` sont renseignés (rédaction
-humaine — indépendance). Chaque ligne retenue est validée avant intégration :
+Provenance du lot : construction ASSISTÉE, pas une collecte indépendante — cibles,
+distracteurs, intentions et faits visés préparés par Hermes ; formulations rédigées
+par un LLM (`provenance_detail` par cas) ; sélection/exclusions arbitrées par
+l'utilisateur. D'où `authorship: scaffold_assisted_llm_written`.
+
+Ne traite QUE les lignes dont `question` ET `author` sont renseignés. Chaque ligne
+retenue est validée avant intégration :
 - `question` non vide, `author` non vide ;
 - `category` dans l'ensemble autorisé ;
 - règle no_answer : relevant vide <=> category == no_answer ;
@@ -10,9 +15,9 @@ humaine — indépendance). Chaque ligne retenue est validée avant intégration
 - aucune fuite de titre (réutilise scripts/check_title_leak.py) ;
 - case_id unique (vs dataset existant et vs lot courant).
 
-Les lignes intégrées sont écrites avec le schéma du dataset et le statut HONNÊTE
-`pending_human_validation` / `pending_initial_control` : une question rédigée par
-l'humain reste à passer en revue indépendante avant de compter comme `validated`.
+Les lignes intégrées portent le statut HONNÊTE `pending_human_validation` /
+`pending_initial_control` : une revue indépendante (évaluateur distinct des
+rédacteurs) reste due avant tout passage à `validated`.
 
 Usage :
     PYTHONPATH=. python3 scripts/apply_authoring_to_dataset.py \
@@ -39,14 +44,15 @@ CORPUS = [
 ALLOWED = {"simple", "paraphrase", "close_distractor", "chunk_boundary", "no_answer"}
 
 # Provenance par cas pour le lot v2+ (scaffold Hermes ; redaction LLM ; arbitrage utilisateur).
-# 001-026 redigees par Claude ; 027-033 brouillons ChatGPT (verbatim ou reecrits par Claude).
+# 001-026 redigees par Claude (sauf 018) ; 018 + 027-033 brouillons ChatGPT (verbatim ou reecrits par Claude).
 _WRITER_OVERRIDE = {
+    "v2p-018": "chatgpt_draft_claude_verbatim",
     "v2p-027": "chatgpt_draft_claude_verbatim",
     "v2p-029": "chatgpt_draft_claude_verbatim",
-    "v2p-030": "chatgpt_draft_claude_verbatim",
     "v2p-032": "chatgpt_draft_claude_verbatim",
     "v2p-033": "chatgpt_draft_claude_verbatim",
     "v2p-028": "chatgpt_draft_claude_rewritten",
+    "v2p-030": "chatgpt_draft_claude_rewritten",
     "v2p-031": "chatgpt_draft_claude_rewritten",
 }
 

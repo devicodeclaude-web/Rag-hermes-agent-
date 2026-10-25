@@ -259,12 +259,14 @@ et `check_title_leak.py`.
 
 ### 11.1 Effectifs après intégration du lot v2+
 
-126 cas (94 → 126, +32). Répartition par catégorie :
+126 cas (94 → 126, +32). Composition par catégorie **observée, provisoire — ce
+n'est pas un quota à atteindre** et elle pourra évoluer après la revue
+indépendante :
 `simple` 40 · `paraphrase` 25 · `close_distractor` 28 · `chunk_boundary` 14 ·
-`no_answer` 19. La cible d'origine 25/20/20/15/20 % n'est plus tenue : les
-vraies frontières de chunk étant rares (vérification au tokenizer BGE-M3 384/64,
-« aucun chunk unique ne contient les deux faits »), le quota `chunk_boundary` est
-volontairement bas plutôt que gonflé par de faux cas.
+`no_answer` 19. La cible d'origine 25/20/20/15/20 % n'est plus tenue : les vraies
+frontières de chunk étant rares (vérification au tokenizer BGE-M3 384/64,
+« aucun chunk unique ne contient les deux faits »), `chunk_boundary` reste bas
+plutôt que gonflé par de faux cas.
 
 ### 11.2 Provenance `scaffold_assisted_llm_written`
 
@@ -279,9 +281,9 @@ précise le rédacteur :
 
 | Rédacteur (`provenance_detail`)      | Cas                                   |
 |--------------------------------------|---------------------------------------|
-| `claude_written`                     | v2p-001 à 026 (hors 014, exclu), 018  |
-| `chatgpt_draft_claude_verbatim`      | v2p-027, 029, 030, 032, 033           |
-| `chatgpt_draft_claude_rewritten`     | v2p-028, 031                          |
+| `claude_written`                     | v2p-001 à 026 (hors 014 et 018)       |
+| `chatgpt_draft_claude_verbatim`      | v2p-018, 027, 029, 032, 033           |
+| `chatgpt_draft_claude_rewritten`     | v2p-028, 030, 031                     |
 
 Exclus du lot : **v2p-034** (juxtaposition de deux besoins indépendants, pas une
 vraie frontière) et **v2p-014** (la règle anti-fuite bloque le nom de plateforme
