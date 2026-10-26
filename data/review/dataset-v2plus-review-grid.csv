@@ -15,11 +15,11 @@ v2p-012,paraphrase,claude_written,validate,devicodeclaude-web,2026-10-26,suggest
 v2p-013,paraphrase,claude_written,validate,devicodeclaude-web,2026-10-26,
 v2p-015,paraphrase,claude_written,,,,
 v2p-016,paraphrase,claude_written,validate,devicodeclaude-web,2026-10-26,"vérifié: allowlist du distracteur = env-vars sous-processus, pas destinations réseau -> paire propre"
-v2p-017,no_answer,claude_written,,,,
-v2p-018,no_answer,chatgpt_draft_claude_verbatim,,,,
-v2p-019,close_distractor,claude_written,,,,
-v2p-020,close_distractor,claude_written,,,,
-v2p-021,close_distractor,claude_written,,,,
+v2p-017,no_answer,claude_written,validate,devicodeclaude-web,2026-10-26,"no_answer confirmé corpus entier: '99 languages total' = Whisper STT, '90+' = OCR; aucun total TTS tous moteurs, non dérivable (edge 74/piper 44 sans union, STT!=TTS)"
+v2p-018,no_answer,chatgpt_draft_claude_verbatim,validate,devicodeclaude-web,2026-10-26,"no_answer confirmé: 84 'gif' du corpus = skill gif-search/Tenor, 'animated/frame/per-frame' = vidéo/pets/CLI; vision.md 0 'animated'/'frame'/'first image' -> traitement GIF animé en entrée non documenté"
+v2p-019,close_distractor,claude_written,validate,devicodeclaude-web,2026-10-26,
+v2p-020,close_distractor,claude_written,validate,devicodeclaude-web,2026-10-26,
+v2p-021,close_distractor,claude_written,rewrite,devicodeclaude-web,2026-10-26,"reformulée (auteur: devicodeclaude-web): « Comment configurer l'outil qui permet à l'agent d'exécuter du code Python, et où ce code s'exécute-t-il ? » — si l'isolation sécurité est indispensable à l'intention, revoir la cible (process enfant sur l'hôte != sandbox)"
 v2p-022,close_distractor,claude_written,,,,
 v2p-023,close_distractor,claude_written,,,,
 v2p-024,close_distractor,claude_written,,,,
