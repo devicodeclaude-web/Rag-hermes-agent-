@@ -13,7 +13,7 @@ v2p-010,paraphrase,claude_written,rewrite,devicodeclaude-web,2026-10-26,à refor
 v2p-011,paraphrase,claude_written,rewrite,devicodeclaude-web,2026-10-26,« tout cassé » peut aussi désigner une corruption de la base d'état ; préciser que l'agent a modifié des fichiers du projet et que l'utilisateur veut retrouver leur état d'avant. Vérifier que ce périmètre est couvert par les checkpoints. à reformuler (texte à fournir)
 v2p-012,paraphrase,claude_written,validate,devicodeclaude-web,2026-10-26,suggestion non bloquante: « modèles proposés sur AWS » plus précis que « par Amazon »
 v2p-013,paraphrase,claude_written,validate,devicodeclaude-web,2026-10-26,
-v2p-015,paraphrase,claude_written,,,,
+v2p-015,paraphrase,claude_written,rewrite,devicodeclaude-web,2026-10-26,"reformulation à ANCRER sur un fait UNIQUE à la cible: le concept 'prompt self-contained/fresh session' est AUSSI dans le distracteur cron-internals.md (section 'Fresh Session Isolation') -> l'angle proposé ne sépare pas. Angle candidat: option script-only sans LLM (zéro-token) propre au guide pratique, à re-vérifier. texte de reformulation à fournir"
 v2p-016,paraphrase,claude_written,validate,devicodeclaude-web,2026-10-26,"vérifié: allowlist du distracteur = env-vars sous-processus, pas destinations réseau -> paire propre"
 v2p-017,no_answer,claude_written,validate,devicodeclaude-web,2026-10-26,"no_answer confirmé corpus entier: '99 languages total' = Whisper STT, '90+' = OCR; aucun total TTS tous moteurs, non dérivable (edge 74/piper 44 sans union, STT!=TTS)"
 v2p-018,no_answer,chatgpt_draft_claude_verbatim,validate,devicodeclaude-web,2026-10-26,"no_answer confirmé: 84 'gif' du corpus = skill gif-search/Tenor, 'animated/frame/per-frame' = vidéo/pets/CLI; vision.md 0 'animated'/'frame'/'first image' -> traitement GIF animé en entrée non documenté"
@@ -28,7 +28,7 @@ v2p-026,close_distractor,claude_written,validate,devicodeclaude-web,2026-10-26,
 v2p-027,simple,chatgpt_draft_claude_verbatim,rewrite,devicodeclaude-web,2026-10-26,"reformulée (auteur: devicodeclaude-web): « Quand le texte d'une page Web est tronqué, quelles parties sont conservées, comment la coupure est-elle signalée et quelles possibilités la documentation décrit-elle, selon le backend, pour accéder au texte manquant ? » — 3 sous-points vérifiés dans le SEUL doc cible web-search.md (head+tail, footer [TRUNCATED]+read_file, snippets vs full-page backend) -> mono-doc légitime"
 v2p-028,simple,chatgpt_draft_claude_rewritten,validate,devicodeclaude-web,2026-10-26,"vérifié: fallback-providers.md distingue auxiliary.vision (image analysis) et auxiliary.compression, chaînes séparées -> pas de conflation compression/image"
 v2p-029,chunk_boundary,chatgpt_draft_claude_verbatim,validate,devicodeclaude-web,2026-10-26,"frontière rejouée 2026-10-26: A Stateless=chunk1, B 'stored response by id'=chunk8, communs={}; sha256 0a6d52fc..., 384/64/step320; preuve dans data/review/dataset-v2plus-chunk-boundary-proofs.md"
-v2p-030,chunk_boundary,chatgpt_draft_claude_rewritten,,,,
-v2p-031,simple,chatgpt_draft_claude_rewritten,,,,
-v2p-032,chunk_boundary,chatgpt_draft_claude_verbatim,,,,
-v2p-033,simple,chatgpt_draft_claude_verbatim,,,,
+v2p-030,chunk_boundary,chatgpt_draft_claude_rewritten,validate,devicodeclaude-web,2026-10-26,"frontière rejouée: A sessions optimize=chunk2, B retention_days=chunk42, disjoints; sha256 5c87b32e1906de9d...; preuve dans dataset-v2plus-chunk-boundary-proofs.md"
+v2p-031,simple,chatgpt_draft_claude_rewritten,validate,devicodeclaude-web,2026-10-26,"preuve: cible webhooks.md a les 2 sous-faits (deliver_only + 'rejected at startup'/mutually exclusive avec cron_job); distracteur cron.md 0 deliver_only, cron_job côté cron seulement -> ne répond pas"
+v2p-032,chunk_boundary,chatgpt_draft_claude_verbatim,validate,devicodeclaude-web,2026-10-26,"frontière rejouée: A HERMES_CUA_DRIVER_CMD=chunk19, B 'reports the incompatibility'=chunk2, disjoints; sha256 5f3a0e5c22e27243...; preuve consignée"
+v2p-033,simple,chatgpt_draft_claude_verbatim,validate,devicodeclaude-web,2026-10-26,
