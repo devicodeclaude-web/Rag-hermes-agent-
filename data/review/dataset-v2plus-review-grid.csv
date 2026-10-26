@@ -24,10 +24,10 @@ v2p-022,close_distractor,claude_written,validate,devicodeclaude-web,2026-10-26,
 v2p-023,close_distractor,claude_written,validate,devicodeclaude-web,2026-10-26,"séparation retenue sur ta vérif (cible donne le branchement, distracteur = vue d'ensemble+renvoi); réserve: absence de 11434 seule insuffisante"
 v2p-024,close_distractor,claude_written,validate,devicodeclaude-web,2026-10-26,
 v2p-025,close_distractor,claude_written,validate,devicodeclaude-web,2026-10-26,
-v2p-026,close_distractor,claude_written,,,,
-v2p-027,simple,chatgpt_draft_claude_verbatim,,,,
-v2p-028,simple,chatgpt_draft_claude_rewritten,,,,
-v2p-029,chunk_boundary,chatgpt_draft_claude_verbatim,,,,
+v2p-026,close_distractor,claude_written,validate,devicodeclaude-web,2026-10-26,
+v2p-027,simple,chatgpt_draft_claude_verbatim,rewrite,devicodeclaude-web,2026-10-26,"reformulée (auteur: devicodeclaude-web): « Quand le texte d'une page Web est tronqué, quelles parties sont conservées, comment la coupure est-elle signalée et quelles possibilités la documentation décrit-elle, selon le backend, pour accéder au texte manquant ? » — 3 sous-points vérifiés dans le SEUL doc cible web-search.md (head+tail, footer [TRUNCATED]+read_file, snippets vs full-page backend) -> mono-doc légitime"
+v2p-028,simple,chatgpt_draft_claude_rewritten,validate,devicodeclaude-web,2026-10-26,"vérifié: fallback-providers.md distingue auxiliary.vision (image analysis) et auxiliary.compression, chaînes séparées -> pas de conflation compression/image"
+v2p-029,chunk_boundary,chatgpt_draft_claude_verbatim,validate,devicodeclaude-web,2026-10-26,"frontière rejouée 2026-10-26: A Stateless=chunk1, B 'stored response by id'=chunk8, communs={}; sha256 0a6d52fc..., 384/64/step320; preuve dans data/review/dataset-v2plus-chunk-boundary-proofs.md"
 v2p-030,chunk_boundary,chatgpt_draft_claude_rewritten,,,,
 v2p-031,simple,chatgpt_draft_claude_rewritten,,,,
 v2p-032,chunk_boundary,chatgpt_draft_claude_verbatim,,,,
