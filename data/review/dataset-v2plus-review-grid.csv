@@ -10,11 +10,11 @@ v2p-007,simple,claude_written,rewrite,devicodeclaude-web,2026-10-26,à reformule
 v2p-008,simple,claude_written,validate,devicodeclaude-web,2026-10-26,
 v2p-009,paraphrase,claude_written,validate,devicodeclaude-web,2026-10-26,
 v2p-010,paraphrase,claude_written,rewrite,devicodeclaude-web,2026-10-26,à reformuler (texte de reformulation à fournir)
-v2p-011,paraphrase,claude_written,,,,
-v2p-012,paraphrase,claude_written,,,,
-v2p-013,paraphrase,claude_written,,,,
+v2p-011,paraphrase,claude_written,rewrite,devicodeclaude-web,2026-10-26,« tout cassé » peut aussi désigner une corruption de la base d'état ; préciser que l'agent a modifié des fichiers du projet et que l'utilisateur veut retrouver leur état d'avant. Vérifier que ce périmètre est couvert par les checkpoints. à reformuler (texte à fournir)
+v2p-012,paraphrase,claude_written,validate,devicodeclaude-web,2026-10-26,suggestion non bloquante: « modèles proposés sur AWS » plus précis que « par Amazon »
+v2p-013,paraphrase,claude_written,validate,devicodeclaude-web,2026-10-26,
 v2p-015,paraphrase,claude_written,,,,
-v2p-016,paraphrase,claude_written,,,,
+v2p-016,paraphrase,claude_written,validate,devicodeclaude-web,2026-10-26,"vérifié: allowlist du distracteur = env-vars sous-processus, pas destinations réseau -> paire propre"
 v2p-017,no_answer,claude_written,,,,
 v2p-018,no_answer,chatgpt_draft_claude_verbatim,,,,
 v2p-019,close_distractor,claude_written,,,,
