@@ -60,3 +60,17 @@ tokenizer: /root/work/models/bge-reranker-v2-m3/tokenizer.json
 - A «seuil de compression auto»: chunks [56, 58, 70, 71, 72, 73, 100, 103, 104, 107, 108, 110, 111, 113]
 - B «plafond d'octets de sortie d'outil»: chunks [13, 39, 51, 52, 53]
 - intersection=[] -> VRAIE FRONTIERE
+
+# Preuves chunk_boundary — complément lot final (chunker 384/64 step320)
+
+## v3cb-142 — hermes-agent:user-guide/messaging/matrix.md
+- chunks=36 sha16=26eaf30e8c790d29
+- A «lib mautrix»: [0, 13, 18, 19, 23, 24, 32]
+- B «features Matrix (spaces/reactions)»: [1, 2, 3, 5, 14, 15]
+- inter=[] -> VRAIE FRONTIERE
+
+## v3cb-143 — hermes-agent:user-guide/features/tts.md
+- chunks=43 sha16=9c7127e1f43063b5
+- A «Edge TTS par défaut»: [0, 1, 2, 9, 10, 11]
+- B «téléchargement voix Piper»: [5, 12]
+- inter=[] -> VRAIE FRONTIERE
