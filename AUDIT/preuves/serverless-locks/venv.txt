@@ -1,0 +1,3 @@
+Using CPython 3.12.14
+Creating virtual environment at: /tmp/tmp.UeQHzKGJoq/venv
+Activate with: source /tmp/tmp.UeQHzKGJoq/venv/bin/activate

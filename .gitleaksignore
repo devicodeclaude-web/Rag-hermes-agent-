@@ -1,0 +1,2 @@
+# Faux positif historique exact : fixture redigee du scanner interne.
+208c951d2e1ed9640a4e5355bc7fab3cbbb121be:tests/test_secret_scan.py:generic-api-key:12

@@ -1,6 +1,6 @@
 # Faisabilité d’une campagne BGE-M3 sur RunPod Serverless
 
-Date de vérification : 2026-10-18
+Faits RunPod vérifiés le 2026-10-19 ; lock local revérifié le 2026-10-27.
 
 ## Verdict
 
@@ -9,11 +9,12 @@ Date de vérification : 2026-10-18
 RunPod Serverless fournit des limites côté fournisseur (`executionTimeout`, TTL du
 job et `workersMin=0`) qui répondent mieux au risque d’un Pod restant facturé.
 Un scaffold local de handler queue-based existe désormais dans
-`scripts/runpod_serverless_handler.py` et sa logique locale est testée. Il ne
-constitue toutefois pas un worker déployable : aucune image Serverless ni aucun
-lock SDK/CUDA cible n’a été construit ou validé, et la durée réelle de la campagne
-reste inconnue. Le plafond financier de 0,50 USD n’est pas compatible avec une
-fenêtre A40 de 30 minutes au tarif vérifié.
+`scripts/runpod_serverless_handler.py` et sa logique locale est testée. Le lock combiné
+CUDA/PyTorch/SDK a été résolu et accepté en installation sèche pour le runtime attendu.
+Il ne constitue toutefois pas un worker déployable : aucune image Serverless n’a été construite
+et le runtime n’a été validé ni par l’exécution de `import torch` dans la base candidate,
+ni par une campagne. La durée réelle reste donc inconnue. Le plafond financier de
+0,50 USD n’est pas compatible avec une fenêtre A40 de 30 minutes au tarif vérifié.
 
 Aucun endpoint, worker, Pod ou autre ressource payante n’a été créé pendant cette
 étude.
@@ -30,6 +31,29 @@ Aucun endpoint, worker, Pod ou autre ressource payante n’a été créé pendan
   - une politique TTL couvrant file d’attente et exécution ;
   - le retour automatique à zéro worker après inactivité.
 - Tarif Serverless vérifié pour le groupe A40/A6000 48 Gio : 0,00034 USD/s.
+- Version stable du SDK vérifiée sur PyPI : `runpod==1.12.0` ; le lock
+  `requirements-serverless.lock.txt` est généré avec `uv==0.13.4` pour CPython
+  3.12 et `x86_64-manylinux_2_28`, puis accepté en installation sèche avec hashes
+  obligatoires (101 paquets).
+- `uv==0.13.1` a été abandonné : son magasin de CA embarqué est concerné par
+  `GHSA-hq85-5cpj-mr62`; `uv==0.13.4` retire la racine compromise.
+- Le lock combiné `requirements-serverless-gpu.lock.txt` résout 151 paquets pour
+  le runtime attendu CPython 3.12 et `x86_64-manylinux_2_28`. Il référence directement
+  la roue officielle `torch==2.8.0+cu128` avec son SHA-256, et épingle notamment
+  `triton==3.4.0`, `runpod==1.12.0` et `FlagEmbedding==1.3.5`, puis passe une
+  installation sèche avec hashes obligatoires pour cette cible.
+- Deux régénérations consécutives avec `uv==0.13.4` ont produit des fichiers
+  strictement identiques selon `sha256sum`. Les commandes, sorties de compilation,
+  dry-runs et checksums sont conservés dans
+  `AUDIT/preuves/serverless-locks/`.
+- Base officielle candidate vérifiée :
+  `runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404`. Le digest de l’index
+  OCI multi-plateforme est
+  `sha256:0a360022e8de4375af99430f84e8b38951acc397252163a37ceac7204d01be35` ;
+  son manifeste enfant `linux/amd64` distinct est
+  `sha256:4d1721e62b56d345c83b4fd6090664be6daf9312caab5b2e76f23d8231941851`.
+  Le tag et ces digests identifient la base candidate, mais n’attestent pas que `import torch` fonctionne
+  dans l’image finale.
 
 ## Budget
 
@@ -59,11 +83,11 @@ Une architecture Serverless queue-based pourrait conserver :
 
 ## Architecture minimale à valider
 
-1. Image `linux/amd64` fondée sur une image CUDA/PyTorch épinglée.
+1. Image `linux/amd64` fondée sur la base CUDA/PyTorch épinglée par digest ci-dessus.
 2. Checkout Git propre complet, `.git` inclus, sous `/opt/ragbench`.
 3. Worker queue-based qui :
    - valide le commit attendu ;
-   - lance `scripts/run_bge_gpu_campaign.py` ;
+   - lance `python -m scripts.run_bge_gpu_campaign` ;
    - recharge le reçu avec `load_consumable_receipt_v2` ;
    - renvoie ce reçu comme résultat du job.
 4. Endpoint avec un seul worker maximum, `workersMin=0`, idle minimal et limites
@@ -74,8 +98,9 @@ Une architecture Serverless queue-based pourrait conserver :
 
 ## Blocages avant toute dépense
 
-- Le lock d’environnement CUDA/PyTorch doit être régénéré et vérifié sur la cible
-  Serverless ; le lock actuel n’est pas une preuve d’image reproductible.
+- Le lock combiné CUDA/PyTorch/SDK est résolu et vérifié en installation sèche,
+  mais n’a pas encore été installé ni exécuté dans la base candidate. Il ne prouve
+  donc pas à lui seul une image reproductible ou fonctionnelle.
 - Les deux modèles verrouillés représentent environ 4,576 Go ; leur stratégie de
   cache doit être testée sans téléchargement ou duplication imprévue.
 - La campagne complète n’a jamais été chronométrée ; rien ne prouve qu’elle tient
@@ -83,8 +108,20 @@ Une architecture Serverless queue-based pourrait conserver :
 - Le manifeste exige exactement une `NVIDIA A40` et au moins 40 Gio. Les pools
   Serverless peuvent aussi attribuer une A6000 ; le contrôle matériel doit rester
   fail-closed.
-- L’image ne peut pas encore être construite localement : Docker, Podman et `uv`
-  ne sont pas présents dans l’environnement actuel.
+- L’image ne peut pas encore être construite ou exécutée localement : Docker,
+  Podman, Buildah et Skopeo ne sont pas présents. Le manifeste `linux/amd64`
+  totalise environ 9,84 Gio de couches compressées alors que l’environnement ne
+  dispose que d’environ 14 Gio libres ; le téléchargement puis le décompactage
+  local ne constituent donc pas une validation sûre. `uv==0.13.4` a uniquement
+  servi dans un venv temporaire à compiler, régénérer et vérifier en mode sec les
+  locks ; aucun paquet du lock GPU n’a été installé.
+- La base contient des paquets système préinstallés. Le chemin d’installation
+  isolé — vraisemblablement un venv avec accès aux paquets système — doit être
+  construit et testé pour exclure tout remplacement silencieux ou conflit avec
+  PyTorch/CUDA et les paquets Debian de la base.
+- Le checkout Git complet requis pour la provenance ne doit pas transformer le
+  contexte de construction en fuite de secrets ou de fichiers non suivis. La
+  méthode de création d’un contexte propre et attesté reste à valider.
 - Le résultat doit rester sous la limite de sortie de `/run` et être sauvegardé
   avant expiration de sa rétention.
 - Aucun mécanisme ne garantit actuellement un plafond monétaire strict de

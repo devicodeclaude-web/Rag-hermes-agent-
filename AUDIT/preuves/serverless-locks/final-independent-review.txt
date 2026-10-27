@@ -1,0 +1,31 @@
+Delegation: deleg_b00b1832
+Task: revue indépendante finale du diff indexé après correctif de position et digest du lock GPU
+Mode: lecture seule
+Date: 2026-10-27
+
+Verdict final — passed=true
+
+- Aucun défaut bloquant ni contournement adjacent identifié dans les 28 fichiers indexés.
+- Attaque précédente explicitement rejetée : déplacer la ligne Torch dans une séquence de hashes échoue désormais avec `approved PyTorch requirement must be the final lock line`.
+- `_validate_final_lock` impose :
+  - une seule ligne Torch exacte ;
+  - Torch comme dernière ligne, avec forme séquentielle canonique ;
+  - le digest du contenu compilé ;
+  - le SHA-256 du contenu final complet (`149fe07cd6ce77ca5470acc2337bac50b5e14392867f626a9f26a87f011186c4`).
+- Test adversarial indépendant : forme canonique acceptée, 12/12 mutations rejetées — permutations de Torch, duplication, suffixe après Torch, newline absente, casse/hash modifiés, URL directe additionnelle, commentaire dissimulé et mutation d’un hash compilé.
+- Digests recalculés :
+  - GPU : 150 paquets compilés, graphe et contenu conformes ; 151 avec Torch final ;
+  - SDK : 101 paquets, graphe et contenu conformes.
+- Les 150 versions GPU passent une validation PEP 440 ; aucun invalide accepté dans 1 429 formes générées.
+- Snapshot anti-TOCTOU, isolation uv/index/cache/plateforme et publication atomique fail-closed confirmés par inspection.
+- 27 tests ciblés : OK.
+- Gitleaks 8.30.1 :
+  - export indexé vérifié octet par octet : 305 fichiers, 0 divergence, 0 fichier supplémentaire ;
+  - export exact : aucune fuite ;
+  - historique : 142 commits, aucune fuite.
+- `git diff --cached --check` : propre.
+- Documentation et limites de preuve honnêtes.
+- Fichiers créés ou modifiés par la revue : aucun.
+- État observé par la revue : aucun changement non indexé ni fichier non suivi.
+
+Note de méthode : la tentative de suite complète du réviseur avec le Python système manquait `hypothesis` et désactivait Qdrant ; elle n’a pas été retenue comme preuve. La validation ciblée a été relancée avec `.venv-audit` et a réussi. La suite stricte séparée du pipeline principal a exécuté 495 tests avec Qdrant 1.19.0 réel, zéro skip, exit 0.

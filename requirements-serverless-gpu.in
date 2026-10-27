@@ -1,0 +1,28 @@
+# Environnement combiné du worker RunPod Serverless pour le runtime attendu
+# PyTorch 2.8/CUDA 12.8 sur CPython 3.12, linux/amd64, manylinux_2_28.
+#
+# Compile avec uv==0.13.4, sans index PyTorch général. Le générateur omet
+# d’abord Torch de la sortie uv puis ajoute cette exigence directe unique ; cela
+# évite les hashes conflictuels que uv 0.13.4 émet sinon pour les autres roues :
+#   UV_BIN=/chemin/vers/uv python -m scripts.compile_serverless_gpu_lock
+# Le générateur neutralise les variables/configurations d’index, impose PyPI,
+# compile une copie canonique temporaire des trois entrees validees, utilise un
+# cache isole, verifie le digest du graphe approuve et force le mode copie
+# compatible PRoot.
+#
+# Vérification autonome sans installation, dans un venv temporaire explicite :
+#   verify_root="$(mktemp -d)"
+#   uv venv "$verify_root/venv" --python 3.12 --no-python-downloads
+#   UV_LINK_MODE=copy UV_CACHE_DIR="$verify_root/cache" uv pip install --python "$verify_root/venv/bin/python" \
+#     --dry-run --require-hashes \
+#     --python-platform x86_64-manylinux_2_28 \
+#     --python-version 3.12 \
+#     -r requirements-serverless-gpu.lock.txt
+#   rm -rf "$verify_root"
+#
+# La roue officielle directe encode la provenance PyTorch sans exposer les autres
+# dépendances à un index additionnel. Le lock prouve la résolution ; il ne remplace
+# pas un build de l’image ni une validation du runtime avec `import torch`.
+-r requirements-gpu.in
+-r requirements-serverless.in
+torch @ https://download-r2.pytorch.org/whl/cu128/torch-2.8.0%2Bcu128-cp312-cp312-manylinux_2_28_x86_64.whl#sha256=4354fc05bb79b208d6995a04ca1ceef6a9547b1c4334435574353d381c55087c

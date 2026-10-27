@@ -9,16 +9,17 @@ useDefault = true
 
 [[allowlists]]
 description = """
-Faux positifs justifies :
-1. Le SHA de revision git du tokenizer HuggingFace bge-reranker-v2-m3
-   (953dc6f6...) : identifiant PUBLIC de commit, present dans les manifests et
-   rapports. Ce n'est pas un secret.
-2. Les fixtures du scanner de secrets maison (tests/test_secret_scan.py) qui
-   contiennent des faux secrets VOLONTAIRES pour tester la detection.
+Valeurs publiques ou factices exactes uniquement :
+1. SHA public du tokenizer HuggingFace bge-reranker-v2-m3.
+2. Fixtures volontaires du scanner de secrets interne.
+3. Identifiants d'exemple reproduits depuis la documentation publique Hermes.
+Aucun chemin entier n'est exclu et aucune condition AND dependante du mode de scan
+n'est utilisee.
 """
+regexTarget = "match"
 regexes = [
   '''953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e''',
-]
-paths = [
-  '''tests/test_secret_scan\.py''',
+  '''supersecretvalue123''',
+  '''change-me-local-dev''',
+  '''(?:3uo8dkh1p7g1mfk49ear5fzs5c|abc123def456ghi789jkl012mn|123456789012345678|284102345871466496|111222333444555666)''',
 ]

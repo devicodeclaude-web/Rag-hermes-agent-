@@ -1,0 +1,1 @@
+PASS: two consecutive regenerations produced identical SHA-256 values

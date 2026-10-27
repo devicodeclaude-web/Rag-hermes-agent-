@@ -9,7 +9,7 @@ class SecretScanTests(unittest.TestCase):
         self.assertTrue(any(f.rule == "private_key" for f in findings))
 
     def test_detects_assigned_api_key(self):
-        findings = scan_text("cfg.py", 'api_key = "sk-abcdef1234567890abcdef"')
+        findings = scan_text("cfg.py", 'api_key = "sk-abcdef1234567890abcdef"')  # gitleaks:allow
         self.assertTrue(any(f.rule == "assigned_secret" for f in findings))
 
     def test_ignores_placeholder_and_env_reference(self):
