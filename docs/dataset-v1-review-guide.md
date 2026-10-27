@@ -4,6 +4,19 @@ Fichier à remplir : `data/review/dataset-v1-initial-20.csv`. L'échantillon est
 stratifié selon la composition du jeu : 5 simples, 4 paraphrases, 4
 distracteurs proches, 3 frontières de chunks et 4 sans-réponse.
 
+## Paquet de revue enrichi
+
+Pour relire sans ouvrir les JSONL, génère le dossier lisible (question +
+extraits de texte des documents proposés et des distracteurs, sans aucun score) :
+
+```bash
+PYTHONPATH=. python3 scripts/build_review_package.py
+```
+
+Sorties : `data/review/dataset-v1-review-package.md` (lecture) et
+`data/review/dataset-v1-full-100.csv` (grille des 100 cas à remplir, mêmes
+colonnes que le lot initial de 20). Le script ne valide rien ; il prépare la revue.
+
 ## Limite connue avant revue
 
 Ces questions ne proviennent pas d'un chunk cible et les distracteurs ont été

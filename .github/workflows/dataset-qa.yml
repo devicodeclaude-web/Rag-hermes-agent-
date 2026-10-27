@@ -1,0 +1,40 @@
+name: dataset-qa
+
+on:
+  pull_request:
+    paths:
+      - "data/benchmark/**"
+      - "data/generated/**"
+      - "data/fixtures/**"
+      - "manifests/locks/corpus.lock.json"
+      - "scripts/check_dataset_qa.py"
+      - "scripts/check_title_leak.py"
+      - "scripts/verify_corpus_lock.py"
+      - ".github/workflows/dataset-qa.yml"
+  push:
+    branches: [main]
+    paths:
+      - "data/benchmark/**"
+      - "data/generated/**"
+      - "manifests/locks/corpus.lock.json"
+      - "scripts/check_dataset_qa.py"
+      - "scripts/check_title_leak.py"
+      - "scripts/verify_corpus_lock.py"
+
+jobs:
+  qa:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Épingle le corpus d'éval versionné (révision source + sha256) au lock.
+      # Dépendances : aucune (stdlib pure).
+      - name: Vérifie le lock du corpus (version + hash)
+        run: PYTHONPATH=. python3 scripts/verify_corpus_lock.py
+      # Porte dataset : structure, existence des documents dans le corpus, et
+      # 0 fuite de titre. Le corpus public étant versionné, le contrôle tourne
+      # en entier (jamais --structure-only).
+      - name: QA dataset v2 (0 fuite de titre exigée)
+        run: PYTHONPATH=. python3 scripts/check_dataset_qa.py --dataset data/benchmark/dataset-v2.jsonl
