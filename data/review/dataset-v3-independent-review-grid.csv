@@ -89,16 +89,16 @@ v3cd-033,close_distractor,['hermes-agent:user-guide/messaging/telegram.md'],tele
 v3cd-034,close_distractor,['hermes-agent:user-guide/messaging/dingtalk.md'],"dingtalk: Stream Mode, WebSocket persistant sans URL publique",yes,validate,devicodeclaude-web,2026-10-27,doc/faits identifies de memoire
 v3cd-035,close_distractor,['hermes-agent:user-guide/features/heartbeat.md'],"heartbeat: scheduler en memoire, ne survit pas au redemarrage (max instances/session: partiel)",yes,validate,devicodeclaude-web,2026-10-27,doc/faits identifies de memoire
 v3cd-062,close_distractor,['hermes-agent:user-guide/messaging/bluebubbles.md'],bluebubbles: Mac allume avec BlueBubbles Server + app Messages (iMessage),yes,validate,devicodeclaude-web,2026-10-27,doc/faits identifies de memoire
-v3cd-063,close_distractor,['hermes-agent:user-guide/messaging/photon.md'],,,,,,
-v3cd-064,close_distractor,['hermes-agent:user-guide/messaging/matrix.md'],,,,,,
-v3cd-065,close_distractor,['hermes-agent:user-guide/messaging/signal.md'],,,,,,
-v3cd-066,close_distractor,['hermes-agent:user-guide/messaging/irc.md'],,,,,,
-v3cd-067,close_distractor,['hermes-agent:user-guide/messaging/ntfy.md'],,,,,,
-v3cd-068,close_distractor,['hermes-agent:user-guide/messaging/simplex.md'],,,,,,
-v3cd-069,close_distractor,['hermes-agent:user-guide/messaging/qqbot.md'],,,,,,
-v3cd-070,close_distractor,['hermes-agent:user-guide/messaging/weixin.md'],,,,,,
-v3cd-071,close_distractor,['hermes-agent:user-guide/messaging/buzz.md'],,,,,,
-v3cd-122,close_distractor,['hermes-agent:user-guide/messaging/teams.md'],,,,,,
+v3cd-063,close_distractor,['hermes-agent:user-guide/messaging/photon.md'],"photon (iMessage géré, pool de lignes partagé)",yes,validate,devicodeclaude-web,2026-10-27,doc identifie correctement de memoire (10/10 sur fingerprints)
+v3cd-064,close_distractor,['hermes-agent:user-guide/messaging/matrix.md'],matrix (homeserver fédéré),yes,validate,devicodeclaude-web,2026-10-27,doc identifie correctement de memoire (10/10 sur fingerprints)
+v3cd-065,close_distractor,['hermes-agent:user-guide/messaging/signal.md'],"signal (signal-cli, SSE+JSON-RPC)",yes,validate,devicodeclaude-web,2026-10-27,doc identifie correctement de memoire (10/10 sur fingerprints)
+v3cd-066,close_distractor,['hermes-agent:user-guide/messaging/irc.md'],"irc (stdlib, no SDK/daemon)",yes,validate,devicodeclaude-web,2026-10-27,doc identifie correctement de memoire (10/10 sur fingerprints)
+v3cd-067,close_distractor,['hermes-agent:user-guide/messaging/ntfy.md'],ntfy (pub/sub HTTP par topic),yes,validate,devicodeclaude-web,2026-10-27,doc identifie correctement de memoire (10/10 sur fingerprints)
+v3cd-068,close_distractor,['hermes-agent:user-guide/messaging/simplex.md'],simplex (pas d'ID persistant),yes,validate,devicodeclaude-web,2026-10-27,doc identifie correctement de memoire (10/10 sur fingerprints)
+v3cd-069,close_distractor,['hermes-agent:user-guide/messaging/qqbot.md'],"qqbot (API v2, WebSocket, C2C/groupe/guilde)",yes,validate,devicodeclaude-web,2026-10-27,doc identifie correctement de memoire (10/10 sur fingerprints)
+v3cd-070,close_distractor,['hermes-agent:user-guide/messaging/weixin.md'],"weixin (WeChat perso, iLink long-poll)",yes,validate,devicodeclaude-web,2026-10-27,doc identifie correctement de memoire (10/10 sur fingerprints)
+v3cd-071,close_distractor,['hermes-agent:user-guide/messaging/buzz.md'],buzz (Nostr via CLI buzz),yes,validate,devicodeclaude-web,2026-10-27,doc identifie correctement de memoire (10/10 sur fingerprints)
+v3cd-122,close_distractor,['hermes-agent:user-guide/messaging/teams.md'],teams (Azure Bot / Bot Framework),yes,validate,devicodeclaude-web,2026-10-27,doc identifie correctement de memoire (10/10 sur fingerprints)
 v3cd-123,close_distractor,['hermes-agent:user-guide/messaging/teams-meetings.md'],,,,,,
 v3cd-124,close_distractor,['hermes-agent:user-guide/messaging/msgraph-webhook.md'],,,,,,
 v3cd-125,close_distractor,['hermes-agent:user-guide/messaging/a2a.md'],,,,,,
