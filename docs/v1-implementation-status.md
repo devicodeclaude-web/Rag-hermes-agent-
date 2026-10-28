@@ -3,8 +3,8 @@
 Ce document trace la correspondance entre les composants livrés et les critères
 d'acceptation (`docs/acceptance-criteria.md`). Il ne remplace aucune
 spécification : il indique seulement ce qui est réellement implémenté et vérifié,
-et ce qui reste à faire. Aucun score de qualité n'est probant avant la piste
-humaine annotée et les jeux gelés de 100 puis 300 questions.
+et ce qui reste à faire. Aucun score de qualité n'est probant avant une piste
+finale gelée, annotée et conforme à tous les critères de couverture.
 
 ## Composants livrés (code + tests + revue indépendante)
 
@@ -31,14 +31,16 @@ humaine annotée et les jeux gelés de 100 puis 300 questions.
 | Fuite inter-tenant 0 absolu | Barrière ACL Qdrant réelle validée par ailleurs ; le rapport synthétique confirme leak_count 0 (corpus 100 % public) |
 | Élargissement de recherche après erreur ACL 0 absolu | Garanti par le service (refus fermé) ; couvert par la suite de tests |
 | Validité structurelle des citations 1,00 | Générateur RAG fail-closed sur citations invalides |
-| ≥ 300 questions gelées + couverture (privé, abstention, contradictions, injections) | **Intermédiaire atteint** : 154 cas humains validés (107 EN, 47 FR), dont 32 abstentions ; 146 cas et les catégories de couverture manquent encore pour 300 |
+| ≥ 300 questions gelées + couverture (privé, abstention, contradictions, injections) | **Seuil numérique atteint, critère non atteint** : le dataset QA actif contient 300 cas actifs uniques et passe `check_dataset_qa.py` (75 simples, 60 paraphrases, 60 distracteurs proches, 45 frontières de chunks, 60 sans réponse). Il est distinct du snapshot de 154 cas humains éligibles qualité. Les couvertures privé, contradictions et injections ainsi que leur provenance/revue humaine restent absentes de la piste active. |
 | Seuils de recall/MRR/abstention | Baseline lexicale humaine mesurée : Recall@10 global 0,3361, MRR 0,1737, rappel d'abstention 0 ; comparaison dense/rerankée et intervalles de confiance encore absents |
 
 ## Reste à faire
 
-1. **Étendre le jeu final** : le gate intermédiaire est `READY` avec 154 cas
-   humains validés ; ajouter 146 cas pour atteindre 300 et couvrir explicitement
-   privé, contradictions et injections, avec la même revue fail-closed.
+1. **Qualifier et compléter le jeu final** : préserver séparément les 300 cas
+   actifs du schéma QA et le snapshot historique de 154 cas humains. Ajouter puis
+   revoir, dans une piste finale gelée et éligible qualité, les catégories privé,
+   contradictions et injections ; ne pas assimiler le seul compte de 300 à une
+   satisfaction du critère d'acceptation.
 2. **Endpoint LLM réel** : brancher `RAG_GENERATOR_*` et `RAG_BASELINE_*` sur un
    serveur OpenAI-compatible pour produire de vraies réponses RAG et closed-book,
    puis relancer le comparateur.

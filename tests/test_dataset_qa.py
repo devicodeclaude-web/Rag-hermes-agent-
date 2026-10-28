@@ -64,5 +64,66 @@ class DatasetQaStructureTests(unittest.TestCase):
         self.assertEqual(self._run_structure(cases), 1)
 
 
+class DatasetStatusDocumentationTests(unittest.TestCase):
+    def test_status_distinguishes_active_300_from_human_154(self):
+        active = qa.load_jsonl(ROOT / "data" / "benchmark" / "dataset-v2.jsonl")
+        human = qa.load_jsonl(
+            ROOT / "data" / "benchmark" / "dataset-v2-human-154.jsonl"
+        )
+        private_documents = {
+            row["document_id"]
+            for row in qa.load_jsonl(
+                ROOT / "data" / "fixtures" / "private_and_synthetic_documents.jsonl"
+            )
+        }
+
+        self.assertEqual(len(active), 300)
+        self.assertEqual(len({row["case_id"] for row in active}), 300)
+        self.assertEqual(
+            dict(qa.Counter(row["category"] for row in active)),
+            {
+                "simple": 75,
+                "paraphrase": 60,
+                "close_distractor": 60,
+                "chunk_boundary": 45,
+                "no_answer": 60,
+            },
+        )
+        self.assertTrue(all(row.get("acl_probe") is False for row in active))
+        active_targets = {
+            document_id
+            for row in active
+            for document_id in row["relevant_document_ids"]
+        }
+        self.assertTrue(active_targets.isdisjoint(private_documents))
+        self.assertTrue(
+            {"track", "language", "question_provenance", "relevance_spans"}
+            .isdisjoint(set().union(*(row.keys() for row in active)))
+        )
+        self.assertTrue(
+            {"private", "contradiction", "indirect_injection"}.isdisjoint(
+                {row["category"] for row in active}
+            )
+        )
+
+        self.assertEqual(len(human), 154)
+        self.assertEqual(len({row["case_id"] for row in human}), 154)
+        self.assertTrue(
+            all(
+                {"track", "language", "question_provenance", "relevance_spans"}
+                <= row.keys()
+                for row in human
+            )
+        )
+
+        status = (ROOT / "docs" / "v1-implementation-status.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("300 cas actifs", status)
+        self.assertIn("154 cas humains", status)
+        self.assertIn("privé, contradictions et injections", status)
+        self.assertNotIn("146 cas", status)
+
+
 if __name__ == "__main__":
     unittest.main()
