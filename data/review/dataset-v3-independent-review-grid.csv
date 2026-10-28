@@ -79,16 +79,16 @@ v3cb-135,chunk_boundary,['hermes-agent:user-guide/features/plugins.md'],plugins:
 v3cb-137,chunk_boundary,['hermes-agent:user-guide/messaging/telegram.md'],telegram: reception webhook HTTPS (parse format: partiel),yes,validate,devicodeclaude-web,2026-10-27,doc/faits identifies de memoire (sous-faits partiels assumes)
 v3cb-138,chunk_boundary,['hermes-agent:user-guide/features/web-dashboard.md'],web-dashboard: pages usage + status,yes,validate,devicodeclaude-web,2026-10-27,doc/faits identifies de memoire (sous-faits partiels assumes)
 v3cb-139,chunk_boundary,['hermes-agent:user-guide/messaging/discord.md'],discord: Message Content Intent (politique sync slash-commands: partiel),yes,validate,devicodeclaude-web,2026-10-27,doc/faits identifies de memoire (sous-faits partiels assumes)
-v3cb-140,chunk_boundary,['hermes-agent:user-guide/features/fallback-providers.md'],,,,,,
-v3cb-142,chunk_boundary,['hermes-agent:user-guide/messaging/matrix.md'],,,,,,
-v3cb-143,chunk_boundary,['hermes-agent:user-guide/features/tts.md'],,,,,,
-v3cd-030,close_distractor,['hermes-agent:user-guide/messaging/feishu.md'],,,,,,
-v3cd-031,close_distractor,['hermes-agent:user-guide/messaging/google_chat.md'],,,,,,
-v3cd-032,close_distractor,['hermes-agent:user-guide/messaging/whatsapp-cloud.md'],,,,,,
-v3cd-033,close_distractor,['hermes-agent:user-guide/messaging/telegram.md'],,,,,,
-v3cd-034,close_distractor,['hermes-agent:user-guide/messaging/dingtalk.md'],,,,,,
-v3cd-035,close_distractor,['hermes-agent:user-guide/features/heartbeat.md'],,,,,,
-v3cd-062,close_distractor,['hermes-agent:user-guide/messaging/bluebubbles.md'],,,,,,
+v3cb-140,chunk_boundary,['hermes-agent:user-guide/features/fallback-providers.md'],fallback-providers: chaine ordonnee + cooldown d'un provider defaillant,yes,validate,devicodeclaude-web,2026-10-27,doc/faits identifies de memoire
+v3cb-142,chunk_boundary,['hermes-agent:user-guide/messaging/matrix.md'],matrix: identifie + features (espaces/reactions/redactions); lib devinee matrix-nio mais gold=mautrix (matrix-nio=ancienne lib citee),yes,validate,devicodeclaude-web,2026-10-27,doc/faits identifies de memoire
+v3cb-143,chunk_boundary,['hermes-agent:user-guide/features/tts.md'],tts: Edge par defaut + piper download_voices,yes,validate,devicodeclaude-web,2026-10-27,doc/faits identifies de memoire
+v3cd-030,close_distractor,['hermes-agent:user-guide/messaging/feishu.md'],je ne sais pas,abstain,abstain,devicodeclaude-web,2026-10-27,non rappele; laisse en attente
+v3cd-031,close_distractor,['hermes-agent:user-guide/messaging/google_chat.md'],je ne sais pas,abstain,abstain,devicodeclaude-web,2026-10-27,non rappele; laisse en attente
+v3cd-032,close_distractor,['hermes-agent:user-guide/messaging/whatsapp-cloud.md'],whatsapp-cloud: fenetre 24h apres dernier message -> template pre-approuve,yes,validate,devicodeclaude-web,2026-10-27,doc/faits identifies de memoire
+v3cd-033,close_distractor,['hermes-agent:user-guide/messaging/telegram.md'],telegram: 20MB -> 2GB via serveur Bot API local,yes,validate,devicodeclaude-web,2026-10-27,doc/faits identifies de memoire
+v3cd-034,close_distractor,['hermes-agent:user-guide/messaging/dingtalk.md'],"dingtalk: Stream Mode, WebSocket persistant sans URL publique",yes,validate,devicodeclaude-web,2026-10-27,doc/faits identifies de memoire
+v3cd-035,close_distractor,['hermes-agent:user-guide/features/heartbeat.md'],"heartbeat: scheduler en memoire, ne survit pas au redemarrage (max instances/session: partiel)",yes,validate,devicodeclaude-web,2026-10-27,doc/faits identifies de memoire
+v3cd-062,close_distractor,['hermes-agent:user-guide/messaging/bluebubbles.md'],bluebubbles: Mac allume avec BlueBubbles Server + app Messages (iMessage),yes,validate,devicodeclaude-web,2026-10-27,doc/faits identifies de memoire
 v3cd-063,close_distractor,['hermes-agent:user-guide/messaging/photon.md'],,,,,,
 v3cd-064,close_distractor,['hermes-agent:user-guide/messaging/matrix.md'],,,,,,
 v3cd-065,close_distractor,['hermes-agent:user-guide/messaging/signal.md'],,,,,,
