@@ -99,16 +99,16 @@ v3cd-069,close_distractor,['hermes-agent:user-guide/messaging/qqbot.md'],"qqbot 
 v3cd-070,close_distractor,['hermes-agent:user-guide/messaging/weixin.md'],"weixin (WeChat perso, iLink long-poll)",yes,validate,devicodeclaude-web,2026-10-27,doc identifie correctement de memoire (10/10 sur fingerprints)
 v3cd-071,close_distractor,['hermes-agent:user-guide/messaging/buzz.md'],buzz (Nostr via CLI buzz),yes,validate,devicodeclaude-web,2026-10-27,doc identifie correctement de memoire (10/10 sur fingerprints)
 v3cd-122,close_distractor,['hermes-agent:user-guide/messaging/teams.md'],teams (Azure Bot / Bot Framework),yes,validate,devicodeclaude-web,2026-10-27,doc identifie correctement de memoire (10/10 sur fingerprints)
-v3cd-123,close_distractor,['hermes-agent:user-guide/messaging/teams-meetings.md'],,,,,,
-v3cd-124,close_distractor,['hermes-agent:user-guide/messaging/msgraph-webhook.md'],,,,,,
-v3cd-125,close_distractor,['hermes-agent:user-guide/messaging/a2a.md'],,,,,,
-v3cd-126,close_distractor,['hermes-agent:guides/desktop-native-signin.md'],,,,,,
-v3cd-127,close_distractor,['hermes-agent:user-guide/secrets/command.md'],,,,,,
-v3cd-128,close_distractor,['hermes-agent:guides/local-ollama-setup.md'],,,,,,
-v3cd-129,close_distractor,['hermes-agent:user-guide/egress/network-isolation.md'],,,,,,
-v3cd-130,close_distractor,['hermes-agent:user-guide/messaging/relay.md'],,,,,,
-v3cd-131,close_distractor,['hermes-agent:user-guide/features/kanban-worker-lanes.md'],,,,,,
-v3cd-158,close_distractor,['hermes-agent:user-guide/messaging/wecom.md'],,,,,,
+v3cd-123,close_distractor,['hermes-agent:user-guide/messaging/teams-meetings.md'],teams-meetings (transcriptions via Graph),yes,validate,devicodeclaude-web,2026-10-27,doc + mecanismes identifies correctement de memoire (10/10)
+v3cd-124,close_distractor,['hermes-agent:user-guide/messaging/msgraph-webhook.md'],msgraph-webhook (handshake validationToken),yes,validate,devicodeclaude-web,2026-10-27,doc + mecanismes identifies correctement de memoire (10/10)
+v3cd-125,close_distractor,['hermes-agent:user-guide/messaging/a2a.md'],a2a (agent card .well-known/agent-card.json),yes,validate,devicodeclaude-web,2026-10-27,doc + mecanismes identifies correctement de memoire (10/10)
+v3cd-126,close_distractor,['hermes-agent:guides/desktop-native-signin.md'],desktop-native-signin (RFC 8252 loopback PKCE),yes,validate,devicodeclaude-web,2026-10-27,doc + mecanismes identifies correctement de memoire (10/10)
+v3cd-127,close_distractor,['hermes-agent:user-guide/secrets/command.md'],secrets/command (stdout KEY=VALUE),yes,validate,devicodeclaude-web,2026-10-27,doc + mecanismes identifies correctement de memoire (10/10)
+v3cd-128,close_distractor,['hermes-agent:guides/local-ollama-setup.md'],local-ollama-setup (11434),yes,validate,devicodeclaude-web,2026-10-27,doc + mecanismes identifies correctement de memoire (10/10)
+v3cd-129,close_distractor,['hermes-agent:user-guide/egress/network-isolation.md'],"egress/network-isolation (host networking, services autorises)",yes,validate,devicodeclaude-web,2026-10-27,doc + mecanismes identifies correctement de memoire (10/10)
+v3cd-130,close_distractor,['hermes-agent:user-guide/messaging/relay.md'],relay (WS sortant unique + wake-poke),yes,validate,devicodeclaude-web,2026-10-27,doc + mecanismes identifies correctement de memoire (10/10)
+v3cd-131,close_distractor,['hermes-agent:user-guide/features/kanban-worker-lanes.md'],kanban-worker-lanes,yes,validate,devicodeclaude-web,2026-10-27,doc + mecanismes identifies correctement de memoire (10/10)
+v3cd-158,close_distractor,['hermes-agent:user-guide/messaging/wecom.md'],"wecom (AI Bot WebSocket, sans endpoint public)",yes,validate,devicodeclaude-web,2026-10-27,doc + mecanismes identifies correctement de memoire (10/10)
 v3cd-159,close_distractor,['hermes-agent:guides/oauth-over-ssh.md'],,,,,,
 v3cd-160,close_distractor,['hermes-agent:user-guide/messaging/feishu.md'],,,,,,
 v3na-024,no_answer,[],,,,,,
