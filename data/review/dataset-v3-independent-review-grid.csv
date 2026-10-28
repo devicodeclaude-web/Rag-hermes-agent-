@@ -49,16 +49,16 @@ v3-015,no_answer,[],100 ticks (loops.max_ticks) EST documente,no,rewrite,devicod
 v3-016,no_answer,[],no_answer: cout/caractere TTS non documente,yes,validate,devicodeclaude-web,2026-10-27,
 v3-018,no_answer,[],no_answer: aucun max de worker lanes,yes,validate,devicodeclaude-web,2026-10-27,
 v3-021,no_answer,[],no_answer: aucune SLA de latence Nous Portal,yes,validate,devicodeclaude-web,2026-10-27,
-v3-022,no_answer,[],,,,,,
-v3-023,no_answer,[],,,,,,
-v3cb-001,chunk_boundary,['hermes-agent:user-guide/security.md'],,,,,,
-v3cb-002,chunk_boundary,['hermes-agent:user-guide/security.md'],,,,,,
-v3cb-003,chunk_boundary,['hermes-agent:user-guide/features/kanban.md'],,,,,,
-v3cb-004,chunk_boundary,['hermes-agent:user-guide/features/kanban.md'],,,,,,
-v3cb-005,chunk_boundary,['hermes-agent:user-guide/features/web-dashboard.md'],,,,,,
-v3cb-006,chunk_boundary,['hermes-agent:user-guide/features/cron.md'],,,,,,
-v3cb-007,chunk_boundary,['hermes-agent:user-guide/docker.md'],,,,,,
-v3cb-008,chunk_boundary,['hermes-agent:user-guide/configuration.md'],,,,,,
+v3-022,no_answer,[],no_answer: aucune SLA uptime Relay,yes,validate,devicodeclaude-web,2026-10-27,revue: no_answer confirme
+v3-023,no_answer,[],no_answer: aucun max d'users par room,yes,validate,devicodeclaude-web,2026-10-27,revue: no_answer confirme
+v3cb-001,chunk_boundary,['hermes-agent:user-guide/security.md'],'non documente' (web search) -> security.md documente approvals.mode + chemins/credentials,no,validate,devicodeclaude-web,2026-10-27,reviseur a manque (recherche web ne voit pas le corpus); security.md confirme
+v3cb-002,chunk_boundary,['hermes-agent:user-guide/security.md'],300s timeout + option always/session,yes,validate,devicodeclaude-web,2026-10-27,repondu correctement; gold security.md
+v3cb-003,chunk_boundary,['hermes-agent:user-guide/features/kanban.md'],a tort 'pas de board natif' -> kanban.md EXISTE (board vs subagent + cycle worker),no,validate,devicodeclaude-web,2026-10-27,faux no_answer du reviseur (web search); kanban.md confirme les 2 sous-faits
+v3cb-004,chunk_boundary,['hermes-agent:user-guide/features/kanban.md'],a tort no_answer (confondu relayapp.im) -> kanban.md: idempotent create + per-task model,no,validate,devicodeclaude-web,2026-10-27,faux no_answer du reviseur; kanban.md confirme
+v3cb-005,chunk_boundary,['hermes-agent:user-guide/features/web-dashboard.md'],a tort no_answer -> web-dashboard.md: ### Status + ### Analytics,no,validate,devicodeclaude-web,2026-10-27,faux no_answer du reviseur; web-dashboard.md confirme
+v3cb-006,chunk_boundary,['hermes-agent:user-guide/features/cron.md'],hermes cron create + retry 5/15/30 puis prochaine occurrence,yes,validate,devicodeclaude-web,2026-10-27,repondu correctement; gold cron.md
+v3cb-007,chunk_boundary,['hermes-agent:user-guide/docker.md'],"a tort no_answer -> docker.md section 'Installing more tools' (npx/uvx, apt, image derivee, sidecar)",no,validate,devicodeclaude-web,2026-10-27,faux no_answer du reviseur; docker.md confirme les 2 sous-faits
+v3cb-008,chunk_boundary,['hermes-agent:user-guide/configuration.md'],a tort 'non confirme' -> configuration.md: threshold:0.50 + modele sous auxiliary:,no,validate,devicodeclaude-web,2026-10-27,faux no_answer du reviseur; configuration.md confirme les 2 sous-faits
 v3cb-009,chunk_boundary,['hermes-agent:user-guide/features/web-dashboard.md'],,,,,,
 v3cb-010,chunk_boundary,['hermes-agent:user-guide/messaging/discord.md'],,,,,,
 v3cb-011,chunk_boundary,['hermes-agent:user-guide/messaging/slack.md'],,,,,,
