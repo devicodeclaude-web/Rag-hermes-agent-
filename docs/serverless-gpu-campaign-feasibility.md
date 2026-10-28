@@ -122,6 +122,18 @@ ce répertoire comme contexte et transmettre ce SHA via
 `--build-arg RAG_CODE_REVISION=<sha>`. Aucun `COPY .` du répertoire de
 travail n’est autorisé.
 
+Le workflow `.github/workflows/serverless-image.yml` est uniquement déclenchable
+manuellement. Il exige un runner auto-hébergé `linux/x64` portant le label
+`serverless-image-builder`, avec Docker/Buildx et au moins 75 Gio libres vérifiés
+séparément sur le stockage Docker, `RUNNER_TEMP` et `GITHUB_WORKSPACE` avant la
+construction. Le binaire Buildx `v0.38.1` est téléchargé explicitement et vérifié
+par un SHA-256 figé ; l’image BuildKit `v0.34.1` est épinglée par digest OCI.
+`publish` vaut `false` par défaut ; l’authentification GHCR et la publication
+n’arrivent qu’après les contrôles locaux de l’image. En cas de publication, le
+digest annoncé par ce push est utilisé directement et l’ID de l’image distante
+est comparé à celui de l’image locale validée. Aucun runner conforme n’a encore
+été enregistré et ce workflow n’a jamais été exécuté.
+
 ## Blocages avant toute dépense
 
 - Le lock combiné CUDA/PyTorch/SDK est résolu et vérifié en installation sèche,

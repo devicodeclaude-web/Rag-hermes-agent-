@@ -158,6 +158,7 @@ class ServerlessPackagingTests(unittest.TestCase):
         )
         self.assertNotIn("COPY . ", content)
         self.assertNotIn("RUNPOD_API_KEY", content)
+        self.assertNotIn("# syntax=", content)
 
     def test_serverless_image_reads_revision_from_build_environment(self):
         content = (ROOT / "containers/serverless/Dockerfile").read_text(
@@ -179,6 +180,171 @@ class ServerlessPackagingTests(unittest.TestCase):
         self.assertIn("COPY --from=build /opt/ragbench /opt/ragbench", content)
         runtime_stage = content.split(" AS runtime\n", maxsplit=1)[1]
         self.assertNotIn("repository.tar", runtime_stage)
+
+    def test_manual_image_workflow_is_fail_closed_and_not_automatic(self):
+        workflow = ROOT / ".github/workflows/serverless-image.yml"
+        content = workflow.read_text(encoding="utf-8")
+
+        self.assertIn("workflow_dispatch:", content)
+        self.assertNotIn("\n  push:", content)
+        self.assertNotIn("\n  pull_request:", content)
+        self.assertIn("type: boolean", content)
+        self.assertIn("default: false", content)
+        self.assertIn("contents: read", content)
+        self.assertIn("packages: write", content)
+        self.assertIn("timeout-minutes:", content)
+        self.assertIn(
+            "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            content,
+        )
+        self.assertNotIn("docker/setup-buildx-action@", content)
+        self.assertIn(
+            "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+            content,
+        )
+        self.assertIn("persist-credentials: false", content)
+        self.assertIn("scripts/prepare_serverless_build_context.py", content)
+        self.assertIn(
+            "runs-on: [self-hosted, linux, x64, serverless-image-builder]",
+            content,
+        )
+        actionlint_config = (ROOT / ".github/actionlint.yaml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("- serverless-image-builder", actionlint_config)
+        self.assertIn('MINIMUM_FREE_GIB: "75"', content)
+        self.assertNotIn("sudo rm -rf", content)
+        self.assertIn("buildx-v0.38.1.linux-amd64", content)
+        self.assertIn(
+            "e25d5cd675092bb5d1d03632fdc46cdf3fede7b514dc5f023a105e00d3ce5ad4",
+            content,
+        )
+        self.assertIn("sha256sum --check --strict", content)
+        self.assertIn(
+            "image=moby/buildkit:v0.34.1@"
+            "sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c",
+            content,
+        )
+        self.assertIn("context-metadata.json", content)
+        self.assertIn("json.load", content)
+        self.assertIn("docker info --format '{{.DockerRootDir}}'", content)
+        self.assertIn('os.environ["RUNNER_TEMP"]', content)
+        self.assertIn('os.environ["GITHUB_WORKSPACE"]', content)
+        self.assertIn("docker buildx build", content)
+        self.assertIn("--platform linux/amd64", content)
+        self.assertIn('RAG_CODE_REVISION=${GITHUB_SHA}', content)
+        self.assertIn("--load", content)
+        self.assertIn("docker image inspect", content)
+        self.assertIn('test "$(id -u)" = "10001"', content)
+        self.assertIn('test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"', content)
+        self.assertIn("torch.__version__ == '2.8.0+cu128'", content)
+        self.assertIn("if: inputs.publish", content)
+        self.assertIn("--password-stdin", content)
+        self.assertIn("push-output.txt", content)
+        self.assertIn("local-image-id.txt", content)
+        self.assertIn('test "${remote_id}" = "${local_id}"', content)
+        self.assertIn("immutable-reference.txt", content)
+        immutable_marker_write = (
+            '> "${evidence}/immutable-reference.txt"'
+        )
+        self.assertLess(
+            content.index(immutable_marker_write),
+            content.index('docker pull "${immutable_ref}"'),
+        )
+        cleanup = content.split(
+            "      - name: Remove credentials and local image\n", maxsplit=1
+        )[1]
+        self.assertIn("set -uo pipefail", cleanup)
+        self.assertNotIn("set -euo pipefail", cleanup)
+        self.assertIn('${DOCKER_CONFIG:-${RUNNER_TEMP}/docker-config}', cleanup)
+        self.assertIn("cleanup_status=0", cleanup)
+        self.assertIn("trap 'rm -rf --", cleanup)
+        self.assertIn('builder_marker="${RUNNER_TEMP}/serverless-image-builder-created"', content)
+        self.assertIn('image_marker="${RUNNER_TEMP}/serverless-image-local-created"', content)
+        self.assertIn('touch "${builder_marker}"', content)
+        self.assertIn('touch "${image_marker}"', content)
+        self.assertIn('[ -f "${builder_marker}" ]', cleanup)
+        self.assertIn('[ -f "${image_marker}" ]', cleanup)
+        self.assertNotIn('docker buildx inspect "${BUILDER_NAME}"', cleanup)
+        self.assertNotIn('docker image inspect "${IMAGE_REF}"', cleanup)
+        self.assertIn("exit \"${cleanup_status}\"", cleanup)
+        self.assertNotIn(":latest", content)
+        self.assertNotIn("RUNPOD_API_KEY", content)
+
+    def test_docker_push_digest_parser_is_strict_and_accepts_real_formats(self):
+        from scripts.parse_docker_push_digest import parse_push_digest
+
+        digest = "sha256:" + "a" * 64
+        self.assertEqual(
+            parse_push_digest(f"digest: {digest} size: 1234\n"), digest
+        )
+        self.assertEqual(
+            parse_push_digest(f"deadbeef: digest: {digest} size: 1234\n"), digest
+        )
+        for invalid in (
+            "",
+            f"deadbeef: digest: {digest} size: nope\n",
+            f"digest: {digest} size: 1\ndigest: {digest} size: 1\n",
+        ):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(ValueError):
+                    parse_push_digest(invalid)
+
+    def test_context_builder_cli_emits_json_with_exact_context_path(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            repository = base / "repository"
+            dockerfile = repository / "containers/serverless/Dockerfile"
+            dockerfile.parent.mkdir(parents=True)
+            dockerfile.write_text("FROM scratch\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "init", "-q", "-b", "main", repository], check=True
+            )
+            subprocess.run(
+                ["git", "-C", repository, "config", "user.email", "test@example.invalid"],
+                check=True,
+            )
+            subprocess.run(
+                ["git", "-C", repository, "config", "user.name", "Test"],
+                check=True,
+            )
+            subprocess.run(["git", "-C", repository, "add", "."], check=True)
+            subprocess.run(
+                ["git", "-C", repository, "commit", "-q", "-m", "snapshot"],
+                check=True,
+            )
+            revision = subprocess.run(
+                ["git", "-C", repository, "rev-parse", "HEAD"],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            output_root = base / "contexts"
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "scripts/prepare_serverless_build_context.py"),
+                    "--repository",
+                    str(repository),
+                    "--output-root",
+                    str(output_root),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+                cwd=ROOT,
+            )
+
+            payload = json.loads(completed.stdout)
+            self.assertEqual(
+                set(payload), {"context", "code_revision", "dockerfile"}
+            )
+            self.assertEqual(payload["context"], str(output_root / revision))
+            self.assertEqual(payload["code_revision"], revision)
+            self.assertEqual(
+                payload["dockerfile"], str(output_root / revision / "Dockerfile")
+            )
 
     def test_context_builder_exports_one_commit_without_historical_objects(self):
         from scripts import prepare_serverless_build_context as builder

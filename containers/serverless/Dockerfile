@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1.7
 FROM --platform=linux/amd64 runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404@sha256:4d1721e62b56d345c83b4fd6090664be6daf9312caab5b2e76f23d8231941851 AS build
 
 ARG RAG_CODE_REVISION
