@@ -124,6 +124,34 @@ class DatasetStatusDocumentationTests(unittest.TestCase):
         self.assertIn("privé, contradictions et injections", status)
         self.assertNotIn("146 cas", status)
 
+    def test_protocol_annex_matches_active_dataset_counts(self):
+        active = qa.load_jsonl(ROOT / "data" / "benchmark" / "dataset-v2.jsonl")
+        categories = qa.Counter(row["category"] for row in active)
+        authorship = qa.Counter(row["authorship"] for row in active)
+        review_status = qa.Counter(row["manual_review_status"] for row in active)
+        reference_status = qa.Counter(
+            row["decision_reference_status"] for row in active
+        )
+        protocol = (ROOT / "docs" / "evaluation-protocol-v2.md").read_text(
+            encoding="utf-8"
+        )
+        annex = protocol.split(
+            "## 11. État réel du jeu courant et provenance des questions (annexe)",
+            maxsplit=1,
+        )[1]
+
+        self.assertIn(f"{len(active)} cas actifs", annex)
+        for category, count in categories.items():
+            self.assertIn(f"`{category}` {count}", annex)
+        for label, count in authorship.items():
+            self.assertIn(f"`{label}` : {count}", annex)
+        for label, count in review_status.items():
+            self.assertIn(f"`{label}` : {count}", annex)
+        for label, count in reference_status.items():
+            self.assertIn(f"`{label}` : {count}", annex)
+        self.assertNotIn("126 cas", annex)
+        self.assertNotIn("Les 32 questions", annex)
+
 
 if __name__ == "__main__":
     unittest.main()
