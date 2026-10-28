@@ -2,6 +2,7 @@ data/sources/
 data/generated/*
 # Le corpus d'éval public est versionné (porte CI + épinglage version/hash).
 !data/generated/hermes_public_documents.jsonl
+!data/generated/hermes_public_documents-human-154.jsonl
 /models/
 .tools/
 qdrant/storage/

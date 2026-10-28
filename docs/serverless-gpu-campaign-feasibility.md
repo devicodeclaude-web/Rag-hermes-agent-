@@ -73,8 +73,14 @@ de plafond monétaire par job.
 
 Une architecture Serverless queue-based pourrait conserver :
 
-- le dataset humain de 154 cas ;
-- le corpus et ses empreintes ;
+- le snapshot humain immuable de 154 cas
+  `data/benchmark/dataset-v2-human-154.jsonl` (SHA-256
+  `4613e8b3b84fb7b24ad66cf01329f40d95934bec189fe7f6cddf1eb751c767d4`),
+  distinct du dataset actif désormais étendu à 215 cas ;
+- le corpus immuable correspondant
+  `data/generated/hermes_public_documents-human-154.jsonl` (SHA-256
+  `af0631abbffaab14b180abc4531497665a6104d6685328d6abbe53a565c53866`),
+  distinct du corpus actif dont le schéma ACL a évolué ;
 - les verrous de modèles et leurs révisions Hugging Face ;
 - le split déterministe calibration 81 / holdout 73 ;
 - le checkout Git propre et la révision auditée ;

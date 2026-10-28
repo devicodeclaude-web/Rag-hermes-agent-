@@ -50,8 +50,8 @@
     "deduplication_key": "chunk_id"
   },
   "corpus": {
-    "documents": ["data/generated/hermes_public_documents.jsonl"],
-    "questions": "data/benchmark/dataset-v2.jsonl",
+    "documents": ["data/generated/hermes_public_documents-human-154.jsonl"],
+    "questions": "data/benchmark/dataset-v2-human-154.jsonl",
     "question_format": "evaluation_v2"
   },
   "qdrant": {

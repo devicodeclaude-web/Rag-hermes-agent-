@@ -1,9 +1,15 @@
+import hashlib
 import json
 from pathlib import Path
 import sys
 import unittest
 from unittest.mock import patch
 
+from rag_hermes.abstention_calibration import (
+    deterministic_group_split,
+    human_cases_to_questions,
+)
+from rag_hermes.eval_corpus import corpus_manifest, load_documents
 from rag_hermes.gpu_job import load_gpu_job
 from scripts import run_bge_gpu_campaign as campaign
 
@@ -110,9 +116,7 @@ class GPUJobTests(unittest.TestCase):
         )
         self.assertGreater(plan.required_model_bytes, 4_000_000_000)
 
-    def test_human_154_job_uses_reviewed_dataset_without_overwriting_legacy_manifest(self):
-        import json
-
+    def test_human_154_job_uses_immutable_reviewed_dataset_snapshot(self):
         path = Path("manifests/gpu/bge-m3-human-154.json")
         plan = load_gpu_job(path)
         manifest = json.loads(path.read_text(encoding="utf-8"))
@@ -127,12 +131,42 @@ class GPUJobTests(unittest.TestCase):
             "expected_holdout": 73,
         })
         self.assertEqual(
-            manifest["corpus"]["questions"], "data/benchmark/dataset-v2.jsonl"
+            manifest["corpus"]["questions"],
+            "data/benchmark/dataset-v2-human-154.jsonl",
+        )
+        dataset_path = Path(manifest["corpus"]["questions"])
+        payload = dataset_path.read_bytes()
+        rows = [json.loads(line) for line in payload.decode("utf-8").splitlines()]
+        self.assertEqual(len(rows), 154)
+        self.assertEqual(len({row["case_id"] for row in rows}), 154)
+        self.assertEqual(sum(bool(row["should_abstain"]) for row in rows), 32)
+        self.assertEqual(
+            hashlib.sha256(payload).hexdigest(),
+            "4613e8b3b84fb7b24ad66cf01329f40d95934bec189fe7f6cddf1eb751c767d4",
+        )
+        corpus_path = Path(manifest["corpus"]["documents"][0])
+        validated, questions = human_cases_to_questions(
+            rows,
+            load_documents(corpus_path),
+            corpus_manifest(corpus_path),
+        )
+        assignments = deterministic_group_split(
+            validated,
+            salt="bge-m3-abstention-v1",
+        )
+        self.assertEqual(len(questions), 154)
+        self.assertEqual(
+            {partition: list(assignments.values()).count(partition) for partition in {"calibration", "holdout"}},
+            {"calibration": 81, "holdout": 73},
         )
         self.assertEqual(manifest["corpus"]["question_format"], "evaluation_v2")
         self.assertEqual(
             manifest["corpus"]["documents"],
-            ["data/generated/hermes_public_documents.jsonl"],
+            ["data/generated/hermes_public_documents-human-154.jsonl"],
+        )
+        self.assertEqual(
+            hashlib.sha256(corpus_path.read_bytes()).hexdigest(),
+            "af0631abbffaab14b180abc4531497665a6104d6685328d6abbe53a565c53866",
         )
 
     def test_gpu_runner_uses_snapshot_attestations_for_reported_inputs(self):
