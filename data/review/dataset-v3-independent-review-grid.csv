@@ -109,16 +109,16 @@ v3cd-129,close_distractor,['hermes-agent:user-guide/egress/network-isolation.md'
 v3cd-130,close_distractor,['hermes-agent:user-guide/messaging/relay.md'],relay (WS sortant unique + wake-poke),yes,validate,devicodeclaude-web,2026-10-27,doc + mecanismes identifies correctement de memoire (10/10)
 v3cd-131,close_distractor,['hermes-agent:user-guide/features/kanban-worker-lanes.md'],kanban-worker-lanes,yes,validate,devicodeclaude-web,2026-10-27,doc + mecanismes identifies correctement de memoire (10/10)
 v3cd-158,close_distractor,['hermes-agent:user-guide/messaging/wecom.md'],"wecom (AI Bot WebSocket, sans endpoint public)",yes,validate,devicodeclaude-web,2026-10-27,doc + mecanismes identifies correctement de memoire (10/10)
-v3cd-159,close_distractor,['hermes-agent:guides/oauth-over-ssh.md'],,,,,,
-v3cd-160,close_distractor,['hermes-agent:user-guide/messaging/feishu.md'],,,,,,
-v3na-024,no_answer,[],,,,,,
-v3na-025,no_answer,[],,,,,,
-v3na-026,no_answer,[],,,,,,
-v3na-027,no_answer,[],,,,,,
-v3na-028,no_answer,[],,,,,,
-v3na-029,no_answer,[],,,,,,
-v3na-052,no_answer,[],,,,,,
-v3na-053,no_answer,[],,,,,,
+v3cd-159,close_distractor,['hermes-agent:guides/oauth-over-ssh.md'],oauth-over-ssh (ssh -N -L redirection de port),yes,validate,devicodeclaude-web,2026-10-27,de memoire; 10/10 (2 docs + 8 no_answer confirmes)
+v3cd-160,close_distractor,['hermes-agent:user-guide/messaging/feishu.md'],feishu/lark (FEISHU_ENCRYPT_KEY + verification token),yes,validate,devicodeclaude-web,2026-10-27,de memoire; 10/10 (2 docs + 8 no_answer confirmes)
+v3na-024,no_answer,[],no_answer: pas de prix par token Nous Portal,yes,validate,devicodeclaude-web,2026-10-27,de memoire; 10/10 (2 docs + 8 no_answer confirmes)
+v3na-025,no_answer,[],no_answer: pas de TTL cache TTS,yes,validate,devicodeclaude-web,2026-10-27,de memoire; 10/10 (2 docs + 8 no_answer confirmes)
+v3na-026,no_answer,[],no_answer: pas de quota chiffre X-search,yes,validate,devicodeclaude-web,2026-10-27,de memoire; 10/10 (2 docs + 8 no_answer confirmes)
+v3na-027,no_answer,[],no_answer: pas de max sessions navigateur,yes,validate,devicodeclaude-web,2026-10-27,de memoire; 10/10 (2 docs + 8 no_answer confirmes)
+v3na-028,no_answer,[],no_answer: pas de max process terminal bg,yes,validate,devicodeclaude-web,2026-10-27,de memoire; 10/10 (2 docs + 8 no_answer confirmes)
+v3na-029,no_answer,[],no_answer: pas de valeur par defaut tool-workers,yes,validate,devicodeclaude-web,2026-10-27,de memoire; 10/10 (2 docs + 8 no_answer confirmes)
+v3na-052,no_answer,[],no_answer: pas de max cartes kanban,yes,validate,devicodeclaude-web,2026-10-27,de memoire; 10/10 (2 docs + 8 no_answer confirmes)
+v3na-053,no_answer,[],no_answer: pas de max sessions vocales,yes,validate,devicodeclaude-web,2026-10-27,de memoire; 10/10 (2 docs + 8 no_answer confirmes)
 v3na-054,no_answer,[],,,,,,
 v3na-055,no_answer,[],,,,,,
 v3na-056,no_answer,[],,,,,,
