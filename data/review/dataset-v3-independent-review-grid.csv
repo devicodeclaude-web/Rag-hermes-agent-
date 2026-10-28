@@ -9,16 +9,16 @@ v2p-007,simple,['hermes-agent:guides/daily-briefing-bot.md'],daily-briefing-bot(
 v2p-008,simple,['hermes-agent:guides/automation-blueprints.md'],automation-blueprints,yes,validate,devicodeclaude-web,2026-10-27,
 v2p-009,paraphrase,['hermes-agent:user-guide/features/voice-mode.md'],voice-mode(+use-voice-mode),yes,validate,devicodeclaude-web,2026-10-27,"paraphrase; gold voice-mode en tete, use-voice-mode (soeur) citee - paire proche"
 v2p-010,paraphrase,['hermes-agent:guides/github-pr-review-agent.md'],github-pr-review-agent(+webhook),yes,validate,devicodeclaude-web,2026-10-27,gold github-pr-review-agent en tete; webhook-variant cite en alternative
-v2p-011,paraphrase,['hermes-agent:user-guide/checkpoints-and-rollback.md'],,,,,,
-v2p-012,paraphrase,['hermes-agent:guides/aws-bedrock.md'],,,,,,
-v2p-013,paraphrase,['hermes-agent:user-guide/features/skills.md'],,,,,,
-v2p-015,paraphrase,['hermes-agent:guides/cron-script-only.md'],,,,,,
-v2p-016,paraphrase,['hermes-agent:user-guide/egress/iron-proxy.md'],,,,,,
-v2p-017,no_answer,[],,,,,,
-v2p-018,no_answer,[],,,,,,
-v2p-019,close_distractor,['hermes-agent:user-guide/features/credential-vault.md'],,,,,,
-v2p-020,close_distractor,['hermes-agent:user-guide/features/context-files.md'],,,,,,
-v2p-021,close_distractor,['hermes-agent:user-guide/features/code-execution.md'],,,,,,
+v2p-011,paraphrase,['hermes-agent:user-guide/checkpoints-and-rollback.md'],checkpoints-and-rollback,yes,validate,devicodeclaude-web,2026-10-27,a noté que les checkpoints sont off par défaut
+v2p-012,paraphrase,['hermes-agent:guides/aws-bedrock.md'],aws-bedrock,yes,validate,devicodeclaude-web,2026-10-27,"chaîne boto3/IAM, pas de clé API"
+v2p-013,paraphrase,['hermes-agent:user-guide/features/skills.md'],skills,yes,validate,devicodeclaude-web,2026-10-27,
+v2p-015,paraphrase,['hermes-agent:guides/cron-script-only.md'],cron-script-only (mode no-agent),yes,validate,devicodeclaude-web,2026-10-27,gold=guide dédié; sœur proche cron.md
+v2p-016,paraphrase,['hermes-agent:user-guide/egress/iron-proxy.md'],egress/iron-proxy,yes,validate,devicodeclaude-web,2026-10-27,a soulevé la nuance de périmètre sandbox Docker
+v2p-017,no_answer,[],no_answer: pas de total TTS inter-moteurs,yes,validate,devicodeclaude-web,2026-10-27,no_answer correct
+v2p-018,no_answer,[],no_answer: GIF animé non documenté,yes,validate,devicodeclaude-web,2026-10-27,no_answer correct
+v2p-019,close_distractor,['hermes-agent:user-guide/features/credential-vault.md'],.env/secrets + gestionnaire externe (1Password/Bitwarden),no,rewrite,devicodeclaude-web,2026-10-27,"MIS-GOLD detecte: credential-vault=Passwords&Logins (connexion sites), pas un coffre a cle API. Re-gold -> secrets/index.md, distracteur credential-pools. Prediction du reviseur etait correcte."
+v2p-020,close_distractor,['hermes-agent:user-guide/features/context-files.md'],context-files,yes,validate,devicodeclaude-web,2026-10-27,
+v2p-021,close_distractor,['hermes-agent:user-guide/features/code-execution.md'],"code-execution (execute_code, modes project/strict)",yes,validate,devicodeclaude-web,2026-10-27,
 v2p-022,close_distractor,['hermes-agent:guides/google-gemini.md'],,,,,,
 v2p-023,close_distractor,['hermes-agent:guides/local-ollama-setup.md'],,,,,,
 v2p-024,close_distractor,['hermes-agent:reference/slash-commands.md'],,,,,,
