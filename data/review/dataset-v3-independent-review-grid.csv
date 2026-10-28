@@ -159,21 +159,21 @@ v3pp-076,paraphrase,['hermes-agent:user-guide/features/extending-the-dashboard.m
 v3pp-077,paraphrase,['hermes-agent:developer-guide/plugin-llm-access.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
 v3pp-078,paraphrase,['hermes-agent:user-guide/features/codex-app-server-runtime.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
 v3pp-079,paraphrase,['hermes-agent:user-guide/profile-distributions.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
-v3pp-080,paraphrase,['hermes-agent:reference/optional-skills-catalog.md'],,,,,,
-v3pp-081,paraphrase,['hermes-agent:user-guide/multi-connection-desktop.md'],,,,,,
-v3pp-102,paraphrase,['hermes-agent:guides/work-with-skills.md'],,,,,,
-v3pp-103,paraphrase,['hermes-agent:guides/troubleshooting-agent-quality.md'],,,,,,
-v3pp-104,paraphrase,['hermes-agent:user-guide/managed-scope.md'],,,,,,
-v3pp-105,paraphrase,['hermes-agent:integrations/providers.md'],,,,,,
-v3pp-106,paraphrase,['hermes-agent:reference/profile-commands.md'],,,,,,
-v3pp-107,paraphrase,['hermes-agent:user-guide/secrets/index.md'],,,,,,
-v3pp-108,paraphrase,['hermes-agent:user-guide/features/credential-pools.md'],,,,,,
-v3pp-109,paraphrase,['hermes-agent:user-guide/features/deliverable-mode.md'],,,,,,
-v3pp-110,paraphrase,['hermes-agent:user-guide/features/loops.md'],,,,,,
-v3pp-111,paraphrase,['hermes-agent:user-guide/features/context-references.md'],,,,,,
-v3pp-153,paraphrase,['hermes-agent:user-guide/features/tools.md'],,,,,,
-v3pp-154,paraphrase,['hermes-agent:user-guide/configuring-models.md'],,,,,,
-v3pp-155,paraphrase,['hermes-agent:guides/use-voice-mode-with-hermes.md'],,,,,,
+v3pp-080,paraphrase,['hermes-agent:reference/optional-skills-catalog.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
+v3pp-081,paraphrase,['hermes-agent:user-guide/multi-connection-desktop.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
+v3pp-102,paraphrase,['hermes-agent:guides/work-with-skills.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
+v3pp-103,paraphrase,['hermes-agent:guides/troubleshooting-agent-quality.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
+v3pp-104,paraphrase,['hermes-agent:user-guide/managed-scope.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
+v3pp-105,paraphrase,['hermes-agent:integrations/providers.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
+v3pp-106,paraphrase,['hermes-agent:reference/profile-commands.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
+v3pp-107,paraphrase,['hermes-agent:user-guide/secrets/index.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
+v3pp-108,paraphrase,['hermes-agent:user-guide/features/credential-pools.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
+v3pp-109,paraphrase,['hermes-agent:user-guide/features/deliverable-mode.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
+v3pp-110,paraphrase,['hermes-agent:user-guide/features/loops.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
+v3pp-111,paraphrase,['hermes-agent:user-guide/features/context-references.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
+v3pp-153,paraphrase,['hermes-agent:user-guide/features/tools.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
+v3pp-154,paraphrase,['hermes-agent:user-guide/configuring-models.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
+v3pp-155,paraphrase,['hermes-agent:guides/use-voice-mode-with-hermes.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
 v3pp-156,paraphrase,['hermes-agent:reference/cli-commands.md'],,,,,,
 v3pp-157,paraphrase,['hermes-agent:user-guide/features/built-in-plugins.md'],,,,,,
 v3sp-042,simple,['hermes-agent:getting-started/termux.md'],,,,,,
