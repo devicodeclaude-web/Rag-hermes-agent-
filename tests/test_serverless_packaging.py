@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
+import subprocess
 import sys
+import tarfile
+import tempfile
 import tomllib
 from types import SimpleNamespace
 import unittest
@@ -124,6 +129,259 @@ class ServerlessPackagingTests(unittest.TestCase):
         self.assertIn("Faits RunPod vérifiés le 2026-10-19", content)
         self.assertIn("runtime attendu", content)
         self.assertIn("n’attestent pas que `import torch` fonctionne", content)
+
+    def test_serverless_image_is_pinned_non_root_and_uses_attested_snapshot(self):
+        dockerfile = ROOT / "containers/serverless/Dockerfile"
+        content = dockerfile.read_text(encoding="utf-8")
+
+        self.assertIn(
+            "FROM --platform=linux/amd64 "
+            "runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404@"
+            "sha256:4d1721e62b56d345c83b4fd6090664be6daf9312caab5b2e76f23d8231941851",
+            content,
+        )
+        self.assertIn("ARG RAG_CODE_REVISION", content)
+        self.assertIn("COPY repository.tar", content)
+        self.assertIn("COPY context-manifest.json", content)
+        self.assertIn("tar --extract", content)
+        self.assertIn("git -C /opt/ragbench rev-list --count HEAD", content)
+        self.assertIn("requirements-serverless-gpu.lock.txt", content)
+        self.assertIn("--require-hashes", content)
+        self.assertIn("--no-deps", content)
+        self.assertIn("--system-site-packages", content)
+        self.assertIn("PYTHONDONTWRITEBYTECODE=1", content)
+        self.assertIn("USER ragbench", content)
+        self.assertIn(
+            'ENTRYPOINT ["/opt/venv/bin/python", "-m", '
+            '"scripts.runpod_serverless_handler"]',
+            content,
+        )
+        self.assertNotIn("COPY . ", content)
+        self.assertNotIn("RUNPOD_API_KEY", content)
+
+    def test_serverless_image_reads_revision_from_build_environment(self):
+        content = (ROOT / "containers/serverless/Dockerfile").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('os.environ["RAG_CODE_REVISION"]', content)
+        self.assertNotIn('revision="${RAG_CODE_REVISION}"', content)
+        self.assertNotIn("; assert ", content)
+
+    def test_serverless_image_keeps_repository_archive_out_of_runtime_stage(self):
+        content = (ROOT / "containers/serverless/Dockerfile").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn(" AS build\n", content)
+        self.assertIn(" AS runtime\n", content)
+        self.assertIn("COPY --from=build /opt/venv /opt/venv", content)
+        self.assertIn("COPY --from=build /opt/ragbench /opt/ragbench", content)
+        runtime_stage = content.split(" AS runtime\n", maxsplit=1)[1]
+        self.assertNotIn("repository.tar", runtime_stage)
+
+    def test_context_builder_exports_one_commit_without_historical_objects(self):
+        from scripts import prepare_serverless_build_context as builder
+
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            repository = base / "repository"
+            dockerfile = repository / "containers/serverless/Dockerfile"
+            dockerfile.parent.mkdir(parents=True)
+            dockerfile.write_text("FROM scratch\n", encoding="utf-8")
+            historical_secret = repository / "deleted-secret.txt"
+            historical_secret.write_text("historical secret\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "init", "-q", "-b", "main", repository], check=True
+            )
+            subprocess.run(
+                ["git", "-C", repository, "config", "user.email", "test@example.invalid"],
+                check=True,
+            )
+            subprocess.run(
+                ["git", "-C", repository, "config", "user.name", "Test"],
+                check=True,
+            )
+            subprocess.run(["git", "-C", repository, "add", "."], check=True)
+            subprocess.run(
+                ["git", "-C", repository, "commit", "-q", "-m", "historical"],
+                check=True,
+            )
+            historical_secret.unlink()
+            subprocess.run(["git", "-C", repository, "add", "-u"], check=True)
+            subprocess.run(
+                ["git", "-C", repository, "commit", "-q", "-m", "current"],
+                check=True,
+            )
+            revision = subprocess.run(
+                ["git", "-C", repository, "rev-parse", "HEAD"],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+
+            context = builder.prepare_context(repository, base / "contexts")
+
+            self.assertEqual(context.name, revision)
+            self.assertEqual(
+                {path.name for path in context.iterdir()},
+                {"Dockerfile", "repository.tar", "context-manifest.json"},
+            )
+            manifest = json.loads(
+                (context / "context-manifest.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(manifest["code_revision"], revision)
+            self.assertEqual(
+                manifest["dockerfile"]["sha256"],
+                hashlib.sha256((context / "Dockerfile").read_bytes()).hexdigest(),
+            )
+            self.assertEqual(
+                manifest["repository_snapshot"]["sha256"],
+                hashlib.sha256((context / "repository.tar").read_bytes()).hexdigest(),
+            )
+            checkout = base / "checkout"
+            checkout.mkdir()
+            with tarfile.open(context / "repository.tar", "r") as archive:
+                archive.extractall(checkout, filter="data")
+            self.assertEqual(
+                subprocess.run(
+                    ["git", "-C", checkout, "rev-parse", "HEAD"],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                ).stdout.strip(),
+                revision,
+            )
+            self.assertEqual(
+                subprocess.run(
+                    ["git", "-C", checkout, "rev-list", "--count", "HEAD"],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                ).stdout.strip(),
+                "1",
+            )
+            recovered_secret = subprocess.run(
+                ["git", "-C", checkout, "show", "HEAD^:deleted-secret.txt"],
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(recovered_secret.returncode, 0)
+
+    def test_context_builder_rejects_dirty_repository_before_creating_output(self):
+        from scripts import prepare_serverless_build_context as builder
+
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            repository = base / "repository"
+            dockerfile = repository / "containers/serverless/Dockerfile"
+            dockerfile.parent.mkdir(parents=True)
+            dockerfile.write_text("FROM scratch\n", encoding="utf-8")
+            subprocess.run(["git", "init", "-q", "-b", "main", repository], check=True)
+            subprocess.run(
+                ["git", "-C", repository, "config", "user.email", "test@example.invalid"],
+                check=True,
+            )
+            subprocess.run(
+                ["git", "-C", repository, "config", "user.name", "Test"],
+                check=True,
+            )
+            subprocess.run(["git", "-C", repository, "add", "."], check=True)
+            subprocess.run(
+                ["git", "-C", repository, "commit", "-q", "-m", "fixture"],
+                check=True,
+            )
+            (repository / "local-secret.txt").write_text(
+                "must never enter a build context\n", encoding="utf-8"
+            )
+            output_root = base / "contexts"
+
+            with self.assertRaisesRegex(ValueError, "repository must be clean"):
+                builder.prepare_context(repository, output_root)
+
+            self.assertFalse(output_root.exists())
+
+    def test_context_builder_removes_published_context_if_parent_fsync_fails(self):
+        from scripts import prepare_serverless_build_context as builder
+
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            repository = base / "repository"
+            dockerfile = repository / "containers/serverless/Dockerfile"
+            dockerfile.parent.mkdir(parents=True)
+            dockerfile.write_text("FROM scratch\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "init", "-q", "-b", "main", repository], check=True
+            )
+            subprocess.run(
+                ["git", "-C", repository, "config", "user.email", "test@example.invalid"],
+                check=True,
+            )
+            subprocess.run(
+                ["git", "-C", repository, "config", "user.name", "Test"],
+                check=True,
+            )
+            subprocess.run(["git", "-C", repository, "add", "."], check=True)
+            subprocess.run(
+                ["git", "-C", repository, "commit", "-q", "-m", "fixture"],
+                check=True,
+            )
+            revision = subprocess.run(
+                ["git", "-C", repository, "rev-parse", "HEAD"],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            output_root = base / "contexts"
+            real_fsync = builder.os.fsync
+            calls = 0
+
+            def fail_final_publication_fsync(descriptor: int) -> None:
+                nonlocal calls
+                calls += 1
+                if calls == 5:
+                    raise OSError("simulated parent fsync failure")
+                real_fsync(descriptor)
+
+            with patch.object(builder.os, "fsync", fail_final_publication_fsync):
+                with self.assertRaisesRegex(OSError, "simulated parent fsync failure"):
+                    builder.prepare_context(repository, output_root)
+
+            self.assertFalse((output_root / revision).exists())
+            self.assertEqual(list(output_root.iterdir()), [])
+
+    def test_context_builder_rejects_symlink_output_root(self):
+        from scripts import prepare_serverless_build_context as builder
+
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            repository = base / "repository"
+            dockerfile = repository / "containers/serverless/Dockerfile"
+            dockerfile.parent.mkdir(parents=True)
+            dockerfile.write_text("FROM scratch\n", encoding="utf-8")
+            subprocess.run(["git", "init", "-q", "-b", "main", repository], check=True)
+            subprocess.run(
+                ["git", "-C", repository, "config", "user.email", "test@example.invalid"],
+                check=True,
+            )
+            subprocess.run(
+                ["git", "-C", repository, "config", "user.name", "Test"],
+                check=True,
+            )
+            subprocess.run(["git", "-C", repository, "add", "."], check=True)
+            subprocess.run(
+                ["git", "-C", repository, "commit", "-q", "-m", "fixture"],
+                check=True,
+            )
+            real_output = base / "real-output"
+            real_output.mkdir()
+            linked_output = base / "linked-output"
+            linked_output.symlink_to(real_output, target_is_directory=True)
+
+            with self.assertRaisesRegex(ValueError, "must not be a symlink"):
+                builder.prepare_context(repository, linked_output)
+
+            self.assertEqual(list(real_output.iterdir()), [])
 
     def test_main_registers_exact_handler_with_runpod_sdk(self):
         registrations = []

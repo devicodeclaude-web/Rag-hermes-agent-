@@ -11,7 +11,9 @@ job et `workersMin=0`) qui répondent mieux au risque d’un Pod restant factur�
 Un scaffold local de handler queue-based existe désormais dans
 `scripts/runpod_serverless_handler.py` et sa logique locale est testée. Le lock combiné
 CUDA/PyTorch/SDK a été résolu et accepté en installation sèche pour le runtime attendu.
-Il ne constitue toutefois pas un worker déployable : aucune image Serverless n’a été construite
+Un Dockerfile candidat épinglé et un générateur de contexte limité au commit existent dans
+`containers/serverless/Dockerfile` et `scripts/prepare_serverless_build_context.py`.
+Ils ne constituent toutefois pas un worker déployable : aucune image Serverless n’a été construite
 et le runtime n’a été validé ni par l’exécution de `import torch` dans la base candidate,
 ni par une campagne. La durée réelle reste donc inconnue. Le plafond financier de
 0,50 USD n’est pas compatible avec une fenêtre A40 de 30 minutes au tarif vérifié.
@@ -102,11 +104,33 @@ Une architecture Serverless queue-based pourrait conserver :
    persistance et validation immédiates du résultat avant suppression vérifiée de
    l’endpoint et du template.
 
+Le contexte de construction doit être produit depuis un checkout propre et commité,
+dans un répertoire extérieur au dépôt :
+
+```bash
+.venv-audit/bin/python scripts/prepare_serverless_build_context.py \
+  --repository /root/rag-hermes-agent \
+  --output-root /tmp/rag-serverless-contexts
+```
+
+La commande crée un répertoire nommé par le SHA Git contenant uniquement
+`Dockerfile`, `repository.tar` et `context-manifest.json`. `repository.tar`
+contient un checkout Git shallow limité au seul commit attesté : aucun objet
+parent n’est embarqué. Le Dockerfile refuse un `RAG_CODE_REVISION` différent
+du manifeste ou du checkout reconstruit. Une construction future devra utiliser
+ce répertoire comme contexte et transmettre ce SHA via
+`--build-arg RAG_CODE_REVISION=<sha>`. Aucun `COPY .` du répertoire de
+travail n’est autorisé.
+
 ## Blocages avant toute dépense
 
 - Le lock combiné CUDA/PyTorch/SDK est résolu et vérifié en installation sèche,
   mais n’a pas encore été installé ni exécuté dans la base candidate. Il ne prouve
   donc pas à lui seul une image reproductible ou fonctionnelle.
+- Le Dockerfile et le générateur de contexte sont testés statiquement et l’archive
+  Git shallow est générée puis extraite dans les tests, mais aucun moteur
+  Docker/Podman/Buildah n’est
+  disponible dans l’environnement actuel : l’image n’a pas été construite.
 - Les deux modèles verrouillés représentent environ 4,576 Go ; leur stratégie de
   cache doit être testée sans téléchargement ou duplication imprévue.
 - La campagne complète n’a jamais été chronométrée ; rien ne prouve qu’elle tient
@@ -121,13 +145,14 @@ Une architecture Serverless queue-based pourrait conserver :
   local ne constituent donc pas une validation sûre. `uv==0.13.4` a uniquement
   servi dans un venv temporaire à compiler, régénérer et vérifier en mode sec les
   locks ; aucun paquet du lock GPU n’a été installé.
-- La base contient des paquets système préinstallés. Le chemin d’installation
-  isolé — vraisemblablement un venv avec accès aux paquets système — doit être
-  construit et testé pour exclure tout remplacement silencieux ou conflit avec
+- La base contient des paquets système préinstallés. Le Dockerfile définit un venv
+  avec accès aux paquets système et un lock hashé, mais l’image doit encore être
+  construite pour exclure tout remplacement silencieux ou conflit avec
   PyTorch/CUDA et les paquets Debian de la base.
-- Le checkout Git complet requis pour la provenance ne doit pas transformer le
-  contexte de construction en fuite de secrets ou de fichiers non suivis. La
-  méthode de création d’un contexte propre et attesté reste à valider.
+- Le checkout Git shallow requis pour la provenance est limité au seul commit
+  attesté ; les tests prouvent que les objets parents et un secret supprimé dans
+  l’historique ne sont pas embarqués. L’image finale devra encore être inspectée
+  après sa première construction réelle.
 - Le résultat doit rester sous la limite de sortie de `/run` et être sauvegardé
   avant expiration de sa rétention.
 - Aucun mécanisme ne garantit actuellement un plafond monétaire strict de
