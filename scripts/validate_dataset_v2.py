@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the whole v2 evaluation dataset and report human-review readiness.
+"""Validate the frozen human-154 evaluation dataset and review readiness.
 
 Exit codes:
   0  all target invariants satisfied AND human review complete;
@@ -18,11 +18,11 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from rag_hermes.eval_corpus import DEFAULT_CORPUS, corpus_manifest, load_documents
+from rag_hermes.eval_corpus import corpus_manifest, load_documents
 from rag_hermes.evaluation_dataset import validate_evaluation_case
 
-DATASET = ROOT / "data/benchmark/dataset-v2.jsonl"
-CORPUS = DEFAULT_CORPUS
+DATASET = ROOT / "data/benchmark/dataset-v2-human-154.jsonl"
+CORPUS = ROOT / "data/generated/hermes_public_documents-human-154.jsonl"
 
 TARGET_EN = 100
 TARGET_FR_PAIRS = 40

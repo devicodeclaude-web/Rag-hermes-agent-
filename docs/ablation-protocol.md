@@ -82,7 +82,7 @@ métriques du sous-ensemble humainement vérifié sont isolées. Un contrôle de
 ## Campagne intermédiaire humaine 154 — abstention BGE-M3
 
 Cette extension est gelée avant son exécution GPU. Elle utilise les 154 cas de
-`data/benchmark/dataset-v2.jsonl` : 107 EN, 47 FR, 122 répondables et 32 cas
+`data/benchmark/dataset-v2-human-154.jsonl` : 107 EN, 47 FR, 122 répondables et 32 cas
 d'abstention. Les 154 questions sont de provenance humaine indépendante du
 corpus et portent un statut `validated` ou `arbitrated`.
 

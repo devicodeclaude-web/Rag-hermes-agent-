@@ -259,16 +259,19 @@ imposée par le schéma (`question_provenance`) et par `is_quality_eligible`, de
 sorte qu’une question générée depuis le corpus ne peut jamais gonfler un score
 de qualité humaine (non-circularité).
 
-1. **Piste humaine — `data/benchmark/dataset-v2.jsonl`.** Questions écrites par un
+1. **Snapshot humain — `data/benchmark/dataset-v2-human-154.jsonl`.** Questions écrites par un
    humain sans voir le corpus (`human_task_without_corpus_view`) ou questions
    réelles anonymisées (`anonymized_real_user_question`), annotées au **passage**
    (span exact + `passage_sha256`), avec paires EN/FR. C’est la seule piste
    éligible comme preuve de qualité. État vérifié : **154 cas validés** (107 EN,
    47 FR), dont 32 abstentions (22 EN, 10 FR), soit au moins 20 % dans chaque
-   langue. Le gate `scripts/validate_dataset_v2.py` est `READY` : les cibles
+   langue. Cette piste est figée avec son corpus historique correspondant ; la
+   gate `scripts/validate_dataset_v2.py` est `READY` : les cibles
    intermédiaires de 100 cas EN et 40 paires FR sont dépassées, toutes les
-   références sont revues et le bloc `remaining` est nul. Le jeu final de 300 cas
-   et les catégories privées/contradictions/injections restent à compléter.
+   références sont revues et le bloc `remaining` est nul. Le dataset actif
+   `data/benchmark/dataset-v2.jsonl` utilise un schéma QA distinct et contient
+   désormais 300 cas ; ses portes actives sont `check_dataset_qa.py` et
+   `check_title_leak.py`.
 
 2. **Piste synthétique — `data/benchmark/dataset-synthetic.jsonl`.** Migration du
    jeu généré `dataset-v1.jsonl` (100 questions) vers le schéma canonique via

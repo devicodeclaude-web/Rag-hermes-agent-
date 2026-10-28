@@ -6,6 +6,16 @@ import scripts.validate_dataset_v2 as v
 
 
 class GateReportTests(unittest.TestCase):
+    def test_default_gate_uses_the_immutable_human_154_input_pair(self):
+        self.assertEqual(
+            v.DATASET.name,
+            "dataset-v2-human-154.jsonl",
+        )
+        self.assertEqual(
+            v.CORPUS.name,
+            "hermes_public_documents-human-154.jsonl",
+        )
+
     def test_remaining_counts_when_everything_is_short(self):
         # 10 EN cases, 2 complete FR pairs, 3 reviewed, targets 100 / 40.
         report = v.gate_report(
