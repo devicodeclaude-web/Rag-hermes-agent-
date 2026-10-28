@@ -5,11 +5,12 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-PYTHON = ROOT / ".venv-audit/bin/python"
+PYTHON = Path(sys.executable)
 SCRIPT = ROOT / "scripts/dense_eval_report.py"
 PINNED_REVISION = "b682a98ab8cb30c4f0561021e0ff9f41e5156526"
 

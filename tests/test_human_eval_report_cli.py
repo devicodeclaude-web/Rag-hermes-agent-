@@ -7,6 +7,7 @@ import os
 from contextlib import redirect_stderr
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -14,7 +15,7 @@ from unittest import mock
 from scripts import human_eval_report as report_cli
 
 ROOT = Path(__file__).resolve().parents[1]
-PYTHON = ROOT / ".venv-audit/bin/python"
+PYTHON = Path(sys.executable)
 SCRIPT = ROOT / "scripts/human_eval_report.py"
 PINNED_REVISION = "b682a98ab8cb30c4f0561021e0ff9f41e5156526"
 

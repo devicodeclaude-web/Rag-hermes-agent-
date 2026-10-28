@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -14,7 +15,7 @@ from rag_hermes.synthetic_report import (
 PINNED_REVISION = "b682a98ab8cb30c4f0561021e0ff9f41e5156526"
 PINNED_SHA = "af0631abbffaab14b180abc4531497665a6104d6685328d6abbe53a565c53866"
 ROOT = Path(__file__).resolve().parents[1]
-PYTHON = ROOT / ".venv-audit/bin/python"
+PYTHON = Path(sys.executable)
 SCRIPT = ROOT / "scripts/synthetic_eval_report.py"
 
 
