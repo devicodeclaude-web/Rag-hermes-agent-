@@ -174,21 +174,21 @@ v3pp-111,paraphrase,['hermes-agent:user-guide/features/context-references.md'],d
 v3pp-153,paraphrase,['hermes-agent:user-guide/features/tools.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
 v3pp-154,paraphrase,['hermes-agent:user-guide/configuring-models.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
 v3pp-155,paraphrase,['hermes-agent:guides/use-voice-mode-with-hermes.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
-v3pp-156,paraphrase,['hermes-agent:reference/cli-commands.md'],,,,,,
-v3pp-157,paraphrase,['hermes-agent:user-guide/features/built-in-plugins.md'],,,,,,
-v3sp-042,simple,['hermes-agent:getting-started/termux.md'],,,,,,
-v3sp-043,simple,['hermes-agent:user-guide/secrets/bitwarden.md'],,,,,,
-v3sp-044,simple,['hermes-agent:user-guide/egress/network-isolation.md'],,,,,,
-v3sp-045,simple,['hermes-agent:reference/model-catalog.md'],,,,,,
-v3sp-046,simple,['hermes-agent:user-guide/profiles.md'],,,,,,
-v3sp-047,simple,['hermes-agent:guides/pipe-script-output.md'],,,,,,
-v3sp-048,simple,['hermes-agent:guides/xai-grok-oauth.md'],,,,,,
-v3sp-049,simple,['hermes-agent:getting-started/updating.md'],,,,,,
-v3sp-050,simple,['hermes-agent:user-guide/messaging/homeassistant.md'],,,,,,
-v3sp-051,simple,['hermes-agent:user-guide/messaging/open-webui.md'],,,,,,
-v3sp-092,simple,['hermes-agent:user-guide/messaging/line.md'],,,,,,
-v3sp-093,simple,['hermes-agent:user-guide/messaging/sms.md'],,,,,,
-v3sp-094,simple,['hermes-agent:user-guide/messaging/wecom-callback.md'],,,,,,
+v3pp-156,paraphrase,['hermes-agent:reference/cli-commands.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
+v3pp-157,paraphrase,['hermes-agent:user-guide/features/built-in-plugins.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
+v3sp-042,simple,['hermes-agent:getting-started/termux.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
+v3sp-043,simple,['hermes-agent:user-guide/secrets/bitwarden.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
+v3sp-044,simple,['hermes-agent:user-guide/egress/network-isolation.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
+v3sp-045,simple,['hermes-agent:reference/model-catalog.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
+v3sp-046,simple,['hermes-agent:user-guide/profiles.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
+v3sp-047,simple,['hermes-agent:guides/pipe-script-output.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
+v3sp-048,simple,['hermes-agent:guides/xai-grok-oauth.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
+v3sp-049,simple,['hermes-agent:getting-started/updating.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
+v3sp-050,simple,['hermes-agent:user-guide/messaging/homeassistant.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
+v3sp-051,simple,['hermes-agent:user-guide/messaging/open-webui.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
+v3sp-092,simple,['hermes-agent:user-guide/messaging/line.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
+v3sp-093,simple,['hermes-agent:user-guide/messaging/sms.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
+v3sp-094,simple,['hermes-agent:user-guide/messaging/wecom-callback.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
 v3sp-095,simple,['hermes-agent:user-guide/messaging/yuanbao.md'],,,,,,
 v3sp-096,simple,['hermes-agent:guides/team-telegram-assistant.md'],,,,,,
 v3sp-097,simple,['hermes-agent:guides/run-nemotron-3-ultra-free.md'],,,,,,
