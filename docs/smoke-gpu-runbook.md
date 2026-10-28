@@ -212,7 +212,10 @@ Limites et résultats négatifs :
 ### Critères restant nécessaires pour un futur PASS production
 
 - conserver la campagne intermédiaire humaine de 154 cas comme preuve de
-  composants, puis exécuter le jeu final de 300 via le pipeline de production ;
+  composants ; préserver séparément les 300 cas actifs du schéma QA, qui ne
+  constituent pas encore le jeu final ; puis exécuter via le pipeline de
+  production une **piste finale distincte**, gelée, d'au moins 300 cas,
+  **éligible qualité** et couvrant les strates de sécurité requises ;
 - inclure au moins 30 questions écrites à la main sans regarder les chunks ;
 - définir à l’avance des intervalles de confiance et des seuils de non-régression ;
 - démontrer un bénéfice du reranker sur une métrique préenregistrée, sans dégrader
