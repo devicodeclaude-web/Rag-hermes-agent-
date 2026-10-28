@@ -144,21 +144,21 @@ v3na-164,no_answer,[],aucun / pas dans la doc,yes,validate,devicodeclaude-web,20
 v3na-165,no_answer,[],aucun / pas dans la doc,yes,validate,devicodeclaude-web,2026-10-28,
 v3na-166,no_answer,[],aucun / pas dans la doc,yes,validate,devicodeclaude-web,2026-10-28,
 v3na-167,no_answer,[],aucun / pas dans la doc,yes,validate,devicodeclaude-web,2026-10-28,
-v3na-168,no_answer,[],,,,,,
-v3pp-036,paraphrase,['hermes-agent:user-guide/features/mixture-of-agents.md'],,,,,,
-v3pp-037,paraphrase,['hermes-agent:user-guide/features/document-extraction.md'],,,,,,
-v3pp-038,paraphrase,['hermes-agent:user-guide/features/curator.md'],,,,,,
-v3pp-039,paraphrase,['hermes-agent:user-guide/messaging/mattermost.md'],,,,,,
-v3pp-040,paraphrase,['hermes-agent:user-guide/import-from-other-agents.md'],,,,,,
-v3pp-041,paraphrase,['hermes-agent:developer-guide/terminal-environment-plugin.md'],,,,,,
-v3pp-072,paraphrase,['hermes-agent:user-guide/bot-mode.md'],,,,,,
-v3pp-073,paraphrase,['hermes-agent:user-guide/features/subscription-proxy.md'],,,,,,
-v3pp-074,paraphrase,['hermes-agent:guides/azure-foundry.md'],,,,,,
-v3pp-075,paraphrase,['hermes-agent:user-guide/windows-native.md'],,,,,,
-v3pp-076,paraphrase,['hermes-agent:user-guide/features/extending-the-dashboard.md'],,,,,,
-v3pp-077,paraphrase,['hermes-agent:developer-guide/plugin-llm-access.md'],,,,,,
-v3pp-078,paraphrase,['hermes-agent:user-guide/features/codex-app-server-runtime.md'],,,,,,
-v3pp-079,paraphrase,['hermes-agent:user-guide/profile-distributions.md'],,,,,,
+v3na-168,no_answer,[],aucun / pas dans la doc,yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
+v3pp-036,paraphrase,['hermes-agent:user-guide/features/mixture-of-agents.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
+v3pp-037,paraphrase,['hermes-agent:user-guide/features/document-extraction.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
+v3pp-038,paraphrase,['hermes-agent:user-guide/features/curator.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
+v3pp-039,paraphrase,['hermes-agent:user-guide/messaging/mattermost.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
+v3pp-040,paraphrase,['hermes-agent:user-guide/import-from-other-agents.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
+v3pp-041,paraphrase,['hermes-agent:developer-guide/terminal-environment-plugin.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
+v3pp-072,paraphrase,['hermes-agent:user-guide/bot-mode.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
+v3pp-073,paraphrase,['hermes-agent:user-guide/features/subscription-proxy.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
+v3pp-074,paraphrase,['hermes-agent:guides/azure-foundry.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
+v3pp-075,paraphrase,['hermes-agent:user-guide/windows-native.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
+v3pp-076,paraphrase,['hermes-agent:user-guide/features/extending-the-dashboard.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
+v3pp-077,paraphrase,['hermes-agent:developer-guide/plugin-llm-access.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
+v3pp-078,paraphrase,['hermes-agent:user-guide/features/codex-app-server-runtime.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
+v3pp-079,paraphrase,['hermes-agent:user-guide/profile-distributions.md'],doc correct (voir gold),yes,validate,devicodeclaude-web,2026-10-28,prediction assistee par doc en ligne (NON comptee comme independante); match gold 15/15
 v3pp-080,paraphrase,['hermes-agent:reference/optional-skills-catalog.md'],,,,,,
 v3pp-081,paraphrase,['hermes-agent:user-guide/multi-connection-desktop.md'],,,,,,
 v3pp-102,paraphrase,['hermes-agent:guides/work-with-skills.md'],,,,,,
