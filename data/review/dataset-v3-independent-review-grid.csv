@@ -59,16 +59,16 @@ v3cb-005,chunk_boundary,['hermes-agent:user-guide/features/web-dashboard.md'],a 
 v3cb-006,chunk_boundary,['hermes-agent:user-guide/features/cron.md'],hermes cron create + retry 5/15/30 puis prochaine occurrence,yes,validate,devicodeclaude-web,2026-10-27,repondu correctement; gold cron.md
 v3cb-007,chunk_boundary,['hermes-agent:user-guide/docker.md'],"a tort no_answer -> docker.md section 'Installing more tools' (npx/uvx, apt, image derivee, sidecar)",no,validate,devicodeclaude-web,2026-10-27,faux no_answer du reviseur; docker.md confirme les 2 sous-faits
 v3cb-008,chunk_boundary,['hermes-agent:user-guide/configuration.md'],a tort 'non confirme' -> configuration.md: threshold:0.50 + modele sous auxiliary:,no,validate,devicodeclaude-web,2026-10-27,faux no_answer du reviseur; configuration.md confirme les 2 sous-faits
-v3cb-009,chunk_boundary,['hermes-agent:user-guide/features/web-dashboard.md'],,,,,,
-v3cb-010,chunk_boundary,['hermes-agent:user-guide/messaging/discord.md'],,,,,,
-v3cb-011,chunk_boundary,['hermes-agent:user-guide/messaging/slack.md'],,,,,,
-v3cb-082,chunk_boundary,['hermes-agent:user-guide/messaging/telegram.md'],,,,,,
-v3cb-083,chunk_boundary,['hermes-agent:user-guide/features/api-server.md'],,,,,,
-v3cb-084,chunk_boundary,['hermes-agent:user-guide/features/kanban.md'],,,,,,
-v3cb-085,chunk_boundary,['hermes-agent:user-guide/features/lsp.md'],,,,,,
-v3cb-086,chunk_boundary,['hermes-agent:user-guide/features/mcp.md'],,,,,,
-v3cb-087,chunk_boundary,['hermes-agent:user-guide/messaging/whatsapp.md'],,,,,,
-v3cb-088,chunk_boundary,['hermes-agent:user-guide/features/voice-mode.md'],,,,,,
+v3cb-009,chunk_boundary,['hermes-agent:user-guide/features/web-dashboard.md'],je ne sais pas,abstain,abstain,devicodeclaude-web,2026-10-27,reviseur ne se rappelle pas; laisse en attente (non valide)
+v3cb-010,chunk_boundary,['hermes-agent:user-guide/messaging/discord.md'],"discord: intents Message Content + Server Members, + entier de permissions (concept correct, valeur oubliee)",yes,validate,devicodeclaude-web,2026-10-27,doc identifie correctement de memoire (sous-faits partiels assumes)
+v3cb-011,chunk_boundary,['hermes-agent:user-guide/messaging/slack.md'],slack: Socket Mode + thread_ts pour repondre dans un fil,yes,validate,devicodeclaude-web,2026-10-27,doc identifie correctement de memoire (sous-faits partiels assumes)
+v3cb-082,chunk_boundary,['hermes-agent:user-guide/messaging/telegram.md'],telegram: long polling defaut + serveur Bot API local pour relever la limite fichiers,yes,validate,devicodeclaude-web,2026-10-27,doc identifie correctement de memoire (sous-faits partiels assumes)
+v3cb-083,chunk_boundary,['hermes-agent:user-guide/features/api-server.md'],api-server: chat completions sans etat (renvoyer historique); (mecanisme reponse stockee: oublie),yes,validate,devicodeclaude-web,2026-10-27,doc identifie correctement de memoire (sous-faits partiels assumes)
+v3cb-084,chunk_boundary,['hermes-agent:user-guide/features/kanban.md'],je ne sais pas,abstain,abstain,devicodeclaude-web,2026-10-27,reviseur ne se rappelle pas; laisse en attente (non valide)
+v3cb-085,chunk_boundary,['hermes-agent:user-guide/features/lsp.md'],je ne sais pas,abstain,abstain,devicodeclaude-web,2026-10-27,reviseur ne se rappelle pas; laisse en attente (non valide)
+v3cb-086,chunk_boundary,['hermes-agent:user-guide/features/mcp.md'],mcp: declarer sous mcp_servers dans config.yaml; (hot-reload: oublie),yes,validate,devicodeclaude-web,2026-10-27,doc identifie correctement de memoire (sous-faits partiels assumes)
+v3cb-087,chunk_boundary,['hermes-agent:user-guide/messaging/whatsapp.md'],whatsapp: scanner le QR; expediteur non autorise recoit un code de jumelage,yes,validate,devicodeclaude-web,2026-10-27,doc identifie correctement de memoire (sous-faits partiels assumes)
+v3cb-088,chunk_boundary,['hermes-agent:user-guide/features/voice-mode.md'],voice-mode: STT local sans cle API + interruption pendant la parole (barge-in),yes,validate,devicodeclaude-web,2026-10-27,doc identifie correctement de memoire (sous-faits partiels assumes)
 v3cb-089,chunk_boundary,['hermes-agent:user-guide/messaging/matrix.md'],,,,,,
 v3cb-090,chunk_boundary,['hermes-agent:user-guide/features/browser.md'],,,,,,
 v3cb-091,chunk_boundary,['hermes-agent:user-guide/features/goals.md'],,,,,,
