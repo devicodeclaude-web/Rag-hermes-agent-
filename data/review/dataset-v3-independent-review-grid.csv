@@ -19,16 +19,16 @@ v2p-018,no_answer,[],no_answer: GIF animé non documenté,yes,validate,devicodec
 v2p-019,close_distractor,['hermes-agent:user-guide/features/credential-vault.md'],.env/secrets + gestionnaire externe (1Password/Bitwarden),no,rewrite,devicodeclaude-web,2026-10-27,"MIS-GOLD detecte: credential-vault=Passwords&Logins (connexion sites), pas un coffre a cle API. Re-gold -> secrets/index.md, distracteur credential-pools. Prediction du reviseur etait correcte."
 v2p-020,close_distractor,['hermes-agent:user-guide/features/context-files.md'],context-files,yes,validate,devicodeclaude-web,2026-10-27,
 v2p-021,close_distractor,['hermes-agent:user-guide/features/code-execution.md'],"code-execution (execute_code, modes project/strict)",yes,validate,devicodeclaude-web,2026-10-27,
-v2p-022,close_distractor,['hermes-agent:guides/google-gemini.md'],,,,,,
-v2p-023,close_distractor,['hermes-agent:guides/local-ollama-setup.md'],,,,,,
-v2p-024,close_distractor,['hermes-agent:reference/slash-commands.md'],,,,,,
-v2p-025,close_distractor,['hermes-agent:user-guide/features/api-server.md'],,,,,,
-v2p-026,close_distractor,['hermes-agent:developer-guide/subagent-lifecycle-api.md'],,,,,,
-v2p-027,simple,['hermes-agent:user-guide/features/web-search.md'],,,,,,
-v2p-028,simple,['hermes-agent:user-guide/features/fallback-providers.md'],,,,,,
-v2p-029,chunk_boundary,['hermes-agent:user-guide/features/api-server.md'],,,,,,
-v2p-030,chunk_boundary,['hermes-agent:user-guide/sessions.md'],,,,,,
-v2p-031,simple,['hermes-agent:user-guide/messaging/webhooks.md'],,,,,,
+v2p-022,close_distractor,['hermes-agent:guides/google-gemini.md'],"Gemini AI Studio (GEMINI_API_KEY), sans projet cloud (vs Vertex)",yes,validate,devicodeclaude-web,2026-10-27,
+v2p-023,close_distractor,['hermes-agent:guides/local-ollama-setup.md'],"Ollama base_url 11434, custom endpoint",yes,validate,devicodeclaude-web,2026-10-27,
+v2p-024,close_distractor,['hermes-agent:reference/slash-commands.md'],slash-commands /model /new /clear,yes,validate,devicodeclaude-web,2026-10-27,
+v2p-025,close_distractor,['hermes-agent:user-guide/features/api-server.md'],subscription-proxy (predit) ; gold=api-server,no,rewrite,devicodeclaude-web,2026-10-27,distracteur durci acp->subscription-proxy (vrai proche-confusable); gold api-server correct ('exposer l'agent en API OpenAI')
+v2p-026,close_distractor,['hermes-agent:developer-guide/subagent-lifecycle-api.md'],"subagent-lifecycle-api (SubagentHandle status/wait/cancel/result, 32k)",yes,validate,devicodeclaude-web,2026-10-27,
+v2p-027,simple,['hermes-agent:user-guide/features/web-search.md'],d'abord 'non documente' -> en fait web-search documente head+tail+[TRUNCATED]+full text sur disque,no,validate,devicodeclaude-web,2026-10-27,reviseur a manque; doc gold repond pleinement
+v2p-028,simple,['hermes-agent:user-guide/features/fallback-providers.md'],fallback-providers (+ auxiliary.<task>.fallback_chain separe),yes,validate,devicodeclaude-web,2026-10-27,
+v2p-029,chunk_boundary,['hermes-agent:user-guide/features/api-server.md'],api-server: /v1/chat/completions stateless <-> reponse stockee par id,yes,validate,devicodeclaude-web,2026-10-27,
+v2p-030,chunk_boundary,['hermes-agent:user-guide/sessions.md'],"sessions: auto_prune off defaut, retention_days 90 <-> hermes sessions prune",yes,validate,devicodeclaude-web,2026-10-27,
+v2p-031,simple,['hermes-agent:user-guide/messaging/webhooks.md'],d'abord 'non documente' -> webhooks.md documente deliver_only + cron_job + 'rejected at startup',no,validate,devicodeclaude-web,2026-10-27,reviseur a manque; doc gold repond pleinement
 v2p-032,chunk_boundary,['hermes-agent:user-guide/features/computer-use.md'],,,,,,
 v2p-033,simple,['hermes-agent:reference/mcp-config-reference.md'],,,,,,
 v3-001,simple,['hermes-agent:user-guide/features/wake-word.md'],,,,,,
