@@ -65,10 +65,13 @@ class DatasetQaStructureTests(unittest.TestCase):
 
 
 class DatasetStatusDocumentationTests(unittest.TestCase):
-    def test_status_distinguishes_active_300_from_human_154(self):
+    def test_status_distinguishes_reviewed_active_298_from_human_154(self):
         active = qa.load_jsonl(ROOT / "data" / "benchmark" / "dataset-v2.jsonl")
         human = qa.load_jsonl(
             ROOT / "data" / "benchmark" / "dataset-v2-human-154.jsonl"
+        )
+        rejected = qa.load_jsonl(
+            ROOT / "data" / "review" / "dataset-v3-rejected.jsonl"
         )
         private_documents = {
             row["document_id"]
@@ -77,17 +80,47 @@ class DatasetStatusDocumentationTests(unittest.TestCase):
             )
         }
 
-        self.assertEqual(len(active), 300)
-        self.assertEqual(len({row["case_id"] for row in active}), 300)
+        self.assertEqual(len(active), 298)
+        self.assertEqual(len({row["case_id"] for row in active}), 298)
         self.assertEqual(
             dict(qa.Counter(row["category"] for row in active)),
             {
-                "simple": 75,
+                "simple": 76,
                 "paraphrase": 60,
                 "close_distractor": 60,
-                "chunk_boundary": 45,
-                "no_answer": 60,
+                "chunk_boundary": 44,
+                "no_answer": 58,
             },
+        )
+        self.assertEqual(
+            {row["case_id"] for row in rejected},
+            {"v3na-115", "v3cb-091"},
+        )
+        self.assertTrue(
+            all(row["review_decision"] == "reject" for row in rejected)
+        )
+        self.assertTrue(
+            all(row["manual_review_status"] == "reject" for row in rejected)
+        )
+        self.assertTrue(
+            all(
+                row["decision_reference_status"] == "rejected_in_human_review"
+                for row in rejected
+            )
+        )
+        self.assertTrue(
+            all("rejet" in row["review_note"].lower() for row in rejected)
+        )
+        self.assertTrue(
+            {row["case_id"] for row in active}.isdisjoint(
+                {row["case_id"] for row in rejected}
+            )
+        )
+        self.assertTrue(
+            all(row["manual_review_status"] == "validated" for row in active)
+        )
+        self.assertTrue(
+            all(row["decision_reference_status"] == "validated" for row in active)
         )
         self.assertTrue(all(row.get("acl_probe") is False for row in active))
         active_targets = {
@@ -119,7 +152,8 @@ class DatasetStatusDocumentationTests(unittest.TestCase):
         status = (ROOT / "docs" / "v1-implementation-status.md").read_text(
             encoding="utf-8"
         )
-        self.assertIn("300 cas actifs", status)
+        self.assertIn("298 cas actifs", status)
+        self.assertIn("déficit de 2", status)
         self.assertIn("154 cas humains", status)
         self.assertIn("privé, contradictions et injections", status)
         self.assertNotIn("146 cas", status)

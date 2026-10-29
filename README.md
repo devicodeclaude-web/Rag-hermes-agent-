@@ -270,7 +270,7 @@ de qualité humaine (non-circularité).
    intermédiaires de 100 cas EN et 40 paires FR sont dépassées, toutes les
    références sont revues et le bloc `remaining` est nul. Le dataset actif
    `data/benchmark/dataset-v2.jsonl` utilise un schéma QA distinct et contient
-   désormais 300 cas ; ses portes actives sont `check_dataset_qa.py` et
+   désormais 298 cas après exclusion de deux rejets archivés ; ses portes actives sont `check_dataset_qa.py` et
    `check_title_leak.py`.
 
 2. **Piste synthétique — `data/benchmark/dataset-synthetic.jsonl`.** Migration du

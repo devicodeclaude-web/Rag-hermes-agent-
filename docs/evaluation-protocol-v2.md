@@ -259,10 +259,11 @@ et `check_title_leak.py`.
 
 ### 11.1 Effectifs actifs
 
-Le fichier contient **300 cas actifs** et 300 `case_id` uniques. La composition
+Le fichier contient **298 cas actifs** et 298 `case_id` uniques. Deux cas rejetés
+par la revue (`v3na-115`, `v3cb-091`) sont archivés séparément et exclus. La composition
 observée, qui décrit le dataset mais ne constitue pas un quota de qualité, est :
-`simple` 75 · `paraphrase` 60 · `close_distractor` 60 · `chunk_boundary` 45 ·
-`no_answer` 60. `check_dataset_qa.py` valide la structure, les références au corpus
+`simple` 76 · `paraphrase` 60 · `close_distractor` 60 · `chunk_boundary` 44 ·
+`no_answer` 58. `check_dataset_qa.py` valide la structure, les références au corpus
 et l'absence de fuite de titre ; il ne transforme pas ce schéma QA en piste
 éligible à une conclusion de qualité.
 
@@ -270,20 +271,19 @@ et l'absence de fuite de titre ; il ne transforme pas ce schéma QA en piste
 
 Répartition actuelle du champ `authorship` :
 
-- `scaffold_assisted_llm_written` : 205 ;
+- `scaffold_assisted_llm_written` : 203 ;
 - `human_drafted_llm_reworded_independently_reviewed` : 82 ;
 - `human_rewritten_in_independent_review` : 12 ;
 - `human_drafted_pending_independent_review` : 1.
 
 Répartition des statuts de revue :
 
-- `manual_review_status` : `validated` : 94 ;
-- `manual_review_status` : `llm_assisted_review_done_pending_independent_validation` : 206 ;
-- `decision_reference_status` : `validated` : 94 ;
-- `decision_reference_status` : `pending_independent_human_validation` : 206.
+- `manual_review_status` : `validated` : 298 ;
+- `decision_reference_status` : `validated` : 298.
 
-Ces comptes empêchent de présenter les 300 cas comme 300 références humaines
-indépendamment validées. Le snapshot historique distinct
+Le statut `validated` atteste la décision de revue de chaque cas, mais ne transforme
+pas les 298 cas en références toutes rédigées et annotées par des humains indépendants.
+Le seuil numérique minimal de 300 présente désormais un déficit de 2. Le snapshot historique distinct
 `data/benchmark/dataset-v2-human-154.jsonl` reste la piste humaine immuable
 éligible aux mesures de qualité déjà publiées. Le schéma actif ne possède pas
 encore les champs cibles `track`, `language`, `question_provenance` et

@@ -21,7 +21,7 @@ class GPUJobTests(unittest.TestCase):
         self.assertIn("portes 0 à 3 ne sont pas vertes", runbook)
         self.assertNotIn("portes 1 à 4 ne sont pas vertes", runbook)
 
-    def test_runbook_does_not_conflate_active_300_with_final_quality_track(self):
+    def test_runbook_does_not_conflate_active_298_with_final_quality_track(self):
         active = [
             json.loads(line)
             for line in Path("data/benchmark/dataset-v2.jsonl")
@@ -31,9 +31,10 @@ class GPUJobTests(unittest.TestCase):
         ]
         runbook = Path("docs/smoke-gpu-runbook.md").read_text(encoding="utf-8")
 
-        self.assertEqual(len(active), 300)
-        self.assertEqual(len({row["case_id"] for row in active}), 300)
+        self.assertEqual(len(active), 298)
+        self.assertEqual(len({row["case_id"] for row in active}), 298)
         self.assertNotIn("jeu final de 300", runbook)
+        self.assertIn("298 cas actifs", runbook)
         self.assertIn("piste finale distincte", runbook)
         self.assertIn("éligible qualité", runbook)
 
