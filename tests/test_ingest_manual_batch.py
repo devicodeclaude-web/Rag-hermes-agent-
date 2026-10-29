@@ -20,16 +20,23 @@ class IngestManualBatchTests(unittest.TestCase):
         self.manifest = corpus_manifest(TEST_CORPUS)
 
         self._tmp_dataset = Path(tempfile.mktemp(suffix=".jsonl"))
+        self._tmp_frozen = Path(tempfile.mktemp(suffix=".jsonl"))
         self._tmp_batch = Path(tempfile.mktemp(suffix=".jsonl"))
         self._orig_dataset = ingest.DATASET
         self._orig_corpus = ingest.CORPUS
+        self._orig_frozen = ingest.FROZEN_BASE
+        self._tmp_frozen.write_bytes(b"")
+        self._tmp_dataset.write_bytes(b"")
         ingest.DATASET = self._tmp_dataset
         ingest.CORPUS = TEST_CORPUS
+        ingest.FROZEN_BASE = self._tmp_frozen
 
     def tearDown(self):
         self.ingest.DATASET = self._orig_dataset
         self.ingest.CORPUS = self._orig_corpus
+        self.ingest.FROZEN_BASE = self._orig_frozen
         self._tmp_dataset.unlink(missing_ok=True)
+        self._tmp_frozen.unlink(missing_ok=True)
         self._tmp_batch.unlink(missing_ok=True)
 
     def _unique_passage(self):

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pre-check a human-filled evaluation batch WITHOUT writing anything.
+"""Pre-check a human-filled quality-candidate batch WITHOUT writing anything.
 
 Where ``ingest_manual_batch`` stops at the first violation (and is atomic), this
 dry-run validator reports EVERY problem it can find in one pass, so the annotator
@@ -16,6 +16,9 @@ human-readable ``message``. Problems detected:
 
 Exit codes: 0 = no problems (ready to ingest); 2 = one or more problems found;
 1 = the batch file itself could not be read.
+
+The existing-ID check is performed against the mutable quality candidate seeded
+from the frozen 154-case snapshot, never against the active QA dataset.
 """
 from __future__ import annotations
 
@@ -28,10 +31,18 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from rag_hermes.eval_corpus import DEFAULT_CORPUS, corpus_manifest, load_documents
+from rag_hermes.eval_corpus import corpus_manifest, load_documents
+from rag_hermes.quality_track import (
+    FROZEN_HUMAN_CORPUS,
+    FROZEN_HUMAN_DATASET,
+    QUALITY_CANDIDATE_DATASET,
+    verify_quality_candidate_seed,
+)
 from scripts.annotate_eval_case import build_case
 
-DATASET = ROOT / "data/benchmark/dataset-v2.jsonl"
+DATASET = QUALITY_CANDIDATE_DATASET
+CORPUS = FROZEN_HUMAN_CORPUS
+FROZEN_BASE = FROZEN_HUMAN_DATASET
 PLACEHOLDER_TOKEN = "REMPLIR"
 
 
@@ -101,6 +112,18 @@ def check_batch(raw_rows, documents, manifest, existing_ids) -> list[dict]:
 
 def run(batch_path: Path) -> int:
     try:
+        verify_quality_candidate_seed(DATASET, FROZEN_BASE)
+    except ValueError as exc:
+        print(json.dumps({
+            "batch": str(batch_path),
+            "rows_parsed": 0,
+            "problem_count": 1,
+            "status": "INVALID_CANDIDATE",
+            "problems": [{"index": None, "case_id": None, "message": str(exc)}],
+        }, ensure_ascii=False, indent=2))
+        return 2
+
+    try:
         text = batch_path.read_text(encoding="utf-8")
     except OSError as exc:
         print(f"cannot read batch file: {exc}", file=sys.stderr)
@@ -117,8 +140,8 @@ def run(batch_path: Path) -> int:
             json_errors.append({"index": lineno - 1, "case_id": None,
                                 "message": f"invalid JSON on line {lineno}: {exc}"})
 
-    documents = load_documents(DEFAULT_CORPUS)
-    manifest = corpus_manifest(DEFAULT_CORPUS)
+    documents = load_documents(CORPUS)
+    manifest = corpus_manifest(CORPUS)
     existing = _existing_ids()
 
     problems = json_errors + check_batch(raw_rows, documents, manifest, existing)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Append a single evaluation case to the v2 dataset, without ever showing the corpus.
+"""Append one case to the mutable quality candidate, never to active/frozen data.
 
 Anti-circularity contract:
   - The question is authored WITHOUT viewing the corpus (provenance is recorded).
@@ -7,6 +7,8 @@ Anti-circularity contract:
     SHA-256 are computed here, so labels stay chunking-independent.
   - Every case is validated by rag_hermes.evaluation_dataset before being written.
   - EN and FR versions of the same question share a pair_id (label annotated once).
+  - The candidate must preserve the frozen 154-case human snapshot as an exact
+    prefix; a missing or drifted candidate is refused before any write.
 
 The case payload is read from a JSON file or stdin, e.g.:
 
@@ -46,8 +48,16 @@ if str(ROOT) not in sys.path:
 
 from rag_hermes.eval_corpus import corpus_manifest, find_passage_span, load_documents
 from rag_hermes.evaluation_dataset import validate_evaluation_case
+from rag_hermes.quality_track import (
+    FROZEN_HUMAN_CORPUS,
+    FROZEN_HUMAN_DATASET,
+    QUALITY_CANDIDATE_DATASET,
+    verify_quality_candidate_seed,
+)
 
-DATASET = ROOT / "data/benchmark/dataset-v2.jsonl"
+DATASET = QUALITY_CANDIDATE_DATASET
+CORPUS = FROZEN_HUMAN_CORPUS
+FROZEN_BASE = FROZEN_HUMAN_DATASET
 
 
 def build_case(raw: dict, documents, manifest) -> dict:
@@ -92,7 +102,8 @@ def existing_case_ids() -> set[str]:
 def atomic_append(case: dict) -> None:
     DATASET.parent.mkdir(parents=True, exist_ok=True)
     old = DATASET.read_text(encoding="utf-8") if DATASET.exists() else ""
-    new = old + json.dumps(case, ensure_ascii=False, sort_keys=True) + "\n"
+    boundary = "" if not old or old.endswith("\n") else "\n"
+    new = old + boundary + json.dumps(case, ensure_ascii=False, sort_keys=True) + "\n"
     fd, tmp = tempfile.mkstemp(dir=str(DATASET.parent), suffix=".tmp")
     try:
         with open(fd, "w", encoding="utf-8") as handle:
@@ -104,6 +115,12 @@ def atomic_append(case: dict) -> None:
 
 
 def main() -> int:
+    try:
+        verify_quality_candidate_seed(DATASET, FROZEN_BASE)
+    except ValueError as exc:
+        print(f"refused: {exc}", file=sys.stderr)
+        return 2
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--case", type=Path, help="JSON file with the case (default: stdin)")
     args = parser.parse_args()
@@ -111,8 +128,8 @@ def main() -> int:
     raw_text = args.case.read_text(encoding="utf-8") if args.case else sys.stdin.read()
     raw = json.loads(raw_text)
 
-    documents = load_documents()
-    manifest = corpus_manifest()
+    documents = load_documents(CORPUS)
+    manifest = corpus_manifest(CORPUS)
 
     if raw["case_id"] in existing_case_ids():
         print(f"refused: case_id already present: {raw['case_id']}", file=sys.stderr)

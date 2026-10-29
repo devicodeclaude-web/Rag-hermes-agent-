@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Ingest a human-filled batch of evaluation questions into the v2 dataset.
+"""Ingest a human-filled batch into the mutable quality-candidate dataset.
 
 Workflow for the human annotator:
   1. Write questions WITHOUT reading the corpus (anti-circularity).
@@ -24,6 +24,9 @@ Each row is the same "raw" shape consumed by scripts/annotate_eval_case.build_ca
   }
 
 Exit codes: 0 = whole batch ingested; 1 = a violation was found (nothing written).
+
+The active QA dataset and frozen 154-case snapshot are never write targets. The
+candidate must retain the frozen snapshot as an exact prefix or ingestion fails.
 """
 from __future__ import annotations
 
@@ -37,11 +40,18 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from rag_hermes.eval_corpus import DEFAULT_CORPUS, corpus_manifest, load_documents
+from rag_hermes.eval_corpus import corpus_manifest, load_documents
+from rag_hermes.quality_track import (
+    FROZEN_HUMAN_CORPUS,
+    FROZEN_HUMAN_DATASET,
+    QUALITY_CANDIDATE_DATASET,
+    verify_quality_candidate_seed,
+)
 from scripts.annotate_eval_case import build_case
 
-DATASET = ROOT / "data/benchmark/dataset-v2.jsonl"
-CORPUS = DEFAULT_CORPUS
+DATASET = QUALITY_CANDIDATE_DATASET
+CORPUS = FROZEN_HUMAN_CORPUS
+FROZEN_BASE = FROZEN_HUMAN_DATASET
 
 
 def _existing_ids() -> set[str]:
@@ -60,10 +70,11 @@ def _atomic_append_all(cases: list[dict]) -> None:
     additions = "".join(
         json.dumps(case, ensure_ascii=False, sort_keys=True) + "\n" for case in cases
     )
+    boundary = "" if not old or old.endswith("\n") else "\n"
     fd, tmp = tempfile.mkstemp(dir=str(DATASET.parent), suffix=".tmp")
     try:
         with open(fd, "w", encoding="utf-8") as handle:
-            handle.write(old + additions)
+            handle.write(old + boundary + additions)
         Path(tmp).replace(DATASET)
     except BaseException:
         Path(tmp).unlink(missing_ok=True)
@@ -71,6 +82,12 @@ def _atomic_append_all(cases: list[dict]) -> None:
 
 
 def run(batch_path: Path) -> int:
+    try:
+        verify_quality_candidate_seed(DATASET, FROZEN_BASE)
+    except ValueError as exc:
+        print(f"VIOLATION: {exc}", file=sys.stderr)
+        return 1
+
     documents = load_documents(CORPUS)
     manifest = corpus_manifest(CORPUS)
 
