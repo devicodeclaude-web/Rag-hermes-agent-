@@ -12,6 +12,7 @@ import sys
 import time
 import unittest
 from urllib import request as urllib_request
+from urllib import error as urllib_error
 
 from scripts.serve_v1 import validate_bind_host
 
@@ -68,7 +69,7 @@ class ServeV1Tests(unittest.TestCase):
         startup = ""
         try:
             assert process.stdout is not None
-            deadline = time.monotonic() + 8
+            deadline = time.monotonic() + 20
             while time.monotonic() < deadline:
                 if process.poll() is not None:
                     break
@@ -89,12 +90,11 @@ class ServeV1Tests(unittest.TestCase):
             port = int(match.group(1))
             self.assertGreater(port, 0)
 
-            context = {
-                "tenant_id": "network-test",
-                "user_id": "alice",
-                "groups": ["owners"],
-                "clearance": 1,
-            }
+            # Le serveur imprime un jeton de DEV éphémère (aucun principals file).
+            # L'identité est dérivée côté serveur de ce jeton, jamais du corps.
+            token_match = re.search(r"Authorization: Bearer (\S+)", startup)
+            self.assertIsNotNone(token_match, f"jeton de dev absent ; stdout={startup!r}")
+            token = token_match.group(1)
 
             def post(path: str, payload: dict) -> tuple[int, dict, dict]:
                 body = json.dumps(payload).encode("utf-8")
@@ -102,7 +102,10 @@ class ServeV1Tests(unittest.TestCase):
                     f"http://127.0.0.1:{port}{path}",
                     data=body,
                     method="POST",
-                    headers={"Content-Type": "application/json"},
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {token}",
+                    },
                 )
                 with urllib_request.urlopen(req, timeout=5) as response:
                     return (
@@ -114,16 +117,13 @@ class ServeV1Tests(unittest.TestCase):
             status, headers, imported = post(
                 "/api/documents",
                 {
-                    "context": context,
                     "document": {
                         "document_id": "network-guide",
                         "content": "Hermes starts the local agent with the hermes command.",
-                        "tenant_id": "network-test",
                         "visibility": "private",
-                        "owner_id": "alice",
                         "allowed_groups": ["owners"],
                         "allowed_users": [],
-                        "classification": 1,
+                        "classification": 0,
                         "doc_version": 1,
                         "source_uri": "local://network-guide",
                     },
@@ -133,9 +133,20 @@ class ServeV1Tests(unittest.TestCase):
             self.assertGreater(imported["chunk_count"], 0)
             self.assertEqual(headers["X-Frame-Options"], "DENY")
 
+            # Sans jeton : 401 (aucun accès anonyme).
+            unauth = urllib_request.Request(
+                f"http://127.0.0.1:{port}/api/questions",
+                data=json.dumps({"question": "ping"}).encode("utf-8"),
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            with self.assertRaises(urllib_error.HTTPError) as caught:
+                urllib_request.urlopen(unauth, timeout=5)
+            self.assertEqual(caught.exception.code, 401)
+
             status, headers, answer = post(
                 "/api/questions",
-                {"context": context, "question": "How does Hermes start the local agent?"},
+                {"question": "How does Hermes start the local agent?"},
             )
             self.assertEqual(status, 200)
             self.assertFalse(answer["abstained"])

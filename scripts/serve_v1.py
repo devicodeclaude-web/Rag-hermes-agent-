@@ -13,6 +13,10 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from rag_hermes.app_factory import build_service
+from rag_hermes.auth import (
+    generate_dev_authenticator,
+    load_authenticator_from_file,
+)
 from rag_hermes.http_api import make_app
 
 
@@ -21,6 +25,26 @@ def validate_bind_host(value: str) -> str:
     if host not in {"127.0.0.1", "localhost"}:
         raise argparse.ArgumentTypeError("--host must be a loopback address")
     return host
+
+
+def build_authenticator(env):
+    """Résout l'authentificateur depuis l'environnement.
+
+    - RAG_V1_PRINCIPALS_FILE défini : charge le registre de jetons (production
+      locale / palier avant Keycloak). Aucun jeton de dev n'est imprimé.
+    - sinon : génère un jeton de dev éphémère et l'imprime. Le serveur reste
+      fail-closed (un jeton est toujours exigé), jamais d'accès anonyme.
+    """
+    principals_file = env.get("RAG_V1_PRINCIPALS_FILE", "").strip()
+    if principals_file:
+        return load_authenticator_from_file(principals_file)
+    token, authenticator = generate_dev_authenticator()
+    print(
+        "Jeton de DEV (aucun RAG_V1_PRINCIPALS_FILE) — "
+        f"Authorization: Bearer {token}",
+        flush=True,
+    )
+    return authenticator
 
 
 def parse_args() -> argparse.Namespace:
@@ -51,7 +75,10 @@ def main() -> int:
     args = parse_args()
     if not 0 <= args.port <= 65535:
         raise SystemExit("--port doit être compris entre 0 et 65535")
-    app = make_app(build_service(env=os.environ))
+    app = make_app(
+        build_service(env=os.environ),
+        authenticator=build_authenticator(os.environ),
+    )
     with make_server(args.host, args.port, app) as server:
         backend = "Qdrant" if os.environ.get("RAG_QDRANT_URL", "").strip() else "mémoire"
         print(

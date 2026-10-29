@@ -29,16 +29,11 @@ INDEX_HTML = """<!doctype html>
 <main>
   <h1>RAG Hermes</h1>
   <p class="lead">Importez un texte, puis posez une question. Les réponses restent liées aux sources autorisées.</p>
-  <p class="warning">V1 locale de développement : le contexte utilisateur est saisi manuellement et ne remplace pas une authentification.</p>
+  <p class="warning">V1 locale : l'identité (tenant, utilisateur, groupes, niveau d'accès) est dérivée côté serveur du jeton ci-dessous, jamais saisie dans la requête. En production, ce jeton sera délivré par le fournisseur d'identité.</p>
 
-  <section aria-labelledby="context-title">
-    <h2 id="context-title">Contexte d’accès</h2>
-    <div class="grid">
-      <label>Tenant<input id="tenant" value="local"></label>
-      <label>Utilisateur<input id="user" value="admin"></label>
-      <label>Groupes, séparés par des virgules<input id="groups" value="owners"></label>
-      <label>Niveau d’accès<input id="clearance" type="number" min="0" value="1"></label>
-    </div>
+  <section aria-labelledby="token-title">
+    <h2 id="token-title">Jeton d'accès</h2>
+    <label>Jeton porteur (Authorization: Bearer …)<input id="token" type="password" autocomplete="off" placeholder="collez votre jeton"></label>
   </section>
 
   <section aria-labelledby="document-title">
@@ -72,20 +67,23 @@ APP_JS = """\
 'use strict';
 (() => {
   const byId = (id) => document.getElementById(id);
-  const context = () => ({
-    tenant_id: byId('tenant').value.trim(),
-    user_id: byId('user').value.trim(),
-    groups: byId('groups').value.split(',').map(v => v.trim()).filter(Boolean),
-    clearance: Number(byId('clearance').value)
-  });
+  const authHeaders = () => {
+    const token = byId('token').value.trim();
+    const headers = {'Content-Type': 'application/json'};
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    return headers;
+  };
   async function post(path, payload) {
     const response = await fetch(path, {
       method: 'POST',
-      headers: {'Content-Type': 'application/json'},
+      headers: authHeaders(),
       body: JSON.stringify(payload)
     });
     const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || data.error || 'Erreur HTTP');
+    if (!response.ok) {
+      if (response.status === 401) throw new Error('Jeton manquant ou invalide.');
+      throw new Error(data.error || 'Erreur HTTP');
+    }
     return data;
   }
   byId('document-form').addEventListener('submit', async (event) => {
@@ -93,19 +91,16 @@ APP_JS = """\
     const button = event.currentTarget.querySelector('button');
     button.disabled = true;
     byId('document-status').textContent = 'Import en cours…';
-    const access = context();
     try {
+      // tenant_id et owner_id ne sont PAS envoyés : le serveur les dérive du jeton.
       const result = await post('/api/documents', {
-        context: access,
         document: {
           document_id: byId('document-id').value.trim(),
           content: byId('document-content').value,
-          tenant_id: access.tenant_id,
           visibility: 'private',
-          owner_id: access.user_id,
-          allowed_groups: access.groups,
+          allowed_groups: [],
           allowed_users: [],
-          classification: access.clearance,
+          classification: 0,
           doc_version: 1,
           source_uri: byId('source-uri').value.trim()
         }
@@ -124,7 +119,6 @@ APP_JS = """\
     byId('citations').replaceChildren();
     try {
       const result = await post('/api/questions', {
-        context: context(),
         question: byId('question').value
       });
       byId('question-status').textContent = result.abstained ? 'Abstention : preuve insuffisante.' : 'Réponse fondée sur la source ci-dessous.';
@@ -145,4 +139,3 @@ APP_JS = """\
   });
 })();
 """
-
