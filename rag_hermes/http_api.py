@@ -6,6 +6,7 @@ import re
 from typing import Any, Callable, Iterable
 
 from .acl import AuthorizationContext
+from .auth import AuthenticationError
 from .generator import GenerationError
 from .ingestion import Document
 from .service import RagService
@@ -64,27 +65,20 @@ def _string_list(value: Any, field: str) -> tuple[str, ...]:
     return tuple(_string(item, field) for item in value)
 
 
-def _context(raw: Any) -> AuthorizationContext:
-    value = _object(raw, "context")
-    return AuthorizationContext(
-        tenant_id=_string(value["tenant_id"], "context.tenant_id"),
-        user_id=_string(value["user_id"], "context.user_id"),
-        groups=_string_list(value.get("groups", []), "context.groups"),
-        clearance=_integer(value["clearance"], "context.clearance"),
-    )
-
-
-def _document(raw: Any) -> Document:
+def _document(raw: Any, context: AuthorizationContext) -> Document:
     value = _object(raw, "document")
     visibility = _string(value["visibility"], "document.visibility")
     if visibility not in {"public", "private"}:
         raise ValueError("document.visibility must be public or private")
+    # tenant_id et owner_id ne sont JAMAIS pris dans le corps : ils sont fixés
+    # par le principal authentifié. Un client ne peut pas se déclarer d'un autre
+    # tenant ni s'attribuer un document au nom d'un autre utilisateur.
     return Document(
         document_id=_string(value["document_id"], "document.document_id"),
         content=_string(value["content"], "document.content", preserve=True),
-        tenant_id=_string(value["tenant_id"], "document.tenant_id"),
+        tenant_id=context.tenant_id,
         visibility=visibility,
-        owner_id=_string(value["owner_id"], "document.owner_id"),
+        owner_id=context.user_id,
         allowed_groups=_string_list(
             value.get("allowed_groups", []), "document.allowed_groups"
         ),
@@ -151,7 +145,14 @@ def _javascript_response(start_response: Callable[..., Any]) -> Iterable[bytes]:
     return [body]
 
 
-def make_app(service: RagService):
+def make_app(service: RagService, *, authenticator):
+    """Construit l'application WSGI.
+
+    `authenticator` doit exposer `authenticate(environ) -> AuthorizationContext`
+    et lever `AuthenticationError` si aucun jeton valide n'est présenté. Le
+    contexte d'autorisation est TOUJOURS dérivé du jeton, jamais du corps.
+    """
+
     def app(environ: dict[str, Any], start_response: Callable[..., Any]):
         method = str(environ.get("REQUEST_METHOD", "GET")).upper()
         path = str(environ.get("PATH_INFO", "/"))
@@ -191,6 +192,18 @@ def make_app(service: RagService):
                 {"error": "unsupported_media_type"},
             )
 
+        # Identité dérivée côté serveur du jeton porteur. Un échec ici n'expose
+        # jamais la raison précise (évite d'aider un attaquant à deviner).
+        try:
+            context = authenticator.authenticate(environ)
+        except AuthenticationError:
+            return _json_response(
+                start_response,
+                "401 Unauthorized",
+                {"error": "unauthorized"},
+                extra_headers=(("WWW-Authenticate", "Bearer"),),
+            )
+
         try:
             length = int(environ.get("CONTENT_LENGTH") or 0)
             if length > _MAX_BODY_BYTES:
@@ -205,11 +218,10 @@ def make_app(service: RagService):
             payload = json.loads(raw.decode("utf-8"))
             if not isinstance(payload, dict):
                 raise ValueError("JSON body must be an object")
-            context = _context(payload["context"])
 
             if path == "/api/documents":
                 result = service.import_document(
-                    _document(payload["document"]),
+                    _document(payload["document"], context),
                     context=context,
                 )
                 return _json_response(start_response, "201 Created", asdict(result))
@@ -223,17 +235,17 @@ def make_app(service: RagService):
                 "502 Bad Gateway",
                 {"error": "generation_failed"},
             )
-        except PermissionError as exc:
+        except PermissionError:
             return _json_response(
                 start_response,
                 "403 Forbidden",
-                {"error": "forbidden", "detail": str(exc)},
+                {"error": "forbidden"},
             )
-        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
             return _json_response(
                 start_response,
                 "400 Bad Request",
-                {"error": "invalid_request", "detail": str(exc)},
+                {"error": "invalid_request"},
             )
 
     return app

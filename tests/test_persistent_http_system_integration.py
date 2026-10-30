@@ -10,7 +10,12 @@ from rag_hermes.app_factory import build_service
 from rag_hermes.http_api import make_app
 from rag_hermes.qdrant_provision import provision_collection
 from rag_hermes.qdrant_rest import QdrantRestClient
-from tests.test_http_api import request
+from tests.test_http_api import (
+    ALPHA_ALICE_TOKEN,
+    ALPHA_BOB_TOKEN,
+    SHARED_AUTHENTICATOR,
+    request,
+)
 
 
 INDEX_SPEC = Path("qdrant/payload-indexes.json")
@@ -39,19 +44,17 @@ class PersistentHttpSystemIntegrationTests(unittest.TestCase):
             "RAG_QDRANT_URL": self.url,
             "RAG_QDRANT_COLLECTION": self.collection,
         }
-        self.context = {
-            "tenant_id": "alpha",
-            "user_id": "alice",
-            "groups": ["support"],
-            "clearance": 1,
-        }
 
     def tearDown(self) -> None:
         if self.client.collection_exists(self.collection):
             self.client.delete_collection(self.collection)
 
     def _new_app(self):
-        return make_app(build_service(env=self.env, embed=_fixed_vector))
+        # Identité dérivée côté serveur du jeton : Alice et Bob (tenant alpha).
+        return make_app(
+            build_service(env=self.env, embed=_fixed_vector),
+            authenticator=SHARED_AUTHENTICATOR,
+        )
 
     def test_import_survives_service_restart_and_returns_citation(self) -> None:
         first_app = self._new_app()
@@ -60,13 +63,10 @@ class PersistentHttpSystemIntegrationTests(unittest.TestCase):
             "POST",
             "/api/documents",
             {
-                "context": self.context,
                 "document": {
                     "document_id": "persistent-guide",
                     "content": "Pour installer Hermes, utilisez pipx install hermes-agent.",
-                    "tenant_id": "alpha",
                     "visibility": "private",
-                    "owner_id": "alice",
                     "allowed_groups": ["support"],
                     "allowed_users": [],
                     "classification": 1,
@@ -74,6 +74,7 @@ class PersistentHttpSystemIntegrationTests(unittest.TestCase):
                     "source_uri": "file:///docs/persistent-guide.md",
                 },
             },
+            token=ALPHA_ALICE_TOKEN,
         )
         self.assertEqual(import_status, "201 Created")
         self.assertEqual(imported["document_id"], "persistent-guide")
@@ -83,10 +84,8 @@ class PersistentHttpSystemIntegrationTests(unittest.TestCase):
             restarted_app,
             "POST",
             "/api/questions",
-            {
-                "context": self.context,
-                "question": "Comment installer Hermes ?",
-            },
+            {"question": "Comment installer Hermes ?"},
+            token=ALPHA_ALICE_TOKEN,
         )
 
         self.assertEqual(answer_status, "200 OK")
@@ -104,9 +103,7 @@ class PersistentHttpSystemIntegrationTests(unittest.TestCase):
         original_document = {
             "document_id": "owned-guide",
             "content": "Contenu original appartenant à Alice.",
-            "tenant_id": "alpha",
             "visibility": "private",
-            "owner_id": "alice",
             "allowed_groups": ["support"],
             "allowed_users": [],
             "classification": 1,
@@ -117,21 +114,17 @@ class PersistentHttpSystemIntegrationTests(unittest.TestCase):
             first_app,
             "POST",
             "/api/documents",
-            {"context": self.context, "document": original_document},
+            {"document": original_document},
+            token=ALPHA_ALICE_TOKEN,
         )
         self.assertEqual(status, "201 Created")
 
+        # Bob (jeton distinct, tenant alpha) ne peut pas reprendre un document
+        # dont Alice est propriétaire : l'owner vient du jeton, pas du corps.
         restarted_app = self._new_app()
-        bob_context = {
-            "tenant_id": "alpha",
-            "user_id": "bob",
-            "groups": ["support"],
-            "clearance": 1,
-        }
         hijacked_document = {
             **original_document,
             "content": "Contenu remplacé par Bob.",
-            "owner_id": "bob",
             "doc_version": 2,
             "source_uri": "file:///docs/hijacked.md",
         }
@@ -139,7 +132,8 @@ class PersistentHttpSystemIntegrationTests(unittest.TestCase):
             restarted_app,
             "POST",
             "/api/documents",
-            {"context": bob_context, "document": hijacked_document},
+            {"document": hijacked_document},
+            token=ALPHA_BOB_TOKEN,
         )
 
         self.assertEqual(hijack_status, "403 Forbidden")
@@ -149,7 +143,8 @@ class PersistentHttpSystemIntegrationTests(unittest.TestCase):
             restarted_app,
             "POST",
             "/api/questions",
-            {"context": self.context, "question": "Contenu original"},
+            {"question": "Contenu original"},
+            token=ALPHA_ALICE_TOKEN,
         )
         self.assertEqual(answer_status, "200 OK")
         self.assertEqual(answered["citations"][0]["source_uri"], "file:///docs/original.md")
