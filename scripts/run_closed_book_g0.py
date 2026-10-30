@@ -84,6 +84,7 @@ def build_g0_report(
     manifest_sha256: str,
     code_revision: str,
     dataset_attestation: dict[str, str],
+    protocol_attestation: dict[str, str] | None = None,
     generator_identity: dict[str, object],
     report: ClosedBookReport,
     generation_seconds: float,
@@ -106,6 +107,9 @@ def build_g0_report(
             "dataset_path": dataset_attestation["path"],
             "dataset_sha256": dataset_attestation["sha256"],
             "evaluation_protocol": protocol.get("evaluation_protocol"),
+            "protocol_sha256": (
+                protocol_attestation["sha256"] if protocol_attestation else None
+            ),
             "evaluation_protocol_status": protocol.get("evaluation_protocol_status"),
             "acceptance_criteria": protocol.get("acceptance_criteria"),
         },
@@ -186,6 +190,15 @@ def main() -> None:
     )
     cases = load_cases(dataset_payload)
 
+    protocol_block = manifest.get("protocol")
+    protocol_attestation: dict[str, str] | None = None
+    if isinstance(protocol_block, dict):
+        evaluation_protocol_rel = protocol_block.get("evaluation_protocol")
+        if isinstance(evaluation_protocol_rel, str) and evaluation_protocol_rel:
+            _protocol_payload, protocol_attestation = read_repository_snapshot(
+                ROOT, ROOT / evaluation_protocol_rel
+            )
+
     base_url = os.environ.get("RAG_GENERATOR_BASE_URL")
     model = os.environ.get("RAG_GENERATOR_MODEL")
     if not base_url or not model:
@@ -216,6 +229,7 @@ def main() -> None:
         manifest_sha256=manifest_attestation["sha256"],
         code_revision=code_revision,
         dataset_attestation=dataset_attestation,
+        protocol_attestation=protocol_attestation,
         generator_identity=generator_identity,
         report=report,
         generation_seconds=generation_seconds,
@@ -225,6 +239,9 @@ def main() -> None:
         json.dumps(
             {
                 "staging_output": str(OUTPUT),
+                "protocol_sha256": (
+                    protocol_attestation["sha256"] if protocol_attestation else None
+                ),
                 "total": report.total,
                 "required_abstentions": report.required_abstentions,
                 "predicted_abstentions": report.predicted_abstentions,

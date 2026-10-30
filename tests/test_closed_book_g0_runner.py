@@ -31,6 +31,7 @@ def _report_for(cases, generator):
         manifest_sha256="a" * 64,
         code_revision=_REVISION,
         dataset_attestation={"path": "data/benchmark/dataset-v2-human-154.jsonl", "sha256": "b" * 64},
+        protocol_attestation={"path": "docs/evaluation-protocol-v2.md", "sha256": "c" * 64},
         generator_identity={"repo_id": "Qwen/Qwen2.5-7B-Instruct", "revision": "a09a3545"},
         report=report,
         generation_seconds=1.0,
@@ -101,6 +102,8 @@ class ReportTests(unittest.TestCase):
             report["protocol"]["evaluation_protocol_status"],
             "DRAFT_not_frozen_run_is_not_pre_registered",
         )
+        # protocol bytes are attested into the receipt (raw-bytes sha256)
+        self.assertEqual(report["protocol"]["protocol_sha256"], "c" * 64)
         self.assertTrue(report["limitations"])
         # fully JSON serializable
         json.dumps(report)
@@ -131,6 +134,22 @@ class ReportTests(unittest.TestCase):
 class ManifestContractTests(unittest.TestCase):
     def test_required_decoding_matches_closed_book_generator(self):
         self.assertEqual(g0._REQUIRED_DECODING, {"temperature": 0, "max_tokens": 512})
+
+    def test_protocol_sha256_is_none_without_attestation(self):
+        report = g0.build_g0_report(
+            manifest={"job_id": "g0-test", "protocol": {}},
+            manifest_path="m.json",
+            manifest_sha256="a" * 64,
+            code_revision=_REVISION,
+            dataset_attestation={"path": "d.jsonl", "sha256": "b" * 64},
+            generator_identity={},
+            report=run_closed_book_evaluation(
+                [{"case_id": "a1", "question": "q?", "should_abstain": False}],
+                lambda q: "ok",
+            ),
+            generation_seconds=1.0,
+        )
+        self.assertIsNone(report["protocol"]["protocol_sha256"])
 
     def test_manifest_declares_matching_decoding_and_pinned_revision(self):
         manifest = json.loads(

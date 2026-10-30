@@ -170,7 +170,7 @@ class DatasetStatusDocumentationTests(unittest.TestCase):
             encoding="utf-8"
         )
         annex = protocol.split(
-            "## 11. État réel du jeu courant et provenance des questions (annexe)",
+            "## 12. État réel du jeu courant et provenance des questions (annexe)",
             maxsplit=1,
         )[1]
 
