@@ -440,7 +440,7 @@ synthétique ne devient jamais une preuve de qualité humaine.
 ```text
 Markdown/MDX officiel + fixtures privées/synthétiques
   -> documents versionnés
-  -> chunks <= 420 mots (approximation provisoire)
+  -> chunks au tokenizer exact (passage 384 / overlap 64 tokens)
   -> payload ACL complet
   -> BGE-M3 dense+sparse (prochaine étape GPU)
   -> Qdrant avec filtre ACL pré-scoring
@@ -450,7 +450,7 @@ Markdown/MDX officiel + fixtures privées/synthétiques
   -> harnais d’évaluation
 ```
 
-La limite actuelle de 420 est une approximation par mots, pas une garantie tokenizer. Avant le reranking, le code devra mesurer `requête + passage + tokens spéciaux` avec le tokenizer exact et refuser toute troncature silencieuse.
+Le découpage est désormais piloté par le tokenizer exact (`chunk_document_tokens` : question 96 / passage 384 / overlap 64 / réserve 32 tokens), et non plus une approximation par mots. Avant le reranking, le code mesure `requête + passage + tokens spéciaux` avec le tokenizer réel et refuse toute paire au-dessus de 512 tokens (rejet, jamais de troncature silencieuse — voir `rag_hermes/reranker_budget.py`).
 
 ## Inférence : deux livraisons distinctes
 
