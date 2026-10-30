@@ -14,6 +14,13 @@ from dataclasses import asdict
 
 os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
 
+# Certains templates GPU (dont RunPod PyTorch) exportent HF_HUB_ENABLE_HF_TRANSFER=1,
+# ce qui exige le paquet non epingle `hf_transfer` et fait echouer le telechargement
+# des modeles dans notre environnement hash-verifie. On force le telechargement
+# standard de huggingface_hub : neutre pour la mesure, seul le debit change.
+# Doit etre fait AVANT l'import de huggingface_hub (la constante est lue a l'import).
+os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "0"
+
 import numpy as np
 import torch
 from huggingface_hub import snapshot_download
