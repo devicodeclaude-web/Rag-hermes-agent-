@@ -1,0 +1,27 @@
+{
+  "job_id": "g0-closed-book-human-154-infra-v1",
+  "classification": "infrastructure_smoke_only",
+  "note": "Baseline G0 (modele seul, SANS retrieval) sur la piste humaine immuable human-154. Cable l'axe d'abstention honnete; ce n'est PAS un resultat de qualite pre-inscrit (docs/evaluation-protocol-v2.md est un BROUILLON). La correction des reponses concretes n'est pas scoree hors-ligne et attend la revue humaine aveugle >=20%.",
+  "generator": {
+    "repo_id": "Qwen/Qwen2.5-7B-Instruct",
+    "revision": "a09a35458c702b33eeacc393d103063234e8bc28",
+    "engine": "vllm",
+    "quantization": "none",
+    "served_model_name": "qwen2.5-7b-instruct",
+    "decoding": {
+      "temperature": 0,
+      "max_tokens": 512
+    }
+  },
+  "corpus": {
+    "questions": "data/benchmark/dataset-v2-human-154.jsonl",
+    "question_format": "evaluation_v2",
+    "track_note": "154 cas humains (122 answerable 'simple' + 32 'no_answer' a abstention requise)."
+  },
+  "protocol": {
+    "evaluation_protocol": "docs/evaluation-protocol-v2.md",
+    "evaluation_protocol_status": "DRAFT_not_frozen_run_is_not_pre_registered",
+    "acceptance_criteria": "docs/acceptance-criteria.md",
+    "configuration": "G0"
+  }
+}
