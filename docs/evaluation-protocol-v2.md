@@ -248,7 +248,82 @@ La preuve conserve les commandes exactes, codes de sortie, versions, sorties
 brutes et hashes. Une règle écrite ou un test lancé depuis l'environnement de
 construction Hermes ne remplace pas cette exécution indépendante.
 
-## 11. État réel du jeu courant et provenance des questions (annexe)
+## 11. Procédure de gel du protocole
+
+Le présent document reste un BROUILLON tant que cette procédure n'a pas été
+exécutée par un commit dédié. Le gel transforme la v2 en protocole pré-inscrit :
+à partir de ce point, son contenu est immuable et tout run peut être rattaché,
+ou non, à la version gelée par simple comparaison de hash.
+
+### 11.1 Préconditions au gel
+
+Le gel est interdit tant que l'une des conditions suivantes n'est pas satisfaite
+et consignée :
+
+1. Corpus privé de qualité défini et épinglé par le hash de contenu, au-delà des
+   quatre fixtures synthétiques actuelles (§2).
+2. Schéma cible en vigueur pour la piste évaluée : `track`, `language`,
+   `question_provenance` et `relevance_spans` présents et validés (§3 ; l'écart
+   avec le schéma actif est décrit en §12).
+3. Plancher de références atteint : au moins 300 cas de référence validés en
+   revue humaine indépendante (déficit actuel de 2, voir §12.2).
+4. Seuils de la section 6 approuvés nominativement par un relecteur humain, avec
+   date ; chaque valeur est figée et aucun seuil « proposé » ne subsiste.
+5. Pour tout claim de réponse finale ou de citations (G1), pipeline de production
+   émettant les statuts terminaux exclusifs `answered` / `abstained` /
+   `acl_error` / `backend_error` (§6, §8). Un gel restreint au seul axe
+   d'abstention G0 peut précéder cette condition, à la stricte réserve que le
+   statut gelé déclare explicitement sa portée réduite.
+
+### 11.2 Rituel de gel
+
+1. Figer le texte : aucune édition de contenu après le gel.
+2. Basculer la ligne de statut en tête du document de « BROUILLON PRÉ-RUN » vers
+   « GELÉ », en renvoyant au commit de gel et au `protocol_sha256` publié hors
+   document. Le hash n'est jamais écrit dans le fichier qu'il scelle, pour
+   éviter toute référence circulaire ; le document ne porte que la mention
+   « GELÉ » et un renvoi.
+3. Calculer `protocol_sha256 = sha256(octets bruts de
+   docs/evaluation-protocol-v2.md)`, selon la même méthode
+   `hashlib.sha256(path.read_bytes()).hexdigest()` que `scripts/run_acl_matrix.py`
+   (précédent : `docs/ablation-protocol.md` épinglé sous `38be3da2…`). Le hash
+   porte sur le fichier dans son état final gelé.
+4. Enregistrer la valeur hors document, dans le manifest de run
+   (`protocol.protocol_sha256`), et faire passer `evaluation_protocol_status` de
+   `DRAFT_not_frozen_run_is_not_pre_registered` à `FROZEN_pre_registered_v2`.
+5. Émettre `protocol_sha256` dans chaque reçu d'exécution
+   (`report.protocol.protocol_sha256`) — champ aujourd'hui absent du bloc
+   `protocol` du reçu G0 et à ajouter au harnais avant le gel.
+6. Committer le gel seul : le commit dédié ne contient que le passage au statut
+   GELÉ et l'enregistrement du hash ; aucune autre modification ne l'accompagne.
+
+### 11.3 Immutabilité et amendement
+
+Un protocole gelé ne se modifie jamais. Toute évolution crée
+`docs/evaluation-protocol-v3.md`, gelé à son tour sous son propre hash. Un run
+demeure rattaché au `protocol_sha256` sous lequel il a été lancé : un résultat ne
+« migre » pas d'une version à l'autre.
+
+### 11.4 Validité de pré-inscription
+
+Un run compte comme pré-inscrit sous la v2 si et seulement si :
+
+- le `protocol_sha256` de son manifest est strictement égal au hash gelé ; et
+- le commit de gel précède le `started_utc` du run — un protocole ne peut pas
+  être pré-inscrit après coup.
+
+Tout run dont le hash diverge, ou lancé avant le commit de gel, conserve le
+statut non pré-inscrit, quelle que soit la qualité de ses métriques.
+
+### 11.5 Vérification
+
+Une porte dédiée recalcule `sha256(octets bruts du document)` et refuse tout
+manifest ou reçu dont le `protocol_sha256` diffère de la version gelée, selon la
+même logique d'épinglage que `validate_artifact_lock` et que l'épinglage de
+manifest déjà en vigueur (`RAG_G0_MANIFEST_SHA256`). La divergence est une erreur
+bloquante, jamais un simple avertissement.
+
+## 12. État réel du jeu courant et provenance des questions (annexe)
 
 Cette annexe décrit le **schéma actif** de `data/benchmark/dataset-v2.jsonl`
 (simple : `case_id`, `category`, `question`, `relevant_document_ids`,
@@ -257,7 +332,7 @@ du schéma cible des sections 3–9 (`track`, `language`, `relevance_spans`,
 `question_provenance`…) non encore en vigueur. Portes actives : `check_dataset_qa.py`
 et `check_title_leak.py`.
 
-### 11.1 Effectifs actifs
+### 12.1 Effectifs actifs
 
 Le fichier contient **298 cas actifs** et 298 `case_id` uniques. Deux cas rejetés
 par la revue (`v3na-115`, `v3cb-091`) sont archivés séparément et exclus. La composition
@@ -267,7 +342,7 @@ observée, qui décrit le dataset mais ne constitue pas un quota de qualité, es
 et l'absence de fuite de titre ; il ne transforme pas ce schéma QA en piste
 éligible à une conclusion de qualité.
 
-### 11.2 Provenance et état de revue
+### 12.2 Provenance et état de revue
 
 Répartition actuelle du champ `authorship` :
 
