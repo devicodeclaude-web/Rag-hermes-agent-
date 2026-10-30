@@ -1,0 +1,116 @@
+{
+  "audited_commit": "cc041e7a0eff651264f9ed52f8b2ec15daa4a517",
+  "authority": "CanonicalAclAuthority in-memory registry built from Document ACL metadata; no PostgreSQL authority exists",
+  "categories": {
+    "acl_missing_or_null": {
+      "failures": [],
+      "observed_leaks": 0,
+      "production_candidates_total": 0,
+      "qdrant_candidates_total": 0,
+      "rule_of_three_upper_95pct": 0.03,
+      "seed": 20260923,
+      "status": "FERMÉ",
+      "trials": 100
+    },
+    "clearance_insufficient": {
+      "failures": [],
+      "observed_leaks": 0,
+      "production_candidates_total": 0,
+      "qdrant_candidates_total": 0,
+      "rule_of_three_upper_95pct": 0.03,
+      "seed": 20260923,
+      "status": "FERMÉ",
+      "trials": 100
+    },
+    "clearance_sufficient": {
+      "failures": [],
+      "observed_leaks": 0,
+      "production_candidates_total": 100,
+      "qdrant_candidates_total": 100,
+      "rule_of_three_upper_95pct": 0.03,
+      "seed": 20260923,
+      "status": "FERMÉ",
+      "trials": 100
+    },
+    "cross_tenant": {
+      "failures": [],
+      "observed_leaks": 0,
+      "production_candidates_total": 0,
+      "qdrant_candidates_total": 0,
+      "rule_of_three_upper_95pct": 0.03,
+      "seed": 20260923,
+      "status": "FERMÉ",
+      "trials": 100
+    },
+    "groups": {
+      "failures": [],
+      "observed_leaks": 0,
+      "production_candidates_total": 50,
+      "qdrant_candidates_total": 50,
+      "rule_of_three_upper_95pct": 0.03,
+      "seed": 20260923,
+      "status": "FERMÉ",
+      "trials": 100
+    },
+    "named_users": {
+      "failures": [],
+      "observed_leaks": 0,
+      "production_candidates_total": 50,
+      "qdrant_candidates_total": 50,
+      "rule_of_three_upper_95pct": 0.03,
+      "seed": 20260923,
+      "status": "FERMÉ",
+      "trials": 100
+    },
+    "public_visibility": {
+      "failures": [],
+      "observed_leaks": 0,
+      "production_candidates_total": 10000,
+      "qdrant_candidates_total": 10000,
+      "rule_of_three_upper_95pct": 0.03,
+      "seed": 20260923,
+      "status": "FERMÉ",
+      "trials": 100
+    },
+    "revoked_right": {
+      "failures": [],
+      "observed_leaks": 0,
+      "production_candidates_total": 0,
+      "qdrant_candidates_total": 100,
+      "rule_of_three_upper_95pct": 0.03,
+      "seed": 20260923,
+      "status": "FERMÉ",
+      "trials": 100
+    },
+    "stale_acl_version": {
+      "failures": [],
+      "observed_leaks": 0,
+      "production_candidates_total": 0,
+      "qdrant_candidates_total": 100,
+      "rule_of_three_upper_95pct": 0.03,
+      "seed": 20260923,
+      "status": "FERMÉ",
+      "trials": 100
+    }
+  },
+  "classification": "real_qdrant_production_query_path_component_security_experiment",
+  "dataset_sha256": "2912de8ee4c20030440e89c6d9d140568ab105547dfe9676b5aca1b1aa58439d",
+  "date_utc": "2026-10-08T14:08:04.657730+00:00",
+  "failures": [],
+  "limitations": [
+    "This exercises local Qdrant and the production query plus canonical postfilter path, not a deployed service.",
+    "Zero observed leaks is not proof of zero risk; each category reports the rule-of-three upper bound.",
+    "The canonical authority is an in-memory registry, not a persistent external authority.",
+    "No GPU, CUDA runtime, reranker model load, or A40 pod is exercised."
+  ],
+  "observed_leaks": 0,
+  "protocol_sha256": "38be3da2c213d99905c912905088b5b2ec4e995c64673715fe11e0d904001a81",
+  "qdrant": {
+    "commit": "74f3e85b9473c62560006c043e13737ce6b48412",
+    "title": "qdrant - vector search engine",
+    "version": "1.19.0"
+  },
+  "seed": 20260923,
+  "status": "FERMÉ",
+  "trials_per_category": 100
+}

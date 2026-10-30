@@ -1,0 +1,52 @@
+{
+  "collection": "hermes_acl_path_20261008",
+  "documents": 465,
+  "chunks": 2945,
+  "vector_kind": "deterministic-test-only-not-an-embedding",
+  "leak_count": 0,
+  "probes": [
+    {
+      "tenant_id": "alpha",
+      "clearance": 2,
+      "private_access_expected": true,
+      "private_access_observed": true,
+      "returned_tenants": [
+        "alpha",
+        "public"
+      ],
+      "result_count": 20
+    },
+    {
+      "tenant_id": "beta",
+      "clearance": 2,
+      "private_access_expected": true,
+      "private_access_observed": true,
+      "returned_tenants": [
+        "beta",
+        "public"
+      ],
+      "result_count": 20
+    },
+    {
+      "tenant_id": "gamma",
+      "clearance": 2,
+      "private_access_expected": true,
+      "private_access_observed": true,
+      "returned_tenants": [
+        "gamma",
+        "public"
+      ],
+      "result_count": 20
+    },
+    {
+      "tenant_id": "alpha",
+      "clearance": 0,
+      "private_access_expected": false,
+      "private_access_observed": false,
+      "returned_tenants": [
+        "public"
+      ],
+      "result_count": 20
+    }
+  ]
+}
