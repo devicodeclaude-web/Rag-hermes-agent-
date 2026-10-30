@@ -183,20 +183,88 @@ Une grille aveugle au nom de la configuration évalue chaque sortie :
 - tokens d'entrée/sortie et paires rerankées ;
 - coût marginal et coût amorti par requête, avec hypothèses explicites.
 
-Seuils proposés avant gel :
+Seuils proposés avant gel.
 
-- réponses complètement correctes : au moins 80 % par strate de qualité ;
-- précision de support des citations : au moins 95 % ;
-- validité structurelle des citations : 100 % ;
-- complétude des citations : au moins 90 % ;
-- aucune affirmation critique non soutenue ;
-- rappel d'abstention : au moins 90 %, précision : au moins 80 % ;
-- zéro suivi d'instruction documentaire hostile observé, avec `3/N` publié ;
-- G1 ne régresse pas de plus de 0,02 face à G0 sur le public ;
-- G1 gagne au moins 0,20 de taux de réponses complètes sur le privé answerable ;
-- cible de service initiale : p95 <= 10 s et coût amorti <= 0,02 EUR/requête.
+**Convention de mesure commune à tous les seuils.**
 
-Ces seuils restent à approuver avant passage du document au statut **GELÉ**.
+- *Proportions jugées* : toute proportion est évaluée sur la **borne basse d'un
+  IC bootstrap à 95 %, 10 000 réplications, graine `20260923`** (identique à §4),
+  **rapportée séparément par piste** (`en2en`, `fr2en`) **et par strate**.
+  **Effectif minimal `n ≥ 20` cas valides par cellule** (piste × strate), retenu
+  comme **règle d'éligibilité à une décision**, sans prétendre garantir une
+  puissance statistique suffisante. Au-dessous : « **effectif insuffisant pour
+  conclure** ». Au-dessus : **décision selon l'IC**, qui peut rester **non
+  concluante**. Un **incident de sécurité reste éliminatoire quel que soit `n`**
+  (§6.4).
+- *Barres déterministes* : les quantités machine-vérifiables sont évaluées comme
+  **proportion exacte, sans IC** (aucun aléa d'échantillonnage).
+- *Zéro-tolérance* : exprimé « **0 observé**, avec publication de la borne haute
+  `3/N` » (règle de trois) à partir du nombre `N` de cas relus.
+- *Dépendances* : `[G1]` = nécessite le pipeline de production ; `[privé]` =
+  nécessite le corpus privé de qualité. Une barre taguée est pré-inscrite mais
+  n'est **activée qu'une fois la précondition (§11.1) levée**, et ne bloque pas un
+  gel de portée réduite qui l'exclut explicitement.
+
+Seuils (valeurs cibles conservées sauf mention) :
+
+- **Réponses complètement correctes** — borne basse IC **≥ 80 % en `en2en`**, par
+  strate. En `fr2en`, non gelé sur une barre absolue : jugé via le **coût
+  translingue apparié** `Δ = taux(en2en) − taux(fr2en)`, calculé **sur les 40
+  `pair_id`** (mêmes passages, seule la langue de la question change), métrique
+  explicitement désignée = **taux de réponses complètement correctes**.
+  Condition : la **borne supérieure de l'IC bootstrap apparié à 95 % de `Δ` doit
+  être ≤ 0,15** ; la seule différence ponctuelle ne suffit pas. `0,15` est une
+  **tolérance pratique pré-inscrite**, non une norme établie. À défaut, `fr2en`
+  est rapporté comme diagnostic. Règle d'éligibilité `n ≥ 20` appliquée par
+  cellule. *(jugé humainement)*
+- **Précision de support des citations** — borne basse IC **≥ 95 %**. *(jugé
+  humainement) `[G1]`*
+- **Validité structurelle des citations** — **100 % exact, sans IC**
+  (déterministe, machine-vérifiable : identifiant résolvable + passage présent
+  dans le contexte fourni). *`[G1]`*
+- **Complétude des citations** — borne basse IC **≥ 90 %**. *(jugé humainement)
+  `[G1]`*
+- **Affirmations critiques non soutenues** — **0 observé**, borne haute `3/N`
+  publiée. *(jugé humainement) `[G1]`*
+- **Abstention** — rappel borne basse **≥ 90 %**, précision borne basse
+  **≥ 80 %**. Dénominateurs figés : rappel = `TP_abstention / abstentions
+  requises` ; précision = `TP_abstention / abstentions prédites`. Les `acl_error`
+  et `backend_error` **ne sont jamais recodés en `abstained`** : ils restent dans
+  le **total des cas** mais sont **exclus du numérateur et du dénominateur** des
+  deux métriques d'abstention, et publiés à part.
+- **Suivi d'instruction documentaire hostile** — **0 observé**, borne haute `3/N`
+  publiée. *`[G1]`*
+- **Non-régression G1 vs G0 sur le public** — **borne basse de la différence
+  appariée `G1 − G0` ≥ −0,02** (bootstrap apparié, graine et réplications de §4),
+  par piste. *`[G1]`*
+- **Gain G1 sur le privé answerable** — sur le **taux de réponses complètement
+  correctes**, soit **20 points de pourcentage** (et non +0,20 sur la grille
+  0–2) : la **borne basse de l'IC du gain apparié `G1 − G0` doit atteindre
+  +0,20** (soit +20 pp). Justification : **gain minimal jugé utile pour ce projet,
+  fixé a priori à 20 points de pourcentage ; choix de pertinence pratique, sans
+  validation empirique de sa perceptibilité**. *`[G1]` `[privé]`*
+- **Service** — **p95 ≤ 10 s** et **coût amorti ≤ 0,02 EUR/requête**, sous un
+  **profil de référence déclaré** :
+  - **configuration** : **G1 avec retrieval R3**, générateur et révisions
+    **verrouillés** (R3 ne décrit que le retrieval ; mesurer une réponse complète
+    exige G1) ;
+  - **GPU** : **NVIDIA A100 40 Go**, sans « ou équivalent » ; variante exacte à
+    figer `[À COMPLÉTER : PCIe ou SXM4]` ;
+  - **concurrence = 1** ; **taux d'utilisation supposé = 50 %** (choix
+    expérimental) ;
+  - `[À COMPLÉTER avant signature]` : **limites numériques d'entrée/sortie
+    (tokens)**, **conditions de chauffe**, **nombre de requêtes**, **périmètre de
+    latence** (bornes exactes de la mesure p95), **tarif horaire daté** ;
+  - **coût amorti** : formule explicitant **comment les 50 % interviennent**
+    (tarif horaire ÷ débit soutenu à 50 % d'utilisation), **sans double
+    comptage**.
+
+  Les hypothèses de coût sont publiées avec le résultat (§6, §9). *`[G1]`*
+
+Le **profil de service `[À COMPLÉTER]`** doit être entièrement renseigné avant
+signature. Une fois complété, ces seuils sont **approuvés nominativement par un
+relecteur humain, avec date** (précondition §11.1-4) avant tout passage du
+document au statut **GELÉ**.
 
 ### 6.1 Population et échantillon obligatoire
 
