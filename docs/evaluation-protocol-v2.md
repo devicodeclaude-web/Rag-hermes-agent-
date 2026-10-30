@@ -243,28 +243,60 @@ Seuils (valeurs cibles conservées sauf mention) :
   +0,20** (soit +20 pp). Justification : **gain minimal jugé utile pour ce projet,
   fixé a priori à 20 points de pourcentage ; choix de pertinence pratique, sans
   validation empirique de sa perceptibilité**. *`[G1]` `[privé]`*
-- **Service** — **p95 ≤ 10 s** et **coût amorti ≤ 0,02 EUR/requête**, sous un
-  **profil de référence déclaré** :
-  - **configuration** : **G1 avec retrieval R3**, générateur et révisions
-    **verrouillés** (R3 ne décrit que le retrieval ; mesurer une réponse complète
-    exige G1) ;
-  - **GPU** : **NVIDIA A100 40 Go**, sans « ou équivalent » ; variante exacte à
-    figer `[À COMPLÉTER : PCIe ou SXM4]` ;
-  - **concurrence = 1** ; **taux d'utilisation supposé = 50 %** (choix
-    expérimental) ;
-  - `[À COMPLÉTER avant signature]` : **limites numériques d'entrée/sortie
-    (tokens)**, **conditions de chauffe**, **nombre de requêtes**, **périmètre de
-    latence** (bornes exactes de la mesure p95), **tarif horaire daté** ;
-  - **coût amorti** : formule explicitant **comment les 50 % interviennent**
-    (tarif horaire ÷ débit soutenu à 50 % d'utilisation), **sans double
-    comptage**.
+- **Service** — **p95 ≤ 10 s** (jugé sur la **borne supérieure de l'IC à 95 % du
+  p95**) et **coût amorti ≤ 0,02 EUR/requête**, sous le **profil de référence
+  figé** suivant :
+  - **Matériel** : **1 × NVIDIA A100 SXM4 40 Go, RunPod Community Cloud**, sans
+    équivalence (chez RunPod le 40 Go est la variante SXM4 ; le PCIe y est 80 Go).
+  - **Pipeline** : **G1 avec retrieval R3, top-8 passages après reranking** ;
+    générateur, backend, prompt système et décodage **verrouillés**. Modèle
+    `Qwen/Qwen2.5-7B-Instruct`, révision
+    `a09a35458c702b33eeacc393d103063234e8bc28` (reprise du reçu G0).
+  - **Tokens** : entrée totale **≤ 4096** (comptée avec le tokenizer du
+    générateur), sortie **≤ 512** (aligné `max_tokens`), capacité totale
+    configurée **≥ 4608**.
+  - **Chauffe** : **20 requêtes exclues** après chargement et initialisation du
+    backend ; capture des graphes CUDA seulement si le backend l'utilise.
+  - **Mesure** : **154 cas × 4 passes = 616 tentatives**, **concurrence = 1**,
+    sans temps mort volontaire. L'ordre de chaque passe est randomisé avec des
+    **graines consignées** ; le **p95 par passe** est aussi rapporté.
+  - **Périmètre de latence** : bout-en-bout côté service, de la réception de la
+    requête au dernier token, **TTFT inclus** dans le p95 et **rapporté à part**
+    (diagnostic retrieval vs décodage) ; incluant retrieval R3 + filtrage ACL +
+    génération ; hors réseau client↔service.
+  - **IC du p95** : rééchantillonnage **par `case_id` en gardant les 4
+    répétitions ensemble** (bootstrap par bloc) — les répétitions **ne créent pas**
+    de références indépendantes ; le plancher `n ≥ 20` porte sur les **cas
+    distincts** par cellule, pas sur les tentatives.
+  - **Erreurs** : enregistrées **sans remplacement silencieux** ; latences et
+    effectifs **publiés séparément**, pour qu'un échec rapide n'améliore pas
+    artificiellement le p95.
+  - **Utilisation économique** : **50 %**, hypothèse **appliquée une seule fois**.
+  - **Tarif** : tarif horaire **réellement facturé** par RunPod à la **date du
+    run** (capture/facture), couvrant les ressources nécessaires au service, avec
+    **conversion USD→EUR datée**. L'indicatif ≈ 1,00 $/h (catalogue 2026-10) ne
+    sert qu'à la plausibilité et **doit être remplacé par le tarif réel daté**,
+    sinon le coût n'est pas opposable.
+  - **Coût** : soit `D` le **débit soutenu** (requêtes/s en charge continue,
+    conc = 1, sans temps mort). **Coût de capacité à pleine utilisation** par
+    requête = `tarif_horaire / (3600 × D)` — le pod étant facturé même sans
+    requête, ce **n'est pas un « coût marginal »**. **Coût amorti** par requête =
+    `coût_capacité / taux_utilisation = tarif_horaire / (3600 × D × 0,50)` ; le
+    50 % n'intervient **qu'une seule fois**, au diviseur amorti, et le temps par
+    requête est mesuré en back-to-back (hors inactivité) → **pas de double
+    comptage**. Le seuil **0,02 EUR/req porte sur ce coût amorti moyen**.
 
-  Les hypothèses de coût sont publiées avec le résultat (§6, §9). *`[G1]`*
+  Les estimations de débit et de génération restent des **hypothèses de
+  plausibilité** (à 512 tokens de sortie et ~50-80 tok/s sur A100, la génération
+  seule pèse 6-10 s, et le retrieval s'ajoute avant le premier token :
+  `p95 ≤ 10 s` est donc **serré**). Le profil est **approuvé** ; l'atteinte des
+  seuils sera **décidée sur les mesures**. Les hypothèses de coût sont publiées
+  avec le résultat (§6, §9). *`[G1]`*
 
-Le **profil de service `[À COMPLÉTER]`** doit être entièrement renseigné avant
-signature. Une fois complété, ces seuils sont **approuvés nominativement par un
-relecteur humain, avec date** (précondition §11.1-4) avant tout passage du
-document au statut **GELÉ**.
+Le profil de service est désormais **complet**. Avant tout gel, il ne reste qu'à
+**apposer nom + date** du relecteur (précondition §11.1-4) ; ces seuils sont
+alors **approuvés nominativement** avant tout passage du document au statut
+**GELÉ**.
 
 ### 6.1 Population et échantillon obligatoire
 
