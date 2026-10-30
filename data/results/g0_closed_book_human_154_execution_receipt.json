@@ -1,0 +1,111 @@
+{
+  "command": [
+    "/Rag-hermes-agent-/.venv-vllm/bin/python",
+    "/Rag-hermes-agent-/scripts/run_closed_book_g0.py"
+  ],
+  "cwd": "/Rag-hermes-agent-",
+  "environment": {
+    "PYTHONHASHSEED": "1542026",
+    "PYTHONPATH": "/Rag-hermes-agent-",
+    "RAG_CODE_REVISION": "315813958678100c251bcba2a28df021bf7c7a99",
+    "RAG_EXECUTION_RECEIPT": "/Rag-hermes-agent-/data/results/g0_closed_book_human_154_execution_receipt.json",
+    "RAG_G0_MANIFEST": "/Rag-hermes-agent-/manifests/gpu/g0-closed-book-human-154.json",
+    "RAG_G0_MANIFEST_PATH": "manifests/gpu/g0-closed-book-human-154.json",
+    "RAG_G0_MANIFEST_SHA256": "ddeb1f2ca55ca997858dc5d2d80e235ee5d6ff188af13e0092bf7685456cb93f",
+    "RAG_G0_OUTPUT": "/Rag-hermes-agent-/data/results/g0_closed_book_human_154_report.json",
+    "RAG_GENERATOR_BASE_URL": "http://127.0.0.1:8000/v1",
+    "RAG_GENERATOR_MODEL": "qwen2.5-7b-instruct"
+  },
+  "exit_code": 0,
+  "finished_utc": "2026-10-30T14:46:17.877739Z",
+  "report": {
+    "audited_commit": "315813958678100c251bcba2a28df021bf7c7a99",
+    "code_revision": "315813958678100c251bcba2a28df021bf7c7a99",
+    "configuration": "G0",
+    "corpus": {
+      "dataset_path": "data/benchmark/dataset-v2-human-154.jsonl",
+      "questions": 154,
+      "track": "human-154"
+    },
+    "generation": {
+      "max_tokens": 512,
+      "seconds": 54.12529276299756,
+      "temperature": 0
+    },
+    "generator": {
+      "decoding": {
+        "max_tokens": 512,
+        "temperature": 0
+      },
+      "endpoint_host": "127.0.0.1",
+      "engine": "vllm",
+      "quantization": "none",
+      "repo_id": "Qwen/Qwen2.5-7B-Instruct",
+      "revision": "a09a35458c702b33eeacc393d103063234e8bc28",
+      "served_model_name": "qwen2.5-7b-instruct"
+    },
+    "hardware": {
+      "python": "3.12.3"
+    },
+    "human_review_sample": {
+      "answered_case_ids": [
+        "m-004-fr",
+        "m-005-en",
+        "m-005-fr",
+        "m-006-en",
+        "m-006-fr",
+        "m-022-fr",
+        "m-037-fr",
+        "m-124-en",
+        "m-124-fr",
+        "m-126-fr",
+        "m-127-en",
+        "m-127-fr",
+        "m-128-en",
+        "m-128-fr",
+        "m-129-en",
+        "m-129-fr",
+        "m-130-en",
+        "m-130-fr"
+      ],
+      "answered_count": 18,
+      "note": "Mandatory >=20% blind human review judges these concrete answers; no offline metric scores their correctness."
+    },
+    "job_id": "g0-closed-book-human-154-infra-v1",
+    "limitations": [
+      "G0 measures ONLY honest abstention (model-alone); answer correctness on the answerable cases is NOT scored offline and awaits blind human review.",
+      "No retrieval, no sources, no citations by design (closed-book baseline).",
+      "The served model identity is asserted by the operator via RAG_GENERATOR_MODEL against the manifest repo_id/revision; vLLM serving the pinned revisionis recorded, not cryptographically proven.",
+      "docs/evaluation-protocol-v2.md is a DRAFT; this run is infrastructure wiring, NOT a pre-registered quality result.",
+      "generation_failures are provider errors: neither answers nor abstentions, and they keep their place in the case total."
+    ],
+    "metrics_abstention": {
+      "abstention_precision": 0.11764705882352941,
+      "abstention_recall": 0.5,
+      "generation_failures": 0,
+      "predicted_abstentions": 136,
+      "required_abstentions": 32,
+      "total": 154,
+      "true_positive_abstentions": 16
+    },
+    "protocol": {
+      "acceptance_criteria": "docs/acceptance-criteria.md",
+      "dataset_path": "data/benchmark/dataset-v2-human-154.jsonl",
+      "dataset_sha256": "4613e8b3b84fb7b24ad66cf01329f40d95934bec189fe7f6cddf1eb751c767d4",
+      "evaluation_protocol": "docs/evaluation-protocol-v2.md",
+      "evaluation_protocol_status": "DRAFT_not_frozen_run_is_not_pre_registered",
+      "manifest_path": "manifests/gpu/g0-closed-book-human-154.json",
+      "manifest_sha256": "ddeb1f2ca55ca997858dc5d2d80e235ee5d6ff188af13e0092bf7685456cb93f"
+    },
+    "quality_gate_passed": false,
+    "result_classification": "g0_closed_book_abstention_wiring_not_a_quality_benchmark",
+    "status": "infrastructure_smoke_only",
+    "timestamp_utc": "2026-10-30T14:46:17Z"
+  },
+  "report_encoding": "canonical-json-utf8",
+  "report_sha256": "68dad1d31d2a24bbe84f7d346420355a4c95103a76ee4f02298bb1762d595c8e",
+  "report_sha256_scope": "receipt.report canonical-json-utf8",
+  "schema_version": "gpu_execution_receipt.v2",
+  "started_utc": "2026-10-30T14:45:23.609325Z",
+  "status": "completed"
+}
