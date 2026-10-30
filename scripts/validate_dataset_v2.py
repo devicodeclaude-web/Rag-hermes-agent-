@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Validate the whole v2 evaluation dataset and report human-review readiness.
+"""Validate the frozen human-154 evaluation dataset and review readiness.
 
 Exit codes:
-  0  all target invariants satisfied AND human review complete on the 100 refs;
+  0  all target invariants satisfied AND human review complete;
   2  structurally valid but review/volume targets not yet met (expected, honest gate);
   1  a structural / anti-circularity violation was found.
 """
@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from pathlib import Path
 import sys
 
@@ -17,14 +18,15 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from rag_hermes.eval_corpus import DEFAULT_CORPUS, corpus_manifest, load_documents
+from rag_hermes.eval_corpus import corpus_manifest, load_documents
 from rag_hermes.evaluation_dataset import validate_evaluation_case
 
-DATASET = ROOT / "data/benchmark/dataset-v2.jsonl"
-CORPUS = DEFAULT_CORPUS
+DATASET = ROOT / "data/benchmark/dataset-v2-human-154.jsonl"
+CORPUS = ROOT / "data/generated/hermes_public_documents-human-154.jsonl"
 
 TARGET_EN = 100
 TARGET_FR_PAIRS = 40
+TARGET_MIN_ABSTENTION_RATE = 0.20
 REVIEW_STATUSES_DONE = {"validated", "arbitrated"}
 
 
@@ -39,6 +41,74 @@ def span_signature(case: dict) -> tuple:
         (s["document_id"], s["start_char"], s["end_char"], s["passage_sha256"], s["relevance_grade"])
         for s in case["relevance_spans"]
     ))
+
+
+def gate_report(
+    *,
+    total: int,
+    en: int,
+    fr: int,
+    complete_pairs: int,
+    reviewed: int,
+    target_en: int,
+    target_fr_pairs: int,
+    en_abstentions: int = 0,
+    fr_abstentions: int = 0,
+    target_min_abstention_rate: float = 0.0,
+) -> dict:
+    """Build the gate report with an actionable ``remaining`` block.
+
+    Preserves all historical keys (total, en2en, fr2en, complete_en_fr_pairs,
+    reviewed, pending, target_en, target_fr_pairs, structural, status) and adds
+    ``remaining`` (how many EN cases, FR pairs and reviews are still needed),
+    per-language abstention targets, plus a boolean ``targets_met``. Remaining
+    counts never go negative.
+    """
+    required_en_abstentions = math.ceil(en * target_min_abstention_rate)
+    required_fr_abstentions = math.ceil(fr * target_min_abstention_rate)
+    abstention_targets_met = (
+        en_abstentions >= required_en_abstentions
+        and fr_abstentions >= required_fr_abstentions
+    )
+    targets_met = (
+        en >= target_en
+        and complete_pairs >= target_fr_pairs
+        and reviewed == total
+        and abstention_targets_met
+    )
+    return {
+        "total": total,
+        "en2en": en,
+        "fr2en": fr,
+        "complete_en_fr_pairs": complete_pairs,
+        "reviewed": reviewed,
+        "pending": total - reviewed,
+        "target_en": target_en,
+        "target_fr_pairs": target_fr_pairs,
+        "target_min_abstention_rate": target_min_abstention_rate,
+        "abstention": {
+            "en2en": {
+                "count": en_abstentions,
+                "rate": en_abstentions / en if en else 0.0,
+                "required": required_en_abstentions,
+                "remaining": max(0, required_en_abstentions - en_abstentions),
+            },
+            "fr2en": {
+                "count": fr_abstentions,
+                "rate": fr_abstentions / fr if fr else 0.0,
+                "required": required_fr_abstentions,
+                "remaining": max(0, required_fr_abstentions - fr_abstentions),
+            },
+        },
+        "remaining": {
+            "en2en_cases": max(0, target_en - en),
+            "fr_pairs": max(0, target_fr_pairs - complete_pairs),
+            "to_review": max(0, total - reviewed),
+        },
+        "structural": "valid",
+        "targets_met": targets_met,
+        "status": "READY" if targets_met else "BLOCKED_review_or_volume",
+    }
 
 
 def main() -> int:
@@ -90,23 +160,20 @@ def main() -> int:
     fr = [c for c in cases if c["track"] == "fr2en"]
     reviewed = sum(1 for c in cases if c["reference_status"] in REVIEW_STATUSES_DONE)
 
-    report = {
-        "total": len(cases),
-        "en2en": len(en),
-        "fr2en": len(fr),
-        "complete_en_fr_pairs": complete_pairs,
-        "reviewed": reviewed,
-        "pending": len(cases) - reviewed,
-        "target_en": TARGET_EN,
-        "target_fr_pairs": TARGET_FR_PAIRS,
-        "structural": "valid",
-    }
-
-    targets_met = (len(en) >= TARGET_EN and complete_pairs >= TARGET_FR_PAIRS
-                   and reviewed == len(cases))
-    report["status"] = "READY" if targets_met else "BLOCKED_review_or_volume"
+    report = gate_report(
+        total=len(cases),
+        en=len(en),
+        fr=len(fr),
+        complete_pairs=complete_pairs,
+        reviewed=reviewed,
+        target_en=TARGET_EN,
+        target_fr_pairs=TARGET_FR_PAIRS,
+        en_abstentions=sum(1 for case in en if case["should_abstain"]),
+        fr_abstentions=sum(1 for case in fr if case["should_abstain"]),
+        target_min_abstention_rate=TARGET_MIN_ABSTENTION_RATE,
+    )
     print(json.dumps(report, ensure_ascii=False, indent=2))
-    return 0 if targets_met else 2
+    return 0 if report["targets_met"] else 2
 
 
 if __name__ == "__main__":

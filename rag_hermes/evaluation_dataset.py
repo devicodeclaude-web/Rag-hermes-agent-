@@ -6,10 +6,25 @@ from typing import Any, Mapping
 
 _ALLOWED_SCOPES = {"public", "private"}
 _ALLOWED_REFERENCE_STATUS = {"pending", "validated", "arbitrated"}
-_ALLOWED_PROVENANCE = {
+# Human-authored provenances are the ONLY ones eligible as quality evidence.
+_QUALITY_ELIGIBLE_PROVENANCE = {
     "human_task_without_corpus_view",
     "anonymized_real_user_question",
 }
+# A question generated FROM the corpus. Honestly recorded, structurally valid,
+# but never counted as human-grade quality evidence — this keeps the benchmark
+# non-circular: synthetic questions cannot inflate a quality score.
+SYNTHETIC_PROVENANCE = "synthetic_generated_from_corpus"
+_ALLOWED_PROVENANCE = _QUALITY_ELIGIBLE_PROVENANCE | {SYNTHETIC_PROVENANCE}
+
+
+def is_quality_eligible(case: Mapping[str, Any]) -> bool:
+    """True only for human-authored provenances (quality-evidence eligible).
+
+    Synthetic (corpus-generated) cases return False, so callers that aggregate
+    quality metrics can exclude them and preserve non-circularity.
+    """
+    return case.get("question_provenance") in _QUALITY_ELIGIBLE_PROVENANCE
 # Language is an explicit experimental condition, never an implicit property.
 _ALLOWED_LANGUAGE = {"en", "fr"}
 # Track is the language condition of the retrieval experiment.
@@ -93,7 +108,9 @@ def validate_evaluation_case(
     spans = case["relevance_spans"]
     if not isinstance(spans, list):
         raise ValueError("relevance_spans must be a list")
-    should_abstain = bool(case["should_abstain"])
+    if type(case["should_abstain"]) is not bool:
+        raise ValueError("should_abstain must be a bool")
+    should_abstain = case["should_abstain"]
     if should_abstain:
         if spans:
             raise ValueError("an abstention case cannot contain relevance spans")
@@ -105,6 +122,7 @@ def validate_evaluation_case(
         if case["unanswerable_reason"] is not None:
             raise ValueError("answerable cases must set unanswerable_reason to null")
 
+    seen_intervals: set[tuple[str, int, int]] = set()
     for index, span in enumerate(spans):
         if "chunk_id" in span or "relevant_chunk_ids" in span:
             raise ValueError("chunk identifiers cannot appear in relevance spans")
@@ -117,15 +135,26 @@ def validate_evaluation_case(
                 f"document visibility {document.get('visibility')!r} does not match access_scope {scope!r}"
             )
         content = str(document["content"])
-        start = int(span.get("start_char", -1))
-        end = int(span.get("end_char", -1))
+        raw_start = span.get("start_char", -1)
+        raw_end = span.get("end_char", -1)
+        if type(raw_start) is not int or type(raw_end) is not int:
+            raise ValueError(f"span {index} offsets must be an integer pair")
+        start = raw_start
+        end = raw_end
         if start < 0 or end <= start or end > len(content):
             raise ValueError(f"invalid character interval in span {index}")
+        interval = (document_id, start, end)
+        if interval in seen_intervals:
+            raise ValueError(f"duplicate relevance span at index {index}")
+        seen_intervals.add(interval)
         passage = content[start:end]
         expected_hash = hashlib.sha256(passage.encode("utf-8")).hexdigest()
         if span.get("passage_sha256") != expected_hash:
             raise ValueError(f"passage_sha256 does not match canonical document in span {index}")
-        if span.get("relevance_grade") not in {1, 2}:
-            raise ValueError(f"relevance_grade must be 1 or 2 in span {index}")
+        grade = span.get("relevance_grade")
+        if type(grade) is not int or grade not in {1, 2}:
+            raise ValueError(
+                f"relevance_grade must be integer 1 or 2 in span {index}"
+            )
 
     return deepcopy(dict(case))

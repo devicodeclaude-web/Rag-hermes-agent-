@@ -37,37 +37,48 @@ def documents_from_markdown(root: str | Path, *, commit: str) -> list[Document]:
 T = TypeVar("T")
 
 
-def _load_jsonl(path: str | Path, factory: Callable[[dict[str, Any]], T]) -> list[T]:
+def _load_jsonl_payload(
+    payload: bytes, factory: Callable[[dict[str, Any]], T], *, source: str
+) -> list[T]:
     records: list[T] = []
-    with Path(path).open(encoding="utf-8") as handle:
-        for line_number, line in enumerate(handle, 1):
-            if not line.strip():
-                continue
-            try:
-                value = json.loads(line)
-                records.append(factory(value))
-            except (KeyError, TypeError, ValueError) as exc:
-                raise ValueError(f"invalid JSONL record at {path}:{line_number}: {exc}") from exc
+    for line_number, line in enumerate(payload.decode("utf-8").splitlines(), 1):
+        if not line.strip():
+            continue
+        try:
+            value = json.loads(line)
+            records.append(factory(value))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(f"invalid JSONL record at {source}:{line_number}: {exc}") from exc
     return records
 
 
-def load_documents(path: str | Path) -> list[Document]:
-    def build(value: dict[str, Any]) -> Document:
-        return Document(
-            document_id=value["document_id"],
-            content=value["content"],
-            tenant_id=value["tenant_id"],
-            visibility=value["visibility"],
-            owner_id=value["owner_id"],
-            allowed_groups=tuple(value["allowed_groups"]),
-            allowed_users=tuple(value["allowed_users"]),
-            classification=int(value["classification"]),
-            doc_version=int(value["doc_version"]),
-            source_uri=value["source_uri"],
-            acl_version=int(value.get("acl_version", 1)),
-        )
+def _load_jsonl(path: str | Path, factory: Callable[[dict[str, Any]], T]) -> list[T]:
+    source = str(path)
+    return _load_jsonl_payload(Path(path).read_bytes(), factory, source=source)
 
-    return _load_jsonl(path, build)
+
+def _build_document(value: dict[str, Any]) -> Document:
+    return Document(
+        document_id=value["document_id"],
+        content=value["content"],
+        tenant_id=value["tenant_id"],
+        visibility=value["visibility"],
+        owner_id=value["owner_id"],
+        allowed_groups=tuple(value["allowed_groups"]),
+        allowed_users=tuple(value["allowed_users"]),
+        classification=int(value["classification"]),
+        doc_version=int(value["doc_version"]),
+        source_uri=value["source_uri"],
+        acl_version=int(value.get("acl_version", 1)),
+    )
+
+
+def load_documents_payload(payload: bytes) -> list[Document]:
+    return _load_jsonl_payload(payload, _build_document, source="<snapshot>")
+
+
+def load_documents(path: str | Path) -> list[Document]:
+    return _load_jsonl(path, _build_document)
 
 
 def load_questions(path: str | Path) -> list[BenchmarkQuestion]:

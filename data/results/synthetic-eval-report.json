@@ -1,0 +1,31 @@
+{
+  "track": "synthetic",
+  "provenance": "synthetic_generated_from_corpus",
+  "quality_eligible": false,
+  "granularity": "document",
+  "retriever": "in_memory_lexical_baseline",
+  "k": 5,
+  "minimum_score": 0.05,
+  "corpus_documents": 461,
+  "cases_total": 100,
+  "cases_answerable": 80,
+  "cases_abstention": 20,
+  "source_revision": "b682a98ab8cb30c4f0561021e0ff9f41e5156526",
+  "corpus_manifest_sha": "af0631abbffaab14b180abc4531497665a6104d6685328d6abbe53a565c53866",
+  "elapsed_seconds": 112.93,
+  "metrics": {
+    "case_count": 100,
+    "recall_at_k": 0.3,
+    "mrr": 0.20166666666666666,
+    "citation_precision": 0.12,
+    "citation_validity_precision": null,
+    "citation_support_precision": null,
+    "abstention_precision": 0.0,
+    "abstention_recall": 0.0,
+    "leak_count": 0,
+    "security_gate_passed": true,
+    "acl_error_count": 0,
+    "backend_error_count": 0
+  },
+  "note": "TECHNICAL WITNESS ONLY. Corpus-generated questions, whole-document relevance, lexical baseline retriever. Not human-grade quality evidence."
+}

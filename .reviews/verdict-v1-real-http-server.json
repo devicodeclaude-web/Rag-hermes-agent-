@@ -1,0 +1,20 @@
+{
+  "passed": true,
+  "date_utc": "2026-10-01",
+  "repo": "/root/rag-hermes-agent",
+  "branch": "feat/local-v1-web",
+  "head_at_review": "99e7bb9",
+  "scope": "Integration reseau reelle de serve_v1 (axe J) : port ephemere --port 0, import HTTP -> question -> citation, en-tetes de securite, arret SIGTERM propre. Fichiers : README.md, scripts/serve_v1.py, tests/test_serve_v1.py.",
+  "reviewer": "sous-agent independant fail-closed (leaf) — focus vrai TCP, cycle de vie, isolation et ressources",
+  "resume": "Conforme. RED reproduit sur HEAD (port 0 refuse), GREEN 3/3. Le test lance le vrai processus et de vraies requetes TCP loopback, verifie import prive, reponse non-abstenue, citation, en-tetes, puis SIGTERM code 0. Aucun processus/pipeline orphelin, aucun ResourceWarning, bind loopback intact.",
+  "checkpoints": [
+    {"id": 1, "titre": "TDD et integration reseau reelle", "verdict": "pass", "preuve": "Ancien HEAD : --port 0 refuse, RED_RC=1. Staged : unittest tests.test_serve_v1 -v -> 3/3 OK. Vrai subprocess serve_v1, urllib TCP POST documents/questions, citation network-guide et headers verifies."},
+    {"id": 2, "titre": "Port ephemere et bind", "verdict": "pass", "preuve": "0 accepte comme demande systeme ; URL publie server.server_port jamais args.port. -1 et 65536 rejetes. Port 8080 inchange. validate_bind_host toujours limite a 127.0.0.1/localhost ; 0.0.0.0 refuse."},
+    {"id": 3, "titre": "Arret propre", "verdict": "pass", "preuve": "SIGTERM leve KeyboardInterrupt sans server.shutdown (pas de deadlock), sort de serve_forever, imprime Arret du serveur, restaure le handler, context manager ferme le serveur. Test exige code 0. finally kill+communicate en secours. 0 processus restant."},
+    {"id": 4, "titre": "Isolation et securite", "verdict": "pass", "preuve": "Sous-processus sans RAG_GENERATOR_* ni RAG_QDRANT_* : backend memoire/offline. Reseau exclusivement 127.0.0.1. ACL privee coherente. Tous les delais bornes. Aucun secret, shell=True, os.system, eval/exec ou pickle."},
+    {"id": 5, "titre": "Non-regression et documentation", "verdict": "pass", "preuve": "Tests --help et host loopback passent. README fidele. Test execute aussi avec -W error::ResourceWarning sans fuite. Suite canonique parent 321 OK, 0 skip avec Qdrant reel."}
+  ],
+  "concerns": [],
+  "tests_cibles": {"total": 3, "ok": 3, "skipped": 0, "failed": 0},
+  "suite_complete": {"total": 321, "ok": 321, "skipped": 0, "failed": 0, "qdrant": "1.19.0 reel"}
+}

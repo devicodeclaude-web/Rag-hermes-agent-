@@ -52,6 +52,12 @@ Les sondes ACL restent **hors** de ce dataset de qualité.
    .venv-audit/bin/python scripts/annotate_eval_case.py --case cas.json
    ```
 
+   Cette commande écrit uniquement dans la piste de travail
+   `data/benchmark/dataset-v2-quality-candidate.jsonl`. Elle refuse d'écrire si
+   cette piste n'est plus préfixée octet pour octet par le snapshot humain gelé
+   de 154 cas. Elle ne modifie ni `dataset-v2.jsonl` (QA actif) ni
+   `dataset-v2-human-154.jsonl` (snapshot immuable).
+
 4. **Revue** : un second relecteur vérifie que la question est naturelle, que le
    passage répond bien, et passe `reference_status` de `pending` à `validated`
    (ou `arbitrated` en cas de désaccord tranché).

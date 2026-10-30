@@ -1,0 +1,140 @@
+{
+  "schema_version": 1,
+  "track": "dense",
+  "question_provenance_counts": {
+    "human_task_without_corpus_view": 154
+  },
+  "quality_eligible": false,
+  "evidence_level": "persisted_pipeline_plumbing",
+  "granularity": "passage_span_overlap",
+  "retriever": "qdrant_deterministic_not_an_embedding",
+  "generator": null,
+  "embedding_model": null,
+  "reranker": null,
+  "tokenizer": null,
+  "hardware": "local_cpu",
+  "precision": null,
+  "qdrant_exercised": true,
+  "qdrant_version_pinned": "1.19.0",
+  "dense_dimension": 8,
+  "k": 10,
+  "minimum_score": 0.0,
+  "cases_total": 154,
+  "corpus_documents": 461,
+  "source_revision": "b682a98ab8cb30c4f0561021e0ff9f41e5156526",
+  "corpus_manifest_sha": "af0631abbffaab14b180abc4531497665a6104d6685328d6abbe53a565c53866",
+  "dataset_sha256": "4613e8b3b84fb7b24ad66cf01329f40d95934bec189fe7f6cddf1eb751c767d4",
+  "code_revision": "9aed074b4d240c2a8a16f15f53d52e29edbe108d",
+  "working_tree_dirty": false,
+  "elapsed_seconds": 26.62,
+  "results": {
+    "overall": {
+      "cases_total": 154,
+      "cases_answerable": 122,
+      "cases_abstention": 32,
+      "metrics": {
+        "case_count": 154,
+        "recall_at_k": 0.00819672131147541,
+        "mrr": 0.001639344262295082,
+        "citation_precision": 0.0006493506493506494,
+        "citation_validity_precision": null,
+        "citation_support_precision": null,
+        "abstention_precision": 0.0,
+        "abstention_recall": 0.0,
+        "leak_count": 0,
+        "security_gate_passed": true,
+        "acl_error_count": 0,
+        "backend_error_count": 0
+      }
+    },
+    "by_track": {
+      "en2en": {
+        "cases_total": 107,
+        "cases_answerable": 85,
+        "cases_abstention": 22,
+        "metrics": {
+          "case_count": 107,
+          "recall_at_k": 0.011764705882352941,
+          "mrr": 0.0023529411764705885,
+          "citation_precision": 0.0009345794392523365,
+          "citation_validity_precision": null,
+          "citation_support_precision": null,
+          "abstention_precision": 0.0,
+          "abstention_recall": 0.0,
+          "leak_count": 0,
+          "security_gate_passed": true,
+          "acl_error_count": 0,
+          "backend_error_count": 0
+        },
+        "comparison_role": "primary_dense_pipeline"
+      },
+      "fr2en": {
+        "cases_total": 47,
+        "cases_answerable": 37,
+        "cases_abstention": 10,
+        "metrics": {
+          "case_count": 47,
+          "recall_at_k": 0.0,
+          "mrr": 0.0,
+          "citation_precision": 0.0,
+          "citation_validity_precision": null,
+          "citation_support_precision": null,
+          "abstention_precision": 0.0,
+          "abstention_recall": 0.0,
+          "leak_count": 0,
+          "security_gate_passed": true,
+          "acl_error_count": 0,
+          "backend_error_count": 0
+        },
+        "comparison_role": "cross_lingual_diagnostic_only"
+      }
+    },
+    "by_category": {
+      "no_answer": {
+        "cases_total": 32,
+        "cases_answerable": 0,
+        "cases_abstention": 32,
+        "metrics": {
+          "case_count": 32,
+          "recall_at_k": 0.0,
+          "mrr": 0.0,
+          "citation_precision": 0.0,
+          "citation_validity_precision": null,
+          "citation_support_precision": null,
+          "abstention_precision": 0.0,
+          "abstention_recall": 0.0,
+          "leak_count": 0,
+          "security_gate_passed": true,
+          "acl_error_count": 0,
+          "backend_error_count": 0
+        }
+      },
+      "simple": {
+        "cases_total": 122,
+        "cases_answerable": 122,
+        "cases_abstention": 0,
+        "metrics": {
+          "case_count": 122,
+          "recall_at_k": 0.00819672131147541,
+          "mrr": 0.001639344262295082,
+          "citation_precision": 0.000819672131147541,
+          "citation_validity_precision": null,
+          "citation_support_precision": null,
+          "abstention_precision": 0.0,
+          "abstention_recall": 0.0,
+          "leak_count": 0,
+          "security_gate_passed": true,
+          "acl_error_count": 0,
+          "backend_error_count": 0
+        }
+      }
+    }
+  },
+  "limitations": [
+    "Deterministic test vector, NOT a semantic embedding: no retrieval-quality claim.",
+    "Proves the persisted dense pipeline (ingest -> Qdrant ANN -> ACL prefilter -> scoring) end to end.",
+    "Public corpus only; no private-corpus or multitenant quality measurement here.",
+    "A real embedding model (BGE-M3) is exercised only during a GPU smoke, which would relabel this report.",
+    "Descriptive metrics only; no bootstrap confidence intervals."
+  ]
+}

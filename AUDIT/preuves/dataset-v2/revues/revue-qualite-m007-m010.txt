@@ -1,0 +1,15 @@
+# PRESERVED REVIEW EVIDENCE — verbatim subagent output
+# source: /root/.hermes/cache/delegation/subagent-summary-0-20261004_114220_415228.txt
+# copied_utc: 2026-10-04T11:46:57Z
+# NOTE: do not edit; raw reviewer output (evidence).
+
+Independent fail-closed review complete. No files modified. Note: the dataset lives at `/root/rag-hermes-agent/` (context said `rag-claude-code`) and document IDs are `hermes-agent:...`.
+
+```json
+{"passed":false,"summary":"m-007 passes: the FAQ 'High token usage' passage directly and sufficiently answers both EN/FR questions with concrete token-reduction methods. m-010 fails fail-closed: the span is a single sentence about delegate_task being gated by role (leaf vs orchestrator), not a direct enumeration of the subagent roles Hermes supports; it answers the question only by incidental inference and is tangential to its intent. Global passed=false.","pairs":[{"pair_id":"m-007","passed":true,"reason":"EN/FR identical in meaning. The 'High token usage' FAQ passage (hermes prompt-size, /compress, /usage, disabling toolsets/skills) directly, sufficiently and centrally answers 'how to reduce token usage'. Question is open-ended and asserts nothing beyond the passage."},{"pair_id":"m-010","passed":false,"reason":"EN/FR match in meaning. But the pointed span is one sentence stating delegate_task is blocked for leaf subagents (default) and retained for role=orchestrator — it describes a tool-access restriction, not a roster of supported subagent roles. The question ('what roles does Hermes support') expects an enumeration/overview; the passage only lets the roles be inferred incidentally and is tangential to the question's intent. Ambiguous => fail-closed."}],"blocking":["m-010"],"suggestions":[]}
+```
+
+**Summary**
+- **m-007 → PASS**: EN/FR equivalent; FAQ "High token usage" passage centrally and sufficiently answers (prompt-size, /compress, /usage, disabling toolsets/skills).
+- **m-010 → FAIL (fail-closed)**: EN/FR equivalent, but the pointed span is a one-sentence `delegate_task` access-gating note (leaf default vs orchestrator), not an enumeration of supported subagent roles. Answers the question only by incidental inference → tangential/ambiguous.
+- **Global passed=false**, blocking=`["m-010"]`. No files modified.

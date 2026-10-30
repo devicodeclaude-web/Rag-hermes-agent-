@@ -1,0 +1,20 @@
+{
+  "passed": true,
+  "date_utc": "2026-10-01",
+  "repo": "/root/rag-hermes-agent",
+  "branch": "feat/local-v1-web",
+  "head_at_review": "5d55b75",
+  "scope": "Gate dataset-v2 lisible (axe H) : extraction de gate_report() (fonction pure) dans scripts/validate_dataset_v2.py + bloc `remaining` actionnable (en2en_cases, fr_pairs, to_review) + targets_met, sans changer les codes de sortie ni les cles historiques. Fichiers : scripts/validate_dataset_v2.py, tests/test_validate_dataset_v2_gate.py, README.md.",
+  "reviewer": "sous-agent independant fail-closed (leaf) — focus calcul remaining + compat ascendante + non-regression",
+  "resume": "Conforme. 5 points verifies contre le code reel avec recalcul independant et execution. remaining jamais negatif, targets_met correct, cles historiques preservees, codes de sortie main() intacts (empty->2, violation->1, 0 ssi targets_met sinon 2). 9 tests OK, 0 skip, fonction pure, pas de secret, aucune regression.",
+  "checkpoints": [
+    {"id": 1, "titre": "gate_report calcul", "verdict": "pass", "preuve": "targets_met = en>=target_en AND complete_pairs>=target_fr_pairs AND reviewed==total ; status READY ssi targets_met ; remaining = max(0, cible - obtenu) sur les 3 axes. Scenarios recalcules : short 90/38/7, met 0/0/0, depassement -> 0 (jamais negatif)."},
+    {"id": 2, "titre": "Compatibilite ascendante", "verdict": "pass", "preuve": "Cles historiques preservees (total, en2en, fr2en, complete_en_fr_pairs, reviewed, pending, target_en, target_fr_pairs, structural, status). pending = total - reviewed."},
+    {"id": 3, "titre": "Pas de regression du script", "verdict": "pass", "preuve": "main() : empty->return 2 inchange ; violations structurelles/paires->return 1 intactes ; final return 0 if targets_met else 2 (booleen identique a l'ancien inline). test_eval_annotation_chain (appelle main(), attend rc==0 TARGET patche 1/1) passe."},
+    {"id": 4, "titre": "Coherence des tests", "verdict": "pass", "preuve": "4 tests ajoutes asserten reellement remaining (short/met/depassement) et preservation des cles (pending==3). Pas de faux vert. unittest cible + chain : 9 tests OK, 0 skip."},
+    {"id": 5, "titre": "General", "verdict": "pass", "preuve": "Fonction pure (aucun effet de bord, ne lit pas de fichier). Pas de secret. Aucune autre regression."}
+  ],
+  "concerns": [],
+  "tests_cibles": {"total": 9, "ok": 9, "skipped": 0, "failed": 0, "detail": "test_validate_dataset_v2_gate (4) + test_eval_annotation_chain (5)"},
+  "suite_complete": {"total": 320, "ok": 320, "skipped": 0, "failed": 0, "qdrant": "1.19.0 reel"}
+}

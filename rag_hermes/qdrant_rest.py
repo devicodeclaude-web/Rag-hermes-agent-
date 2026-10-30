@@ -29,6 +29,22 @@ class QdrantRestClient:
         except URLError as exc:
             raise RuntimeError(f"Qdrant unavailable: {exc.reason}") from exc
 
+    def collection_exists(self, collection: str) -> bool:
+        name = quote(collection, safe="")
+        response = self._request("GET", f"/collections/{name}/exists", {})
+        result = response.get("result")
+        if not isinstance(result, dict) or type(result.get("exists")) is not bool:
+            raise RuntimeError("Qdrant returned malformed collection existence result")
+        return result["exists"]
+
+    def get_collection(self, collection: str) -> dict[str, Any]:
+        name = quote(collection, safe="")
+        response = self._request("GET", f"/collections/{name}", {})
+        result = response.get("result")
+        if not isinstance(result, dict):
+            raise RuntimeError("Qdrant returned malformed collection metadata")
+        return result
+
     def create_collection(
         self, collection: str, *, vector_size: int, distance: str = "Cosine"
     ) -> dict[str, Any]:
@@ -55,6 +71,32 @@ class QdrantRestClient:
             {"field_name": field_name, "field_schema": field_schema},
         )
 
+    def scroll(
+        self,
+        collection: str,
+        *,
+        query_filter: dict[str, Any] | None,
+        limit: int = 1,
+    ) -> list[dict[str, Any]]:
+        if not query_filter:
+            raise ValueError("query_filter is mandatory")
+        if limit < 1:
+            raise ValueError("limit must be positive")
+        name = quote(collection, safe="")
+        response = self._request(
+            "POST",
+            f"/collections/{name}/points/scroll",
+            {
+                "filter": query_filter,
+                "limit": limit,
+                "with_payload": True,
+            },
+        )
+        result = response.get("result")
+        if not isinstance(result, dict) or not isinstance(result.get("points"), list):
+            raise RuntimeError("Qdrant returned malformed scroll result")
+        return list(result["points"])
+
     def upsert(
         self, collection: str, points: list[dict[str, Any]]
     ) -> dict[str, Any]:
@@ -65,6 +107,18 @@ class QdrantRestClient:
             "PUT", f"/collections/{name}/points?wait=true", {"points": points}
         )
 
+    def delete_points(
+        self, collection: str, query_filter: dict[str, Any] | None
+    ) -> dict[str, Any]:
+        if not query_filter:
+            raise ValueError("query_filter is mandatory")
+        name = quote(collection, safe="")
+        return self._request(
+            "POST",
+            f"/collections/{name}/points/delete?wait=true",
+            {"filter": query_filter},
+        )
+
     def query(
         self,
         collection: str,
@@ -73,7 +127,7 @@ class QdrantRestClient:
         query_filter: dict[str, Any] | None,
         limit: int = 10,
     ) -> list[dict[str, Any]]:
-        if query_filter is None:
+        if not query_filter:
             raise ValueError("query_filter is mandatory")
         if limit < 1:
             raise ValueError("limit must be positive")

@@ -1,0 +1,16 @@
+# Dépendance directe du worker RunPod Serverless.
+#
+# Compile avec uv==0.13.4 :
+#   UV_BIN=/chemin/vers/uv python -m scripts.compile_serverless_lock
+# Le générateur impose `--python-platform x86_64-manylinux_2_28`,
+# `--python-version 3.12`, `--no-config` et l’index PyPI explicite. Il utilise
+# une copie canonique temporaire de l’entrée validée, un cache temporaire isolé,
+# le mode copie compatible PRoot, des hashes SHA-256 complets, un digest du
+# graphe approuvé et une publication atomique.
+#
+# Ce lock couvre uniquement le SDK du worker. Le déploiement candidat GPU doit
+# consommer le lock combiné requirements-serverless-gpu.lock.txt ; le lock
+# historique requirements-gpu.lock.txt reste autonome et ne représente pas ce
+# candidat. L’environnement CUDA/PyTorch doit encore être validé séparément
+# avant tout déploiement.
+runpod==1.12.0

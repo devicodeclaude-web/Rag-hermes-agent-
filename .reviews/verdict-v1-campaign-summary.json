@@ -1,0 +1,22 @@
+{
+  "passed": true,
+  "date_utc": "2026-10-01",
+  "repo": "/root/rag-hermes-agent",
+  "branch": "feat/local-v1-web",
+  "head_at_review": "03cb70e",
+  "scope": "Rapport consolide de campagne (axe I) : separation retrieval technique / abstention / justesse humaine, coherence fail-closed, statuts bloquants et codes CLI. Fichiers : rag_hermes/campaign_summary.py, scripts/consolidate_campaign.py, tests/test_campaign_summary.py, README.md, .gitignore.",
+  "reviewer": "sous-agent independant fail-closed (leaf) — focus niveaux de preuve, coherence, statuts et securite",
+  "resume": "Conforme. Aucun defaut bloquant. Trois niveaux de preuve distincts, quality_evidence=false immuable sur la piste synthetique, incoherences refusees, gate securite prioritaire, codes CLI 0/2/1 corrects. 9 tests cibles OK, matrices supplementaires 8/8 incoherences et 5/5 statuts corrects. Execution reelle bloquee honnêtement par absence de revue humaine.",
+  "checkpoints": [
+    {"id": 1, "titre": "Separation des preuves", "verdict": "pass", "preuve": "Sections retrieval_technical, abstention_comparison, human_correctness distinctes. quality_evidence code strictement False. Tout quality_eligible is not False (meme absent) rejete. Note + README disent technical witness only, jamais quality evidence."},
+    {"id": 2, "titre": "Coherence fail-closed", "verdict": "pass", "preuve": "Totaux retrieval/comparison egaux ; sample<=total ; human.total==sample ; reviewed<=total ; complete_review coherent avec reviewed==total. Matrice independante : 8/8 incoherences rejetees par ValueError."},
+    {"id": 3, "titre": "Statuts et priorite securite", "verdict": "pass", "preuve": "Absent -> BLOCKED_human_review_missing ; partiel -> BLOCKED_human_review_incomplete ; complet -> COMPLETE_synthetic_technical_witness ; securite false -> FAILED_security_gate prioritaire. Matrice 5/5, quality_evidence=false partout."},
+    {"id": 4, "titre": "CLI et codes de sortie", "verdict": "pass", "preuve": "Retrieval/comparison obligatoires ; humain absent = blocage valide. Codes : complet 0, absent/partiel 2, securite/incoherence 1 ; incoherence sans rapport. campaign-summary.json ignore par git."},
+    {"id": 5, "titre": "Execution reelle", "verdict": "pass", "preuve": "9/9 tests. Rapports reels sans humain : exit 2, BLOCKED_human_review_missing, quality_evidence=false, securite true, 100 cas et sample attendu 20."},
+    {"id": 6, "titre": "Honnetete et hygiene", "verdict": "pass", "preuve": "Aucune fusion recall synthetique / justesse humaine ; aucun secret ; seul effet de bord = fichier out ignore ; diff --check propre."},
+    {"id": 7, "titre": "Non-regression", "verdict": "pass", "preuve": "Module additif. Suite parent canonique 330 OK, 0 skip avec Qdrant 1.19.0 reel ; reviewer 330 OK avec 14 skips faute de Qdrant local."}
+  ],
+  "concerns": [],
+  "tests_cibles": {"total": 9, "ok": 9, "skipped": 0, "failed": 0},
+  "suite_complete": {"total": 330, "ok": 330, "skipped": 0, "failed": 0, "qdrant": "1.19.0 reel (execution parent)"}
+}

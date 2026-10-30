@@ -1,0 +1,24 @@
+{
+  "passed": true,
+  "date_utc": "2026-10-01",
+  "repo": "/root/rag-hermes-agent",
+  "branch": "feat/local-v1-web",
+  "head_at_review": "6cd99a7",
+  "scope": "Agregateur de verdicts humains (axe G). Module rag_hermes/review_aggregate.py (aggregate_review) + scripts/aggregate_review.py : lit campaign-review-sample.jsonl rempli -> justesse RAG vs closed-book. Fichiers : rag_hermes/review_aggregate.py, scripts/aggregate_review.py, tests/test_review_aggregate.py, README.md.",
+  "reviewer": "sous-agent independant fail-closed (leaf) — focus metriques/denominateur/validation/honnetete",
+  "resume": "Correct, fail-closed et honnete. 8/8 points verifies contre code reel et execution. Aucune erreur de metrique, aucun denominateur gonfle, aucun verdict invalide accepte, aucune justesse partielle par defaut, aucune sur-affirmation. Module purement additif.",
+  "checkpoints": [
+    {"id": 1, "titre": "Fail-closed par defaut", "verdict": "pass", "preuve": "require_complete=True par defaut : verdict null (rag ou cb) -> ValueError 'unreviewed'. Script sur vrai fichier (20 null) -> EXIT=1, VIOLATION. Aucune justesse partielle publiee."},
+    {"id": 2, "titre": "Metriques correctes", "verdict": "pass", "preuve": "Scenario 5 paires : rag_accuracy=0.6 (3/5), cb=0.4 (2/5), rag_better=2, cb_better=1. Denominateur=reviewed via _safe_ratio ; div/0 -> 0.0. rag_better = rag_v and not cb_v ; cb_better = elif cb_v and not rag_v."},
+    {"id": 3, "titre": "Validation stricte", "verdict": "pass", "preuve": "Rejet verdict non-bool ('yes'), case_id dup, human_verdict absent/non-objet, echantillon vide. Mode partiel : paire a moitie jugee rejetee ('both ... or neither'), paire entierement null ignoree. Bonus : type() is not bool rejette int 1/0 (piege bool subset int evite)."},
+    {"id": 4, "titre": "Mode partiel honnete", "verdict": "pass", "preuve": "require_complete=False : denominateur=reviewed (2 paires dont 1 null -> reviewed=1, acc=1/1 pas 1/2). complete_review=false dans le rapport. Pas d'inflation."},
+    {"id": 5, "titre": "Script sur fichier reel", "verdict": "pass", "preuve": "20 paires null. defaut -> EXIT=1 VIOLATION unreviewed ; --allow-partial -> EXIT=0, total=20, reviewed=0, acc 0.0, complete_review=false. Seule ecriture : data/results/campaign-review-aggregate.json. Aucun secret."},
+    {"id": 6, "titre": "Coherence des tests", "verdict": "pass", "preuve": "unittest tests.test_review_aggregate -> Ran 7 tests OK, 0 skip. Invariants reellement exerces. Pas de faux vert."},
+    {"id": 7, "titre": "Honnetete", "verdict": "pass", "preuve": "README + note rapport : accuracy = seule mesure de justesse, denominateur = paires revues, fail-closed empeche une justesse partielle. Aucune sur-affirmation."},
+    {"id": 8, "titre": "General : pas de regression", "verdict": "pass", "preuve": "review_aggregate importe uniquement par le nouveau script/test. Import sans effet de bord. Aucun fichier existant modifie hors doc additive. Purement additif."}
+  ],
+  "concerns": [],
+  "tests_cibles": {"total": 7, "ok": 7, "skipped": 0, "failed": 0},
+  "suite_complete": {"total": 316, "ok": 316, "skipped": 0, "failed": 0, "qdrant": "1.19.0 reel"},
+  "note": "Le script ecrit un artefact runtime data/results/campaign-review-aggregate.json (non suivi par git), comportement concu."
+}

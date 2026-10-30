@@ -1,0 +1,21 @@
+{
+  "passed": true,
+  "date_utc": "2026-09-30",
+  "repo": "/root/rag-hermes-agent",
+  "branch": "feat/local-v1-web",
+  "head_at_review": "2d880c1",
+  "scope": "Incrément ciblé corrigeant la seule observation mineure de la premiere revue V1 : dans http_api, une defaillance de reranker injecte (mauvais nombre de scores OU sortie non-liste) ressortait en HTTP 400 (erreur client) au lieu de 5xx. Correction : service.py leve desormais GenerationError (au lieu de ValueError) -> http_api la mappe en 502 {error: generation_failed}. Fichiers : rag_hermes/service.py, tests/test_service.py, tests/test_http_api.py.",
+  "reviewer": "sous-agent independant fail-closed (leaf) — 2e revue",
+  "resume": "L'increment corrige correctement et de facon fail-closed. Aucune regression de classification d'erreur, aucune fuite d'information, invariant de citation preserve. 32 tests concernes exerces en live (32/32 OK) sur l'interpreteur canonique.",
+  "checkpoints": [
+    {"id": 1, "titre": "Correction correcte (GenerationError -> 502)", "verdict": "pass", "preuve": "service.py:157-166 leve GenerationError si `not isinstance(scores, list) or len(scores) != len(evidence)` (couvre non-liste ET mauvais nombre). http_api.py:173-178 -> 502 + corps statique {error: generation_failed}. GenerationError = RuntimeError (generator.py:28-29), non capture par la branche 400, except place AVANT (L173 vs L185). Aucune stack/secret."},
+    {"id": 2, "titre": "Aucune regression de classification d'erreur", "verdict": "pass", "preuve": "Erreurs client -> 400 intactes (host non fiable 121-126, JSON/champ/types/question vide 185-190). ValueError de config (minimum_score 63-64, top_k<1 65-66, retrieval_k<top_k 71-72) restent UNIQUEMENT a __init__ (53-72), jamais dans le chemin requete ; aucune transformee en GenerationError."},
+    {"id": 3, "titre": "Fail-closed preserve", "verdict": "pass", "preuve": "GenerationError levee a service.py:164 AVANT l'appel generateur (190) et toute construction d'AnswerResponse -> aucune reponse partielle/non citee ne fuit. Invariant 'non-abstention => >=1 citation valide sinon GenerationError' intact (214-221)."},
+    {"id": 4, "titre": "Pas de fuite d'information", "verdict": "pass", "preuve": "Message 'reranker must return one score per candidate chunk' jamais renvoye : handler 502 (174-178) emet un corps statique sans str(exc), contrairement aux 403/400 (183, 189)."},
+    {"id": 5, "titre": "Coherence des tests (pas de faux vert)", "verdict": "pass", "preuve": "Live 32/32 OK. mismatch: top_k=2/retrieval_k=10 + 2 docs, [1.0] vs len=2. non_list: str -> isinstance echoue. http test asserte 502 ET corps exact. # type: ignore[return-value] justifie (simulation composant defaillant)."},
+    {"id": 6, "titre": "General: secrets/injection/regressions", "verdict": "pass", "preuve": "Aucun secret. Reranker ne reordonne que des chunks deja autorises (154-171). Marqueurs compares par chaine (199-203), pas d'int() -> pas de DoS. Aucune autre regression."}
+  ],
+  "concerns": [],
+  "tests_live": {"total": 32, "ok": 32, "scope": "tests.test_service + tests.test_http_api"},
+  "suite_complete_apres_correction": {"total": 265, "ok": 265, "skipped": 0, "failed": 0, "qdrant": "1.19.0 reel @127.0.0.1:6403"}
+}

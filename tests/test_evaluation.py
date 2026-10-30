@@ -240,6 +240,29 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(report.leak_count, 1)
         self.assertFalse(report.security_gate_passed)
 
+    def test_ranked_relevance_map_must_match_retrieved_labels(self):
+        forged = EvaluationCase(
+            "q",
+            ("r",),
+            ("x",),
+            (),
+            False,
+            False,
+            (),
+            retrieved_relevance_ids_by_rank=(("r",),),
+        )
+
+        with self.assertRaisesRegex(ValueError, "ranked relevance map"):
+            evaluate([forged], k=1)
+
+    def test_k_must_be_a_strict_positive_integer(self):
+        case = EvaluationCase("q", ("r",), ("r",), (), False, False, ())
+
+        for invalid_k in (True, 1.5, "1", 0, -1):
+            with self.subTest(k=invalid_k):
+                with self.assertRaisesRegex(ValueError, "positive integer"):
+                    evaluate([case], k=invalid_k)  # type: ignore[arg-type]
+
     def test_empty_case_set_is_invalid(self):
         with self.assertRaises(ValueError):
             evaluate([], k=10)

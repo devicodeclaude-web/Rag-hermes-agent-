@@ -1,0 +1,67 @@
+# PRESERVED REVIEW EVIDENCE — verbatim subagent output
+# source: /root/.hermes/cache/delegation/subagent-summary-1-20261004_111714_642249.txt
+# copied_utc: 2026-10-04T11:46:57Z
+# NOTE: do not edit; raw reviewer output (evidence).
+
+[
+  {
+    "case_id": "m-016",
+    "question_en": "What built-in security protections does Hermes Agent provide?",
+    "question_fr": "Quelles protections de sécurité intégrées Hermes Agent fournit-il ?",
+    "document_id": "hermes-agent:user-guide/security.md",
+    "passage_text": "The security model has eight layers:\n\n1. **User authorization** — who can talk to the agent (allowlists, DM pairing)\n2. **Dangerous command approval** — human-in-the-loop for destructive operations\n3. **File write safety** — denylist and optional write sandbox for `write_file`/`patch`\n4. **Container isolation** — Docker/Singularity/Modal sandboxing with hardened settings\n5. **MCP credential filtering** — environment variable isolation for MCP subprocesses\n6. **Context file scanning** — prompt injection detection in project files\n7. **Cross-session isolation** — sessions cannot access each other's data or state; cron job storage paths are hardened against path traversal attacks\n8. **Input sanitization** — working directory parameters in terminal tool backends are validated against an allowlist to prevent shell injection",
+    "start_char": 413,
+    "end_char": 1243,
+    "sha256": "097e81ee64e5923ada41e264631b848bf10feec7e95ded5b02586d632d3dd224",
+    "usable": true,
+    "note": "Verified as verbatim and unique with corpus_lookup.py check."
+  },
+  {
+    "case_id": "m-017",
+    "question_en": "Can Hermes Agent run scheduled tasks and automatically deliver their results?",
+    "question_fr": "Hermes Agent peut-il exécuter des tâches planifiées et envoyer automatiquement leurs résultats ?",
+    "document_id": "hermes-agent:user-guide/features/cron.md",
+    "passage_text": "Schedule tasks to run automatically with natural language or cron expressions. Hermes exposes cron management through a single `cronjob` tool with action-style operations instead of separate schedule/list/remove tools.\n\n## What cron can do now\n\nCron jobs can:\n\n- schedule one-shot or recurring tasks\n- pause, resume, edit, trigger, and remove jobs\n- attach zero, one, or multiple skills to a job\n- deliver results back to the origin chat, local files, or configured platform targets\n- run in fresh agent sessions with the normal static tool list",
+    "start_char": 212,
+    "end_char": 757,
+    "sha256": "37b4fa8f09e077ca978386b0ab9bc5195d1813e12684b18be73f803c42e54140",
+    "usable": true,
+    "note": "Verified as verbatim and unique with corpus_lookup.py check."
+  },
+  {
+    "case_id": "m-018",
+    "question_en": "How does Hermes Agent use subagents to delegate and parallelize tasks?",
+    "question_fr": "Comment Hermes Agent utilise-t-il des sous-agents pour déléguer et paralléliser des tâches ?",
+    "document_id": "hermes-agent:guides/delegation-patterns.md",
+    "passage_text": "Hermes can spawn isolated child agents to work on tasks in parallel. Each subagent gets its own conversation, terminal session, and toolset. Only the final summary comes back — intermediate tool calls never enter your context window.",
+    "start_char": 218,
+    "end_char": 451,
+    "sha256": "364d18bf52a4189bf888aaf6c313a1926cc556e84ef35813a15ca5298c579c8b",
+    "usable": true,
+    "note": "Verified as verbatim and unique with corpus_lookup.py check."
+  },
+  {
+    "case_id": "m-019",
+    "question_en": "Does Hermes Agent support voice interaction?",
+    "question_fr": "Hermes Agent prend-il en charge les interactions vocales ?",
+    "document_id": "hermes-agent:user-guide/features/voice-mode.md",
+    "passage_text": "Hermes Agent supports full voice interaction across CLI and messaging platforms. Talk to the agent using your microphone, hear spoken replies, and have live voice conversations in Discord voice channels.",
+    "start_char": 193,
+    "end_char": 396,
+    "sha256": "52dab68e5cbccabb7252f0c3007e46e0e5c355b855962e58cd8391ca80f8177e",
+    "usable": true,
+    "note": "Verified as verbatim and unique with corpus_lookup.py check."
+  },
+  {
+    "case_id": "m-020",
+    "question_en": "Does Hermes Agent support MCP integration with external tool servers?",
+    "question_fr": "Hermes Agent prend-il en charge l’intégration MCP avec des serveurs d’outils externes ?",
+    "document_id": "hermes-agent:user-guide/features/mcp.md",
+    "passage_text": "MCP lets Hermes Agent connect to external tool servers so the agent can use tools that live outside Hermes itself — GitHub, databases, file systems, browser stacks, internal APIs, and more.\n\nIf you have ever wanted Hermes to use a tool that already exists somewhere else, MCP is usually the cleanest way to do it.",
+    "start_char": 219,
+    "end_char": 532,
+    "sha256": "30e2dc3de917f036e7ec83a461c92fff5549c52b11e586d5c88946c77af7180e",
+    "usable": true,
+    "note": "Verified as verbatim and unique with corpus_lookup.py check."
+  }
+]

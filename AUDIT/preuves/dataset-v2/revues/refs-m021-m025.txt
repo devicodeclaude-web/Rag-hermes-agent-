@@ -1,0 +1,67 @@
+# PRESERVED REVIEW EVIDENCE — verbatim subagent output
+# source: /root/.hermes/cache/delegation/subagent-summary-2-20261004_111714_645476.txt
+# copied_utc: 2026-10-04T11:46:57Z
+# NOTE: do not edit; raw reviewer output (evidence).
+
+[
+  {
+    "case_id": "m-021",
+    "question_en": "Can Hermes generate images from text prompts?",
+    "question_fr": "Hermes peut-il générer des images à partir de descriptions textuelles ?",
+    "document_id": "hermes-agent:reference/toolsets-reference.md",
+    "passage_text": "| `image_gen` | `image_generate` | Text-to-image generation via FAL.ai (with opt-in OpenAI / xAI backends). |",
+    "start_char": 4718,
+    "end_char": 4827,
+    "sha256": "4040b55e00e2122038973edef44abbbe607c4d22dd1755098e025637716f11b6",
+    "usable": true,
+    "note": "Passage vérifié comme verbatim et unique avec corpus_lookup.py check."
+  },
+  {
+    "case_id": "m-022",
+    "question_en": "Can Hermes integrate with Home Assistant to monitor and control smart-home devices?",
+    "question_fr": "Hermes peut-il s’intégrer à Home Assistant pour surveiller et piloter des appareils domotiques ?",
+    "document_id": "hermes-agent:user-guide/messaging/homeassistant.md",
+    "passage_text": "Hermes Agent integrates with [Home Assistant](https://www.home-assistant.io/) in two ways:\n\n1. **Gateway platform** — subscribes to real-time state changes via WebSocket and responds to events\n2. **Smart home tools** — four LLM-callable tools for querying and controlling devices via the REST API",
+    "start_char": 198,
+    "end_char": 494,
+    "sha256": "d3372964f065cfae326d8dc3a06f6223289fff8d5891c59c9a8072c2ea5751d2",
+    "usable": true,
+    "note": "Passage vérifié comme verbatim et unique avec corpus_lookup.py check."
+  },
+  {
+    "case_id": "m-023",
+    "question_en": "Can Hermes send emails through Gmail?",
+    "question_fr": "Hermes peut-il envoyer des e-mails avec Gmail ?",
+    "document_id": "hermes-agent:user-guide/skills/google-workspace.md",
+    "passage_text": "### Sending\n\n```bash\n# Basic send\n$GAPI gmail send --to user@example.com --subject \"Hello\" --body \"Message text\"\n```",
+    "start_char": null,
+    "end_char": null,
+    "sha256": null,
+    "usable": false,
+    "note": "Le document présente bien une commande d’envoi Gmail, mais ce passage candidat n’a pas été retrouvé verbatim par corpus_lookup.py check; il ne peut donc pas servir de référence validée."
+  },
+  {
+    "case_id": "m-024",
+    "question_en": "Can Hermes read and triage an email inbox by prioritizing threads and preparing replies?",
+    "question_fr": "Hermes peut-il lire et trier une boîte mail en priorisant les fils de discussion et en préparant des réponses ?",
+    "document_id": "hermes-agent:user-guide/skills/bundled/email/email-email-inbox-triage.md",
+    "passage_text": "Turn a mailbox into a bounded queue of decisions. This skill owns thread-aware prioritization and reply policy; connector skills (`himalaya`, `google-workspace`) own provider commands.",
+    "start_char": 1111,
+    "end_char": 1295,
+    "sha256": "2979d7a1fad19e5859b85b406a7b6edbff5a9d18488d95170369b5c445326b42",
+    "usable": true,
+    "note": "Passage vérifié comme verbatim et unique avec corpus_lookup.py check."
+  },
+  {
+    "case_id": "m-025",
+    "question_en": "Can Hermes monitor a blog or website for updates using RSS/Atom feeds or HTML scraping?",
+    "question_fr": "Hermes peut-il surveiller les mises à jour d’un blog ou d’un site web au moyen de flux RSS/Atom ou de l’extraction HTML ?",
+    "document_id": "hermes-agent:user-guide/skills/bundled/research/research-blogwatcher.md",
+    "passage_text": "Track blog and RSS/Atom feed updates with the `blogwatcher-cli` tool. Supports automatic feed discovery, HTML scraping fallback, OPML import, and read/unread article management.",
+    "start_char": 943,
+    "end_char": 1120,
+    "sha256": "d529a5cf7411388b36619977be7bb54f77e5508828ec26048995075b8fd71d72",
+    "usable": true,
+    "note": "Passage vérifié comme verbatim et unique avec corpus_lookup.py check."
+  }
+]

@@ -1,0 +1,26 @@
+{
+  "passed": true,
+  "date_utc": "2026-09-30",
+  "repo": "/root/rag-hermes-agent",
+  "branch": "feat/local-v1-web",
+  "scope": "Rapport-temoin de la piste synthetique : branchement du runner d'evaluation sur le vrai chemin RagService.answer_with_trace (recall@k/MRR/abstention/fuite au niveau document). Fichiers : rag_hermes/synthetic_report.py, scripts/synthetic_eval_report.py, tests/test_synthetic_report.py, data/results/synthetic-eval-report.json, README.md.",
+  "reviewer": "sous-agent independant fail-closed (leaf) — revue ACL + non-circularite + honnetete",
+  "resume": "Approuve : 7/7 points de controle passent contre le code ET les donnees reels, avec execution effective (aucun faux vert, aucune sur-affirmation de qualite).",
+  "checkpoints": [
+    {"id": 1, "titre": "Pas d'elargissement d'autorisation", "verdict": "pass", "preuve": "build_public_service (synthetic_report.py L55-56) : `if visibility != 'public': continue`. Verifie : {public, private, sans champ} -> ingere seulement le public. Contexte evaluateur public/clearance 0. Aucun doc non-public ingere sous owner public."},
+    {"id": 2, "titre": "Non-circularite preservee", "verdict": "pass", "preuve": "synthetic_eval_report.py L61-65 : refuse (exit 1) tout cas quality-eligible. dataset-synthetic.jsonl : 0 eligible, 100 provenance synthetique, 20 abstentions."},
+    {"id": 3, "titre": "Validation stricte avant metriques (fail-closed)", "verdict": "pass", "preuve": "run_evaluation valide TOUS les cas avant tout answer. Teste en memoire : hash corpus perime -> ValueError ; revision perimee -> ValueError. Script mappe vers exit 1."},
+    {"id": 4, "titre": "Honnetete du rapport", "verdict": "pass", "preuve": "JSON: quality_eligible=false, granularity=document, retriever=lexical, note TECHNICAL WITNESS ONLY. Execution reelle REPRODUIT EXACTEMENT le rapport (recall@5=0.3, MRR=0.2017, cit_prec=0.12, leak=0, abstention 0.0, deterministe). Constat abstention/seuil confirme : ms=0.05 -> 0.0 ; ms=0.6 -> recall 0.80/prec 0.76. Aucune sur-affirmation."},
+    {"id": 5, "titre": "Coherence des tests", "verdict": "pass", "preuve": "3/3 tests test_synthetic_report verts, asserts sur resultats reels d'ingestion+recuperation. Pas de faux vert."},
+    {"id": 6, "titre": "Securite generale + ACL non-vacuite", "verdict": "pass", "preuve": "Aucun secret. 73 tests de regression (runner/eval/service/dataset) verts. leak_count/security_gate refletent un VRAI controle : injection d'un chunk hors-scope -> leak_count=1 & gate=False. Mecanisme actif et non vide."},
+    {"id": 7, "titre": "Robustesse", "verdict": "pass", "preuve": "run_synthetic_evaluation rejette k<=0 et bool. Script --k 0 -> exit 1 ; cas invalide -> exit 1 message clair. Ecriture confinee a data/results/."}
+  ],
+  "concerns": [],
+  "observations_non_bloquantes": [
+    "Controle ACL inter-scope non exerce par ce jeu (corpus 100% public) : leak=0 authentique mais 'facile' ; mecanisme prouve reel par test d'injection separe. La garantie anti-fuite reelle repose sur les tests ACL Qdrant existants.",
+    "minimum_score=0.0 rejete par RagService.__init__ (defaut script 0.05 valide) — a noter pour tout appelant.",
+    "source_revision du rapport (corpus pinne b682a98...) distincte du HEAD git — intentionnel (identite corpus, pas depot)."
+  ],
+  "execution_reelle": {"recall_at_5": 0.3, "mrr": 0.2017, "citation_precision": 0.12, "abstention": 0.0, "leak_count": 0, "security_gate_passed": true, "corpus_documents": 461, "cases": 100, "abstention_ms_0.6": {"recall": 0.80, "precision": 0.76}},
+  "suite_complete": {"total": 280, "ok": 280, "skipped": 0, "failed": 0, "qdrant": "1.19.0 reel"}
+}

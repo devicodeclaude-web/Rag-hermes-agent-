@@ -56,11 +56,14 @@ class AnnotateAndValidateChainTests(unittest.TestCase):
         self._orig_corpus = validate.CORPUS
         self._orig_en = validate.TARGET_EN
         self._orig_fr = validate.TARGET_FR_PAIRS
+        self._orig_abstention_rate = validate.TARGET_MIN_ABSTENTION_RATE
         annotate.DATASET = self.path
         validate.DATASET = self.path
         validate.CORPUS = TEST_CORPUS
         validate.TARGET_EN = 1
         validate.TARGET_FR_PAIRS = 1
+        # This chain test covers annotation + pair validation, not dataset mix.
+        validate.TARGET_MIN_ABSTENTION_RATE = 0.0
 
     def tearDown(self):
         self.annotate.DATASET = self._orig_a
@@ -68,6 +71,7 @@ class AnnotateAndValidateChainTests(unittest.TestCase):
         self.validate.CORPUS = self._orig_corpus
         self.validate.TARGET_EN = self._orig_en
         self.validate.TARGET_FR_PAIRS = self._orig_fr
+        self.validate.TARGET_MIN_ABSTENTION_RATE = self._orig_abstention_rate
         self.path.unlink(missing_ok=True)
 
     def _passage(self):

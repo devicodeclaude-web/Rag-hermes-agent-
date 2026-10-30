@@ -1,0 +1,1234 @@
+[
+    {
+        "case_id": "m-004-en",
+        "track": "en2en",
+        "should_abstain": true,
+        "best_threshold": 0.714286,
+        "best_bm25": 0.89839,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-004-fr",
+        "track": "fr2en",
+        "should_abstain": true,
+        "best_threshold": 0.444444,
+        "best_bm25": 0.931287,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-005-en",
+        "track": "en2en",
+        "should_abstain": true,
+        "best_threshold": 0.625,
+        "best_bm25": 0.93175,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-005-fr",
+        "track": "fr2en",
+        "should_abstain": true,
+        "best_threshold": 0.272727,
+        "best_bm25": 0.943543,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-006-en",
+        "track": "en2en",
+        "should_abstain": true,
+        "best_threshold": 0.625,
+        "best_bm25": 0.921527,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-006-fr",
+        "track": "fr2en",
+        "should_abstain": true,
+        "best_threshold": 0.4,
+        "best_bm25": 0.931287,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-007-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.875,
+        "best_bm25": 0.924829,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-007-fr",
+        "track": "fr2en",
+        "should_abstain": false,
+        "best_threshold": 0.5,
+        "best_bm25": 0.920942,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-008-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 1.0,
+        "best_bm25": 0.850575,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-008-fr",
+        "track": "fr2en",
+        "should_abstain": false,
+        "best_threshold": 0.375,
+        "best_bm25": 0.92749,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-009-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 1.0,
+        "best_bm25": 0.917288,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-009-fr",
+        "track": "fr2en",
+        "should_abstain": false,
+        "best_threshold": 0.222222,
+        "best_bm25": 0.908392,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-010-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 1.0,
+        "best_bm25": 0.948761,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-010-fr",
+        "track": "fr2en",
+        "should_abstain": false,
+        "best_threshold": 0.272727,
+        "best_bm25": 0.89312,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-011-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.9,
+        "best_bm25": 0.951571,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-011-fr",
+        "track": "fr2en",
+        "should_abstain": false,
+        "best_threshold": 0.3125,
+        "best_bm25": 0.925335,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-012-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.875,
+        "best_bm25": 0.92477,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-012-fr",
+        "track": "fr2en",
+        "should_abstain": false,
+        "best_threshold": 0.454545,
+        "best_bm25": 0.929681,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-013-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.733333,
+        "best_bm25": 0.955328,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-013-fr",
+        "track": "fr2en",
+        "should_abstain": false,
+        "best_threshold": 0.3,
+        "best_bm25": 0.945674,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-014-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.888889,
+        "best_bm25": 0.922545,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-014-fr",
+        "track": "fr2en",
+        "should_abstain": false,
+        "best_threshold": 0.384615,
+        "best_bm25": 0.950891,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-015-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.9,
+        "best_bm25": 0.936311,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-015-fr",
+        "track": "fr2en",
+        "should_abstain": false,
+        "best_threshold": 0.230769,
+        "best_bm25": 0.89312,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-016-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.777778,
+        "best_bm25": 0.935215,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-016-fr",
+        "track": "fr2en",
+        "should_abstain": false,
+        "best_threshold": 0.333333,
+        "best_bm25": 0.89312,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-017-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 1.0,
+        "best_bm25": 0.950761,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-017-fr",
+        "track": "fr2en",
+        "should_abstain": false,
+        "best_threshold": 0.230769,
+        "best_bm25": 0.896304,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-018-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.818182,
+        "best_bm25": 0.945064,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-018-fr",
+        "track": "fr2en",
+        "should_abstain": false,
+        "best_threshold": 0.333333,
+        "best_bm25": 0.948628,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-019-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 1.0,
+        "best_bm25": 0.93171,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-019-fr",
+        "track": "fr2en",
+        "should_abstain": false,
+        "best_threshold": 0.333333,
+        "best_bm25": 0.919904,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-020-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.9,
+        "best_bm25": 0.952834,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-020-fr",
+        "track": "fr2en",
+        "should_abstain": false,
+        "best_threshold": 0.333333,
+        "best_bm25": 0.935717,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-021-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 1.0,
+        "best_bm25": 0.931044,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-021-fr",
+        "track": "fr2en",
+        "should_abstain": false,
+        "best_threshold": 0.272727,
+        "best_bm25": 0.914624,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-022-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.846154,
+        "best_bm25": 0.969843,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-022-fr",
+        "track": "fr2en",
+        "should_abstain": false,
+        "best_threshold": 0.266667,
+        "best_bm25": 0.912529,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-023-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 1.0,
+        "best_bm25": 0.954027,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-023-fr",
+        "track": "fr2en",
+        "should_abstain": false,
+        "best_threshold": 0.333333,
+        "best_bm25": 0.917172,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-024-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 1.0,
+        "best_bm25": 0.968,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-024-fr",
+        "track": "fr2en",
+        "should_abstain": false,
+        "best_threshold": 0.266667,
+        "best_bm25": 0.970952,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-025-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.875,
+        "best_bm25": 0.981205,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-025-fr",
+        "track": "fr2en",
+        "should_abstain": false,
+        "best_threshold": 0.259259,
+        "best_bm25": 0.968868,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-026-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.875,
+        "best_bm25": 0.933363,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-026-fr",
+        "track": "fr2en",
+        "should_abstain": false,
+        "best_threshold": 0.4,
+        "best_bm25": 0.917271,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-027-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.888889,
+        "best_bm25": 0.930948,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-027-fr",
+        "track": "fr2en",
+        "should_abstain": false,
+        "best_threshold": 0.333333,
+        "best_bm25": 0.923107,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-028-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.833333,
+        "best_bm25": 0.942898,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-028-fr",
+        "track": "fr2en",
+        "should_abstain": false,
+        "best_threshold": 0.235294,
+        "best_bm25": 0.943543,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-029-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 1.0,
+        "best_bm25": 0.905653,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-029-fr",
+        "track": "fr2en",
+        "should_abstain": false,
+        "best_threshold": 0.444444,
+        "best_bm25": 0.926864,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-030-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.9,
+        "best_bm25": 0.956308,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-030-fr",
+        "track": "fr2en",
+        "should_abstain": false,
+        "best_threshold": 0.363636,
+        "best_bm25": 0.908667,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-031-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 1.0,
+        "best_bm25": 0.856696,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-031-fr",
+        "track": "fr2en",
+        "should_abstain": false,
+        "best_threshold": 0.25,
+        "best_bm25": 0.908392,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-032-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 1.0,
+        "best_bm25": 0.919139,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-032-fr",
+        "track": "fr2en",
+        "should_abstain": false,
+        "best_threshold": 0.333333,
+        "best_bm25": 0.928876,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-033-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 1.0,
+        "best_bm25": 0.929059,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-033-fr",
+        "track": "fr2en",
+        "should_abstain": false,
+        "best_threshold": 0.333333,
+        "best_bm25": 0.925183,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-034-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.777778,
+        "best_bm25": 0.949714,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-034-fr",
+        "track": "fr2en",
+        "should_abstain": false,
+        "best_threshold": 0.266667,
+        "best_bm25": 0.96164,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-035-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 1.0,
+        "best_bm25": 0.883686,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-035-fr",
+        "track": "fr2en",
+        "should_abstain": false,
+        "best_threshold": 0.25,
+        "best_bm25": 0.908392,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-036-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 1.0,
+        "best_bm25": 0.893749,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-036-fr",
+        "track": "fr2en",
+        "should_abstain": false,
+        "best_threshold": 0.25,
+        "best_bm25": 0.908392,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-037-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 1.0,
+        "best_bm25": 0.945085,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-037-fr",
+        "track": "fr2en",
+        "should_abstain": false,
+        "best_threshold": 0.181818,
+        "best_bm25": 0.908392,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-038-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.9,
+        "best_bm25": 0.918747,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-038-fr",
+        "track": "fr2en",
+        "should_abstain": false,
+        "best_threshold": 0.333333,
+        "best_bm25": 0.895988,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-039-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.833333,
+        "best_bm25": 0.917916,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-039-fr",
+        "track": "fr2en",
+        "should_abstain": false,
+        "best_threshold": 0.5,
+        "best_bm25": 0.908244,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-040-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.875,
+        "best_bm25": 0.936537,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-040-fr",
+        "track": "fr2en",
+        "should_abstain": false,
+        "best_threshold": 0.375,
+        "best_bm25": 0.937171,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-041-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 1.0,
+        "best_bm25": 0.898103,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-041-fr",
+        "track": "fr2en",
+        "should_abstain": false,
+        "best_threshold": 0.333333,
+        "best_bm25": 0.943543,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-042-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.875,
+        "best_bm25": 0.94544,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-042-fr",
+        "track": "fr2en",
+        "should_abstain": false,
+        "best_threshold": 0.4,
+        "best_bm25": 0.919132,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-043-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 1.0,
+        "best_bm25": 0.922425,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-043-fr",
+        "track": "fr2en",
+        "should_abstain": false,
+        "best_threshold": 0.222222,
+        "best_bm25": 0.89312,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-044-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.833333,
+        "best_bm25": 0.919093,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-046-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 1.0,
+        "best_bm25": 0.934396,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-049-en",
+        "track": "en2en",
+        "should_abstain": true,
+        "best_threshold": 1.0,
+        "best_bm25": 0.933521,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-050-en",
+        "track": "en2en",
+        "should_abstain": true,
+        "best_threshold": 0.833333,
+        "best_bm25": 0.922179,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-051-en",
+        "track": "en2en",
+        "should_abstain": true,
+        "best_threshold": 0.769231,
+        "best_bm25": 0.942863,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-053-en",
+        "track": "en2en",
+        "should_abstain": true,
+        "best_threshold": 0.714286,
+        "best_bm25": 0.909448,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-056-en",
+        "track": "en2en",
+        "should_abstain": true,
+        "best_threshold": 1.0,
+        "best_bm25": 0.933719,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-057-en",
+        "track": "en2en",
+        "should_abstain": true,
+        "best_threshold": 0.818182,
+        "best_bm25": 0.947526,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-063-en",
+        "track": "en2en",
+        "should_abstain": true,
+        "best_threshold": 0.636364,
+        "best_bm25": 0.931467,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-064-en",
+        "track": "en2en",
+        "should_abstain": true,
+        "best_threshold": 0.727273,
+        "best_bm25": 0.933577,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-065-en",
+        "track": "en2en",
+        "should_abstain": true,
+        "best_threshold": 0.75,
+        "best_bm25": 0.954294,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-066-en",
+        "track": "en2en",
+        "should_abstain": true,
+        "best_threshold": 0.5,
+        "best_bm25": 0.952432,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-068-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.875,
+        "best_bm25": 0.918683,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-069-en",
+        "track": "en2en",
+        "should_abstain": true,
+        "best_threshold": 0.888889,
+        "best_bm25": 0.942445,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-070-en",
+        "track": "en2en",
+        "should_abstain": true,
+        "best_threshold": 0.888889,
+        "best_bm25": 0.933183,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-071-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.888889,
+        "best_bm25": 0.937309,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-072-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.888889,
+        "best_bm25": 0.926125,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-074-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 1.0,
+        "best_bm25": 0.902624,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-076-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.857143,
+        "best_bm25": 0.94427,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-077-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.7,
+        "best_bm25": 0.942591,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-079-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.888889,
+        "best_bm25": 0.936351,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-080-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.875,
+        "best_bm25": 0.920277,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-081-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.888889,
+        "best_bm25": 0.949907,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-082-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.75,
+        "best_bm25": 0.934028,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-083-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.9,
+        "best_bm25": 0.929533,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-085-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.875,
+        "best_bm25": 0.953255,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-086-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 1.0,
+        "best_bm25": 0.938967,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-087-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 1.0,
+        "best_bm25": 0.948716,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-088-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.888889,
+        "best_bm25": 0.954402,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-089-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.9,
+        "best_bm25": 0.931171,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-090-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.777778,
+        "best_bm25": 0.946837,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-091-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.888889,
+        "best_bm25": 0.943641,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-092-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.9,
+        "best_bm25": 0.935673,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-093-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.916667,
+        "best_bm25": 0.968356,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-094-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.833333,
+        "best_bm25": 0.960277,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-095-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.75,
+        "best_bm25": 0.967283,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-096-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.9,
+        "best_bm25": 0.939046,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-097-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.9,
+        "best_bm25": 0.931635,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-098-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.9,
+        "best_bm25": 0.92582,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-099-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.7,
+        "best_bm25": 0.937271,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-100-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.888889,
+        "best_bm25": 0.932905,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-101-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.818182,
+        "best_bm25": 0.932511,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-102-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.888889,
+        "best_bm25": 0.923749,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-103-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.846154,
+        "best_bm25": 0.947099,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-104-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.846154,
+        "best_bm25": 0.959219,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-105-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.916667,
+        "best_bm25": 0.946076,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-106-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.923077,
+        "best_bm25": 0.962609,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-107-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.857143,
+        "best_bm25": 0.941123,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-108-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.916667,
+        "best_bm25": 0.956757,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-109-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.933333,
+        "best_bm25": 0.966432,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-110-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.818182,
+        "best_bm25": 0.949889,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-111-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.888889,
+        "best_bm25": 0.965043,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-113-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.846154,
+        "best_bm25": 0.969377,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-114-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.785714,
+        "best_bm25": 0.965332,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-115-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.684211,
+        "best_bm25": 0.961009,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-116-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.785714,
+        "best_bm25": 0.971004,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-117-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.866667,
+        "best_bm25": 0.975189,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-118-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 1.0,
+        "best_bm25": 0.934225,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-121-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.818182,
+        "best_bm25": 0.938512,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-122-en",
+        "track": "en2en",
+        "should_abstain": false,
+        "best_threshold": 0.8,
+        "best_bm25": 0.937703,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-123-en",
+        "track": "en2en",
+        "should_abstain": true,
+        "best_threshold": 0.615385,
+        "best_bm25": 0.92368,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-123-fr",
+        "track": "fr2en",
+        "should_abstain": true,
+        "best_threshold": 0.230769,
+        "best_bm25": 0.943543,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-124-en",
+        "track": "en2en",
+        "should_abstain": true,
+        "best_threshold": 0.857143,
+        "best_bm25": 0.908432,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-124-fr",
+        "track": "fr2en",
+        "should_abstain": true,
+        "best_threshold": 0.25,
+        "best_bm25": 0.897047,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-126-en",
+        "track": "en2en",
+        "should_abstain": true,
+        "best_threshold": 0.571429,
+        "best_bm25": 0.91178,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-126-fr",
+        "track": "fr2en",
+        "should_abstain": true,
+        "best_threshold": 0.375,
+        "best_bm25": 0.897808,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-127-en",
+        "track": "en2en",
+        "should_abstain": true,
+        "best_threshold": 0.714286,
+        "best_bm25": 0.919217,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-127-fr",
+        "track": "fr2en",
+        "should_abstain": true,
+        "best_threshold": 0.222222,
+        "best_bm25": 0.897047,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-128-en",
+        "track": "en2en",
+        "should_abstain": true,
+        "best_threshold": 0.75,
+        "best_bm25": 0.927856,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-128-fr",
+        "track": "fr2en",
+        "should_abstain": true,
+        "best_threshold": 0.285714,
+        "best_bm25": 0.920391,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-129-en",
+        "track": "en2en",
+        "should_abstain": true,
+        "best_threshold": 0.785714,
+        "best_bm25": 0.933178,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-129-fr",
+        "track": "fr2en",
+        "should_abstain": true,
+        "best_threshold": 0.2,
+        "best_bm25": 0.948055,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-130-en",
+        "track": "en2en",
+        "should_abstain": true,
+        "best_threshold": 0.5,
+        "best_bm25": 0.926618,
+        "n_results": 10
+    },
+    {
+        "case_id": "m-130-fr",
+        "track": "fr2en",
+        "should_abstain": true,
+        "best_threshold": 0.125,
+        "best_bm25": 0.943543,
+        "n_results": 10
+    }
+]

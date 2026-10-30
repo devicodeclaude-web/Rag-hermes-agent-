@@ -24,6 +24,30 @@ class BenchmarkTests(unittest.TestCase):
         self.assertIn("public", cases[0].retrieved_chunk_ids)
         self.assertEqual(cases[2].retrieved_chunk_ids, ())
 
+    def test_minimum_score_uses_overlap_threshold_not_bm25_rank_score(self):
+        documents = [
+            Document("a", "common common common filler", "public", "public", "docs", (), (), 0, 1, "git://docs/a.md"),
+            Document("b", "common rare", "public", "public", "docs", (), (), 0, 1, "git://docs/b.md"),
+            Document("c", "common background", "public", "public", "docs", (), (), 0, 1, "git://docs/c.md"),
+        ]
+        questions = [
+            BenchmarkQuestion(
+                "q-threshold",
+                "common common common rare missing1 missing2 missing3 missing4 missing5 missing6",
+                AuthorizationContext("tenant", "alice", (), 0),
+                (),
+                True,
+            )
+        ]
+
+        report, cases = run_lexical_benchmark(
+            documents, questions, k=10, minimum_score=0.5
+        )
+
+        self.assertTrue(cases[0].did_abstain)
+        self.assertEqual(cases[0].retrieved_chunk_ids, ())
+        self.assertEqual(report.abstention_recall, 1.0)
+
 
 if __name__ == "__main__":
     unittest.main()

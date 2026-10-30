@@ -1,0 +1,67 @@
+# PRESERVED REVIEW EVIDENCE — verbatim subagent output
+# source: /root/.hermes/cache/delegation/subagent-summary-0-20261004_111714_631067.txt
+# copied_utc: 2026-10-04T11:46:57Z
+# NOTE: do not edit; raw reviewer output (evidence).
+
+[
+  {
+    "case_id": "m-011",
+    "question_en": "How does Hermes Agent persist and retrieve memory across sessions?",
+    "question_fr": "Comment Hermes Agent conserve-t-il et récupère-t-il sa mémoire persistante entre les sessions ?",
+    "document_id": "",
+    "passage_text": "",
+    "start_char": null,
+    "end_char": null,
+    "sha256": null,
+    "usable": false,
+    "note": "Aucun passage central vérifié comme verbatim et unique n’est disponible dans les résultats conservés."
+  },
+  {
+    "case_id": "m-012",
+    "question_en": "Which terminal backend options does Hermes Agent support?",
+    "question_fr": "Quelles options de backend terminal Hermes Agent prend-il en charge ?",
+    "document_id": "",
+    "passage_text": "",
+    "start_char": null,
+    "end_char": null,
+    "sha256": null,
+    "usable": false,
+    "note": "Aucun passage central vérifié comme verbatim et unique n’est disponible dans les résultats conservés."
+  },
+  {
+    "case_id": "m-013",
+    "question_en": "How does Hermes Agent automatically create skills, and how does the curator module consolidate them?",
+    "question_fr": "Comment Hermes Agent crée-t-il automatiquement des skills, et comment le module curator les consolide-t-il ?",
+    "document_id": "",
+    "passage_text": "",
+    "start_char": null,
+    "end_char": null,
+    "sha256": null,
+    "usable": false,
+    "note": "Aucun passage central vérifié comme verbatim et unique n’est disponible dans les résultats conservés."
+  },
+  {
+    "case_id": "m-014",
+    "question_en": "Is Hermes Agent tied to a particular language model, or can it use multiple model providers?",
+    "question_fr": "Hermes Agent est-il lié à un modèle de langage particulier, ou peut-il utiliser plusieurs fournisseurs de modèles ?",
+    "document_id": "",
+    "passage_text": "",
+    "start_char": null,
+    "end_char": null,
+    "sha256": null,
+    "usable": false,
+    "note": "Aucun passage central vérifié comme verbatim et unique n’est disponible dans les résultats conservés."
+  },
+  {
+    "case_id": "m-015",
+    "question_en": "On which messaging platforms can users interact with Hermes Agent?",
+    "question_fr": "Sur quelles plateformes de messagerie les utilisateurs peuvent-ils interagir avec Hermes Agent ?",
+    "document_id": "",
+    "passage_text": "",
+    "start_char": null,
+    "end_char": null,
+    "sha256": null,
+    "usable": false,
+    "note": "Aucun passage central vérifié comme verbatim et unique n’est disponible dans les résultats conservés."
+  }
+]

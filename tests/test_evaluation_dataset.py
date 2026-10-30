@@ -116,6 +116,40 @@ class EvaluationDatasetSchemaTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "manifest must pin"):
             validate_evaluation_case(self.valid_case(), self.documents, {})
 
+    def test_accepts_synthetic_provenance_but_marks_it_quality_ineligible(self):
+        # A question generated FROM the corpus is honestly recorded as synthetic.
+        # It must validate structurally (so the synthetic track can be checked)
+        # yet never count as human-grade quality evidence — that separation is
+        # what keeps the benchmark non-circular.
+        from rag_hermes.evaluation_dataset import (
+            SYNTHETIC_PROVENANCE,
+            is_quality_eligible,
+        )
+
+        case = self.valid_case()
+        case["question_provenance"] = SYNTHETIC_PROVENANCE
+        validated = validate_evaluation_case(case, self.documents, self.manifest)
+        self.assertEqual(validated["question_provenance"], SYNTHETIC_PROVENANCE)
+        self.assertFalse(is_quality_eligible(validated))
+
+    def test_human_provenances_are_quality_eligible(self):
+        from rag_hermes.evaluation_dataset import is_quality_eligible
+
+        for provenance in (
+            "human_task_without_corpus_view",
+            "anonymized_real_user_question",
+        ):
+            case = self.valid_case()
+            case["question_provenance"] = provenance
+            validated = validate_evaluation_case(case, self.documents, self.manifest)
+            self.assertTrue(is_quality_eligible(validated))
+
+    def test_rejects_unknown_provenance(self):
+        case = self.valid_case()
+        case["question_provenance"] = "scraped_from_somewhere"
+        with self.assertRaisesRegex(ValueError, "provenance"):
+            validate_evaluation_case(case, self.documents, self.manifest)
+
 
 if __name__ == "__main__":
     unittest.main()

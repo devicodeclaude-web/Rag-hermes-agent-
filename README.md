@@ -28,11 +28,197 @@ La baseline et le smoke restent des témoins techniques. Aucun score de qualité
 
 ## Exécution locale
 
-Les tests du cœur nécessitent une seule dépendance externe, `hypothesis` (test différentiel ACL), épinglée avec empreinte dans `requirements-audit.lock.txt`. Installe-la, puis lance la suite (115 tests ; 4 `skipped` sont les tests d’intégration Qdrant qui exigent un serveur réel) :
+### V1 web locale
+
+Cette première interface permet d'importer un texte puis de poser une question avec
+filtrage ACL, citation et abstention. Par défaut, elle utilise un stockage en
+mémoire (perdu au redémarrage) et une réponse extractive lexicale. Qdrant et un
+générateur OpenAI-compatible sont activables explicitement. Le contexte
+utilisateur reste saisi manuellement : cette V1 ne doit pas être exposée sur
+Internet et ne constitue pas encore une authentification de production.
 
 ```bash
-python -m pip install --require-hashes -r requirements-audit.lock.txt
-python -m unittest discover -s tests -v
+.venv-audit/bin/python scripts/serve_v1.py
+```
+
+Ouvrir ensuite `http://127.0.0.1:8080`. Le serveur écoute uniquement sur l'interface
+locale par défaut. Les options sont visibles avec :
+
+```bash
+.venv-audit/bin/python scripts/serve_v1.py --help
+```
+
+`--port 0` demande au système un port éphémère libre ; le serveur affiche l'URL
+réellement allouée. `SIGTERM` et `Ctrl-C` déclenchent un arrêt propre (message
+`Arrêt du serveur.`, code de sortie 0). Un test d'intégration lance le vrai
+processus HTTP sur un port éphémère, exécute import → question → citation, vérifie
+les en-têtes de sécurité puis confirme l'arrêt propre.
+
+**Durcissement HTTP.** L'API n'accepte que les hôtes loopback (`localhost`,
+`127.0.0.1`, `[::1]`), exige `Content-Type: application/json` sur les routes
+mutantes, plafonne le corps à 1 Mo et mappe chaque erreur (400/403/404/405/413/
+415/502) sans fuite de pile. Toute réponse (HTML, JS, JSON) porte les en-têtes de
+sécurité : `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
+`Referrer-Policy: no-referrer`, `Cross-Origin-Opener-Policy: same-origin`,
+`Cross-Origin-Resource-Policy: same-origin`, `Cache-Control: no-store` et une
+**Content-Security-Policy stricte** (`default-src 'none'; script-src 'self'; …;
+frame-ancestors 'none'`). Le JavaScript de l'interface est servi depuis `/app.js`
+(plus aucun `<script>` inline), de sorte que la CSP interdit toute exécution de
+script inline ou `eval`. Seul `style-src 'unsafe-inline'` reste toléré pour la
+feuille de style intégrée (vecteur sans exécution de code).
+
+### Backend de stockage (mémoire ou Qdrant)
+
+Par défaut, la V1 stocke les segments en mémoire (perdus au redémarrage). Pour
+activer la persistance Qdrant, définir `RAG_QDRANT_URL` (et éventuellement
+`RAG_QDRANT_COLLECTION`, défaut `hermes_chunks_v1`) avant de lancer le serveur.
+La collection et ses index de payload doivent exister au préalable
+(voir `qdrant/payload-indexes.json`).
+
+Pour provisionner explicitement la collection par défaut BGE-M3 (vecteur dense
+de dimension 1 024) sur un Qdrant local :
+
+```bash
+.venv-audit/bin/python scripts/provision_qdrant.py
+```
+
+Les paramètres peuvent être modifiés avec `--url`, `--collection`,
+`--vector-size` et `--index-spec`. La commande est idempotente : une seconde
+exécution sur une collection conforme ne crée rien. Une collection existante
+avec une dimension, une distance ou un index incompatible est refusée avant
+toute création d'index ; aucune infrastructure existante n'est corrigée ou
+écrasée silencieusement.
+
+Au démarrage, le service lit les métadonnées de la collection et refuse de
+démarrer si la collection est absente, si le vecteur nommé `dense` manque, si
+un index déclaré dans `qdrant/payload-indexes.json` manque ou possède un type
+différent, ou si `tenant_id` n'est pas un index `keyword` déclaré avec
+`is_tenant: true`. Ce contrôle est fail-closed et ne crée ni ne modifie
+l'infrastructure Qdrant.
+
+Le module n'impose aucun modèle d'embedding : `scripts/serve_v1.py` ne fournit
+pas d'`embed`. Deux options explicites pour la persistance Qdrant :
+
+- passer une fonction `embed` en code via `app_factory.build_service(env, embed=...)` ;
+- ou définir `RAG_EMBED_LOCK` vers un lock de checkpoint épinglé
+  (`manifests/locks/bge-m3.lock.json`). Le factory construit alors un
+  `LockedBgeM3Embedder` verrouillé sur `BAAI/bge-m3` à la révision auditée. Le
+  modèle est chargé paresseusement au premier appel (import de `FlagEmbedding`
+  différé) ; l'installation GPU se fait via `pip install -e '.[gpu]'`. Démarrer
+  avec `RAG_QDRANT_URL` sans l'une de ces deux options est refusé explicitement.
+
+La barrière ACL pré-filtrage/post-filtrage est déjà prouvée contre un vrai
+Qdrant 1.19.0.
+
+### Génération optionnelle OpenAI-compatible
+
+Sans configuration supplémentaire, la V1 conserve son mode extractif local :
+elle retourne le meilleur segment autorisé. Un générateur OpenAI-compatible peut
+être activé explicitement, indépendamment du backend mémoire ou Qdrant :
+
+```bash
+export RAG_GENERATOR_BASE_URL=http://127.0.0.1:8000/v1
+export RAG_GENERATOR_MODEL=qwen-local
+.venv-audit/bin/python scripts/serve_v1.py
+```
+
+Pour un service distant, l'URL doit utiliser HTTPS et la clé peut être fournie
+avec `RAG_GENERATOR_API_KEY`. HTTP n'est accepté que pour `localhost`,
+`127.0.0.1` ou `::1`. Une configuration partielle (URL sans modèle ou modèle
+sans URL) bloque le démarrage.
+
+Le générateur reçoit uniquement la question et les segments déjà autorisés par
+la barrière ACL. Le prompt traite les documents comme des données non fiables,
+interdit de suivre leurs instructions et exige des marqueurs `[S1]`, `[S2]`,
+etc. Une réponse non vide sans citation valide, une réponse fournisseur
+malformée ou une panne réseau échoue explicitement en HTTP 502 ; elle n'est pas
+comptée comme une abstention. Une abstention explicite masque les citations
+inutiles. Le fournisseur reçoit une demande plafonnée à 512 tokens ; le client
+refuse en plus toute réponse HTTP dépassant 1 000 000 octets et tout contenu de
+réponse dépassant 16 384 caractères.
+
+### Récupération multi-source (top-k)
+
+Par défaut, la V1 ne récupère qu'un seul segment (`RAG_TOP_K=1`). Pour fonder
+une réponse sur plusieurs segments autorisés, augmenter la valeur :
+
+```bash
+export RAG_TOP_K=5
+```
+
+La valeur doit être un entier positif ; toute autre valeur bloque le démarrage.
+Le service récupère jusqu'à `RAG_TOP_K` segments dépassant le seuil de score,
+puis les transmet au générateur numérotés `[S1]`, `[S2]`, etc. dans l'ordre de
+pertinence. Seuls les segments réellement cités par un marqueur valide dans la
+réponse deviennent des citations retournées ; les marqueurs sont dédupliqués et
+les citations suivent l'ordre de première citation. En mode extractif (sans
+générateur), seul le meilleur segment est renvoyé, quel que soit `RAG_TOP_K`.
+
+### Reranking (cross-encodeur optionnel)
+
+La récupération vectorielle est rapide mais approximative. Un reranker
+cross-encodeur (BGE-reranker-v2-m3) relit chaque paire `question + passage`
+ensemble et produit un score de pertinence plus fiable. Deux paramètres
+séparent la récupération de la sortie :
+
+- `RAG_RETRIEVAL_K` : nombre de candidats récupérés avant reranking (ex. 20) ;
+- `RAG_TOP_K` : nombre de segments conservés après reranking et envoyés au
+  générateur (ex. 5).
+
+`RAG_RETRIEVAL_K` doit être un entier positif et supérieur ou égal à
+`RAG_TOP_K` ; sinon le démarrage est bloqué. Sans reranker injecté, seul
+`RAG_TOP_K` est récupéré (pas d'élargissement) et l'ordre de récupération est
+conservé.
+
+Le reranker est injecté explicitement en code via
+`RagService(reranker=...)` ; ce module ne choisit ni ne télécharge aucun
+modèle implicitement. Le pont fourni est
+`rag_hermes.reranker.BudgetedCrossEncoderReranker`, qui reçoit un modèle et le
+tokenizer exact. Chaque paire est vérifiée contre le budget de 512 tokens avec
+le tokenizer réel AVANT tout scoring : une paire hors budget est rejetée (jamais
+tronquée) et le modèle n'est alors jamais appelé. Le reranker ne fait que
+réordonner des segments déjà autorisés par la barrière ACL ; il n'élargit
+jamais l'autorisation. L'exécution du vrai modèle BGE nécessite
+`pip install -e '.[gpu]'` et une classe de GPU adaptée (voir le smoke GPU) ;
+les tests locaux utilisent un cross-encodeur déterministe factice.
+
+Attention : avec un fournisseur distant, la question et les extraits autorisés
+quittent la machine. Le coût et la politique de conservation dépendent de ce
+fournisseur. Aucune requête externe n'est effectuée tant que ces variables ne
+sont pas définies.
+
+Le parcours système HTTP → service → Qdrant est également testé contre ce
+serveur réel : un document importé reste interrogeable avec sa citation après
+reconstruction complète du service. Le propriétaire persisté est contrôlé
+avant tout remplacement ; après redémarrage, un autre utilisateur du même
+tenant ne peut pas reprendre le même `document_id`. Ce test utilise un vecteur
+déterministe de quatre dimensions et prouve le câblage, la persistance et la
+barrière de propriété, pas la qualité sémantique du modèle d'embedding.
+
+Cette garantie suppose l'unique writer fourni par `scripts/serve_v1.py`
+(serveur WSGI mono-processus et séquentiel). Le contrôle du propriétaire et
+l'écriture Qdrant ne constituent pas une transaction atomique : plusieurs
+processus ou writers concurrents sur la même collection ne sont pas supportés
+par cette V1. Un déploiement multi-writer devra ajouter un registre de
+propriété avec création conditionnelle ou un verrou distribué avant d'être
+considéré sûr.
+
+
+### Tests
+
+La suite complète utilise `hypothesis`, verrouillé dans
+`requirements-audit.lock.txt`. Sur un nouveau clone, préparer l’environnement
+d’audit avec :
+
+```bash
+python -m venv .venv-audit
+.venv-audit/bin/python -m pip install --require-hashes -r requirements-audit.lock.txt
+```
+
+Exécuter ensuite tous les tests :
+
+```bash
+.venv-audit/bin/python -m unittest discover -s tests -v
 ```
 
 Reconstruction du corpus public :
@@ -65,6 +251,189 @@ PYTHONPATH=. python scripts/qdrant_smoke.py \
 ```
 
 Les vecteurs de ce script sont déterministes et destinés exclusivement aux tests de stockage et d’ACL. Ils ne constituent pas des embeddings et ne mesurent aucune qualité sémantique.
+
+### Jeux d’évaluation : deux pistes strictement séparées
+
+L’évaluation distingue deux pistes qui ne se mélangent jamais. La séparation est
+imposée par le schéma (`question_provenance`) et par `is_quality_eligible`, de
+sorte qu’une question générée depuis le corpus ne peut jamais gonfler un score
+de qualité humaine (non-circularité).
+
+1. **Snapshot humain — `data/benchmark/dataset-v2-human-154.jsonl`.** Questions écrites par un
+   humain sans voir le corpus (`human_task_without_corpus_view`) ou questions
+   réelles anonymisées (`anonymized_real_user_question`), annotées au **passage**
+   (span exact + `passage_sha256`), avec paires EN/FR. C’est la seule piste
+   éligible comme preuve de qualité. État vérifié : **154 cas validés** (107 EN,
+   47 FR), dont 32 abstentions (22 EN, 10 FR), soit au moins 20 % dans chaque
+   langue. Cette piste est figée avec son corpus historique correspondant ; la
+   gate `scripts/validate_dataset_v2.py` est `READY` : les cibles
+   intermédiaires de 100 cas EN et 40 paires FR sont dépassées, toutes les
+   références sont revues et le bloc `remaining` est nul. Le dataset actif
+   `data/benchmark/dataset-v2.jsonl` utilise un schéma QA distinct et contient
+   désormais 298 cas après exclusion de deux rejets archivés ; ses portes actives sont `check_dataset_qa.py` et
+   `check_title_leak.py`.
+
+2. **Piste synthétique — `data/benchmark/dataset-synthetic.jsonl`.** Migration du
+   jeu généré `dataset-v1.jsonl` (100 questions) vers le schéma canonique via
+   `scripts/migrate_v1_to_synthetic.py`. Provenance honnête
+   `synthetic_generated_from_corpus` (**jamais** quality-eligible), relevance au
+   **document entier** (span `start=0..len(content)`, pas un passage précis),
+   `reference_status = pending`. État vérifié : 100 cas valides (0 rejet par le
+   validateur strict), 80 répondables + 20 abstentions, 0 quality-eligible, hashes
+   de span conformes au corpus canonique, migration déterministe. Cette piste sert
+   uniquement de témoin technique de bout en bout (recall@k au niveau document) ;
+   elle ne mesure aucune qualité sémantique probante.
+
+```bash
+# Migrer/rafraîchir la piste synthétique (déterministe)
+.venv-audit/bin/python scripts/migrate_v1_to_synthetic.py
+```
+
+#### Rapport lexical de la piste humaine
+
+`scripts/human_eval_report.py` exécute les 154 cas humains sur le corpus public
+complet avec la baseline lexicale locale. Il prépare les deux artefacts, publie
+le checksum d’abord puis `data/results/human-lexical-eval-report.json` en dernier
+comme marqueur de commit. Un consommateur ne doit accepter le résultat que si le
+rapport existe et correspond à son SHA-256. Le script sépare les résultats EN→EN
+et FR→EN et refuse toute question synthétique ou référence non revue.
+
+```bash
+.venv-audit/bin/python scripts/human_eval_report.py --k 10 --minimum-score 0.05
+```
+
+Mesure descriptive obtenue sur 154 cas (122 répondables, 32 abstentions) :
+Recall@10 global `0,3361`, MRR `0,1737`; EN→EN Recall@10 `0,4471`, MRR
+`0,2339`; FR→EN Recall@10 `0,0811`, MRR `0,0354`. La baseline ne s’abstient
+jamais à ce seuil (`abstention_recall = 0`) et ne produit aucune fuite
+(`leak_count = 0`). Le score FR→EN est un diagnostic seulement : une recherche
+lexicale française sur un corpus anglais n’est pas une comparaison translingue
+équitable. Les champs de jugement humain des citations restent `null`, car ils
+ne sont pas instrumentés dans ce rapport de retrieval.
+
+#### Rapport-témoin de la piste synthétique
+
+`scripts/synthetic_eval_report.py` fait passer les 100 cas synthétiques par le
+vrai chemin `RagService` sur le corpus public complet (461 documents) et écrit
+`data/results/synthetic-eval-report.json`. C’est un **témoin technique** de la
+récupération lexicale au niveau document, jamais une preuve de qualité (questions
+générées, pertinence document entier, récupérateur lexical sans embeddings).
+
+```bash
+.venv-audit/bin/python scripts/synthetic_eval_report.py --k 5
+```
+
+Résultat vérifié (baseline lexicale en mémoire, `minimum_score=0.05`, `k=5`, 461
+documents, 100 cas) : `recall@5 = 0,30`, `MRR = 0,20`, `citation_precision = 0,12`,
+`leak_count = 0`, `security_gate_passed = true`. L’**abstention est nulle**
+(`abstention_precision = abstention_recall = 0,0`) : à seuil bas le récupérateur
+lexical trouve toujours un chunk au-dessus du seuil, donc il ne s’abstient jamais
+sur les 20 cas sans réponse. Ce n’est pas un défaut de code mais une propriété
+mesurée de la baseline lexicale ; l’abstention n’apparaît qu’à seuil élevé
+(par ex. `minimum_score=0.6`) et reste faible. Ces chiffres sont un plancher
+attendu ; la piste humaine annotée au passage et un récupérateur dense/reranké
+sont nécessaires pour toute affirmation de qualité.
+
+### Baseline générative sans retrieval (closed-book)
+
+La campagne générative exige une baseline **sans retrieval** (règle non
+négociable 7) : ce que le modèle répond DE MÉMOIRE, sans corpus, pour prouver
+ensuite que le RAG apporte un gain. `rag_hermes/closed_book.py` fournit un
+`ClosedBookGenerator` distinct du générateur RAG :
+
+- il n'envoie QUE la question (jamais de champ `sources`) ;
+- il n'exige AUCUNE citation `[Sn]` (il n'y a rien à citer) ;
+- il est instruit d'abstenir honnêtement (`Je ne connais pas la réponse.`)
+  plutôt que d'inventer ;
+- il partage le durcissement réseau du générateur RAG via `validate_endpoint`
+  (HTTPS partout ou HTTP loopback uniquement, pas d'identifiants dans l'URL,
+  redirections coupées, réponse plafonnée), et son transport est injectable
+  (tests hors-ligne, aucun appel réseau).
+
+`rag_hermes/closed_book_eval.py` mesure hors-ligne le **seul** axe scorable sans
+sources : l'abstention (précision/rappel entre `should_abstain` attendu et
+l'abstention réelle). Les réponses concrètes sont exposées par `case_id`
+(`answered_case_ids`) pour tirer l'échantillon de **revue humaine ≥20 %** — seule
+une revue humaine juge la justesse d'une réponse closed-book, qu'aucune métrique
+hors-ligne ne peut établir. Cette revue humaine reste à réaliser.
+
+Le générateur baseline s'active par variables d'environnement, sur le même modèle
+que le générateur RAG : `RAG_BASELINE_BASE_URL` et `RAG_BASELINE_MODEL` sont
+exigés ensemble, `RAG_BASELINE_API_KEY` est optionnel. Le même durcissement réseau
+s'applique (HTTPS partout ou HTTP loopback uniquement, sans identifiants). La
+fabrique `rag_hermes.app_factory.build_baseline_generator(env=…)` renvoie un
+`ClosedBookGenerator` ou `None` si rien n'est configuré. La baseline est une
+campagne SÉPARÉE (sans retrieval) : elle n'est jamais injectée dans le
+`RagService`, les appelants la pilotent directement (voir le comparateur).
+
+### Comparaison RAG vs closed-book (harnais hors-ligne)
+
+`rag_hermes/campaign_compare.py` contraste les deux campagnes sur le même jeu de
+questions. Chaque campagne abstient avec SA propre sentinelle (RAG et closed-book
+en ont deux distinctes), et le harnais mesure l'axe **abstention** des deux côtés,
+puis tire un échantillon de revue humaine déterministe (fraction paramétrable,
+≥20 %) appariant, par question, la réponse RAG et la réponse closed-book.
+
+`scripts/compare_campaigns.py` exécute cette comparaison sur la piste synthétique
+et écrit `data/results/campaign-comparison.json` (métriques d'abstention) et
+`data/results/campaign-review-sample.jsonl` (les paires à juger, avec des champs
+`human_verdict` vides à remplir).
+
+```bash
+.venv-audit/bin/python scripts/compare_campaigns.py --review-fraction 0.2 --seed 1
+```
+
+**Limite hors-ligne assumée** : sans endpoint LLM câblé, le côté RAG utilise la
+réponse extractive (meilleur chunk autorisé) et le côté closed-book s'abstient par
+défaut. Résultat vérifié (100 cas, seed 1) : `rag_abstention_recall = 0,0`
+(l'extractif à seuil bas ne s'abstient jamais), `closed_book_abstention_recall =
+1,0` mais `precision = 0,2` (le stub s'abstient partout, y compris à tort sur les
+répondables). Ces chiffres ne mesurent PAS la justesse des réponses : seule la
+**revue humaine ≥20 %** (le fichier de paires produit) le fait. Quand un endpoint
+réel sera fourni, le comparateur utilise le générateur baseline réseau. Une panne
+HTTP, une réponse invalide ou toute autre `GenerationError` produit alors
+`BACKEND_ERROR` et un code de sortie `1`, avant l'écriture des artefacts : une
+panne technique n'est jamais recodée comme abstention. Les anciennes cibles de
+rapport et de revue sont invalidées au démarrage (avec refus des chemins qui
+aliasent les entrées), afin qu'un échec ne laisse pas une campagne obsolète
+consommable comme résultat courant.
+
+#### Agrégation des verdicts humains
+
+Une fois le fichier `campaign-review-sample.jsonl` rempli (chaque
+`human_verdict.rag_correct` / `closed_book_correct` mis à `true`/`false`),
+`scripts/aggregate_review.py` calcule la **justesse** de chaque campagne — la
+seule mesure de correction d'une réponse, qu'aucune métrique hors-ligne ne peut
+produire — et écrit `data/results/campaign-review-aggregate.json`.
+
+```bash
+.venv-audit/bin/python scripts/aggregate_review.py            # fail-closed : refuse si une paire reste non revue
+.venv-audit/bin/python scripts/aggregate_review.py --allow-partial  # instantané sur le sous-ensemble revu
+```
+
+Le rapport donne `rag_accuracy`, `closed_book_accuracy` (dénominateur = nombre de
+paires revues), ainsi que `rag_better_count` / `closed_book_better_count` (sur
+combien de cas une campagne est correcte quand l'autre ne l'est pas). Par défaut,
+l'agrégation est **fail-closed** : tant qu'une paire porte un verdict `null`, elle
+refuse de publier une justesse partielle.
+
+#### Rapport consolidé de campagne
+
+`scripts/consolidate_campaign.py` réunit les rapports de retrieval synthétique,
+de comparaison d'abstention et de justesse humaine dans
+`data/results/campaign-summary.json`, sans mélanger leurs niveaux de preuve :
+
+```bash
+.venv-audit/bin/python scripts/consolidate_campaign.py
+```
+
+Les sections restent distinctes (`retrieval_technical`,
+`abstention_comparison`, `human_correctness`). Le consolidateur vérifie la
+cohérence des nombres de cas et de la taille de l'échantillon humain. Codes de
+sortie : `0` si la campagne synthétique et sa revue sont complètes, `2` si la
+revue humaine est absente/incomplète, `1` sur incohérence ou échec du gate de
+sécurité. Même complet, ce rapport conserve `quality_evidence=false` : une piste
+synthétique ne devient jamais une preuve de qualité humaine.
 
 ## Architecture du MVP
 

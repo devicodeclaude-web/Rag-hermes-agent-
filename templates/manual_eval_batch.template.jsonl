@@ -1,0 +1,33 @@
+// GABARIT — Questions d'évaluation écrites à la main (piste HUMAINE, dataset-v2)
+//
+// COMMENT L'UTILISER
+//   1. Copie ce fichier sous data/benchmark/manual_batch_001.jsonl (ou un autre nom).
+//   2. SUPPRIME toutes les lignes qui commencent par // (ce sont des commentaires,
+//      le format réel est du JSONL : un objet JSON par ligne, sans commentaire).
+//   3. Remplis une ligne par question. Écris d'abord la QUESTION sans lire le corpus.
+//      Ensuite seulement, trouve le passage exact qui y répond et colle-le verbatim.
+//   4. Ingère le lot :  .venv-audit/bin/python scripts/ingest_manual_batch.py data/benchmark/manual_batch_001.jsonl
+//      -> exit 0 = tout ingéré ; exit 1 = une ligne invalide, RIEN n'est écrit (corrige et relance).
+//
+// CHAMPS
+//   case_id            : identifiant unique, ex. "m-001-en" (EN) / "m-001-fr" (FR de la même paire)
+//   pair_id            : (optionnel) même valeur pour l'EN et le FR d'une paire, ex. "m-001"
+//   question           : la question, en anglais si track=en2en, en français si track=fr2en
+//   language / track   : "en"+"en2en"  OU  "fr"+"fr2en"  (la langue DOIT correspondre au track)
+//   category           : "simple" | "paraphrase" | "close_distractor" | "chunk_boundary" | "no_answer"
+//   access_scope       : "public" (le corpus public Hermes)
+//   question_provenance: "human_task_without_corpus_view" (question écrite sans voir le corpus)
+//   should_abstain     : false (répondable) | true (aucune réponse dans le corpus)
+//   unanswerable_reason: null si répondable ; une raison courte non vide si should_abstain=true
+//   reference_status   : "pending" (tu valideras ensuite -> "validated")
+//   relevant_passages  : [] si abstention ; sinon 1+ passages :
+//                        document_id  = un id du corpus (ex. "hermes-agent:developer-guide/architecture.md")
+//                        passage_text = texte EXACT copié du document (unique dans ce document)
+//                        relevance_grade = 2 (très pertinent) ou 1 (partiellement pertinent)
+//
+// EXEMPLE 1 — question répondable (EN)
+{"case_id": "m-001-en", "pair_id": "m-001", "question": "How does Hermes structure its agent loop?", "language": "en", "track": "en2en", "category": "simple", "access_scope": "public", "question_provenance": "human_task_without_corpus_view", "should_abstain": false, "unanswerable_reason": null, "reference_status": "pending", "relevant_passages": [{"document_id": "hermes-agent:developer-guide/agent-loop.md", "passage_text": "COLLE ICI LE PASSAGE EXACT DU DOCUMENT", "relevance_grade": 2}]}
+// EXEMPLE 2 — la même question, version française (paire FR ; même pair_id)
+{"case_id": "m-001-fr", "pair_id": "m-001", "question": "Comment Hermes structure-t-il sa boucle d'agent ?", "language": "fr", "track": "fr2en", "category": "simple", "access_scope": "public", "question_provenance": "human_task_without_corpus_view", "should_abstain": false, "unanswerable_reason": null, "reference_status": "pending", "relevant_passages": [{"document_id": "hermes-agent:developer-guide/agent-loop.md", "passage_text": "COLLE ICI LE MÊME PASSAGE EXACT DU DOCUMENT", "relevance_grade": 2}]}
+// EXEMPLE 3 — question sans réponse dans le corpus (abstention)
+{"case_id": "m-002-en", "question": "What lunar calibration constant does Hermes prescribe for a telescope?", "language": "en", "track": "en2en", "category": "no_answer", "access_scope": "public", "question_provenance": "human_task_without_corpus_view", "should_abstain": true, "unanswerable_reason": "outside_corpus_scope", "reference_status": "pending", "relevant_passages": []}

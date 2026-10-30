@@ -257,36 +257,35 @@ du schéma cible des sections 3–9 (`track`, `language`, `relevance_spans`,
 `question_provenance`…) non encore en vigueur. Portes actives : `check_dataset_qa.py`
 et `check_title_leak.py`.
 
-### 11.1 Effectifs après intégration du lot v2+
+### 11.1 Effectifs actifs
 
-126 cas (94 → 126, +32). Composition par catégorie **observée, provisoire — ce
-n'est pas un quota à atteindre** et elle pourra évoluer après la revue
-indépendante :
-`simple` 40 · `paraphrase` 25 · `close_distractor` 28 · `chunk_boundary` 14 ·
-`no_answer` 19. La cible d'origine 25/20/20/15/20 % n'est plus tenue : les vraies
-frontières de chunk étant rares (vérification au tokenizer BGE-M3 384/64,
-« aucun chunk unique ne contient les deux faits »), `chunk_boundary` reste bas
-plutôt que gonflé par de faux cas.
+Le fichier contient **298 cas actifs** et 298 `case_id` uniques. Deux cas rejetés
+par la revue (`v3na-115`, `v3cb-091`) sont archivés séparément et exclus. La composition
+observée, qui décrit le dataset mais ne constitue pas un quota de qualité, est :
+`simple` 76 · `paraphrase` 60 · `close_distractor` 60 · `chunk_boundary` 44 ·
+`no_answer` 58. `check_dataset_qa.py` valide la structure, les références au corpus
+et l'absence de fuite de titre ; il ne transforme pas ce schéma QA en piste
+éligible à une conclusion de qualité.
 
-### 11.2 Provenance `scaffold_assisted_llm_written`
+### 11.2 Provenance et état de revue
 
-Les 32 questions du lot v2+ portent `authorship: scaffold_assisted_llm_written` :
-cibles, distracteurs, intentions et faits visés préparés par Hermes ; formulations
-rédigées par un LLM ; sélection et exclusions arbitrées par l'utilisateur.
-**Construction assistée, pas une collecte indépendante.** Statuts honnêtes
-`decision_reference_status: pending_human_validation` et
-`manual_review_status: pending_initial_control` : une revue indépendante reste
-due avant tout passage à `validated`. Un champ par cas `provenance_detail`
-précise le rédacteur :
+Répartition actuelle du champ `authorship` :
 
-| Rédacteur (`provenance_detail`)      | Cas                                   |
-|--------------------------------------|---------------------------------------|
-| `claude_written`                     | v2p-001 à 026 (hors 014 et 018)       |
-| `chatgpt_draft_claude_verbatim`      | v2p-018, 027, 029, 032, 033           |
-| `chatgpt_draft_claude_rewritten`     | v2p-028, 030, 031                     |
+- `scaffold_assisted_llm_written` : 203 ;
+- `human_drafted_llm_reworded_independently_reviewed` : 82 ;
+- `human_rewritten_in_independent_review` : 12 ;
+- `human_drafted_pending_independent_review` : 1.
 
-Exclus du lot : **v2p-034** (juxtaposition de deux besoins indépendants, pas une
-vraie frontière) et **v2p-014** (la règle anti-fuite bloque le nom de plateforme
-« Discord », titre mono-token, nécessaire à une formulation non ambiguë vs
-Telegram ; aucune fuite démontrée sur ce seul critère — la porte n'a pas été
-affaiblie pour le débloquer).
+Répartition des statuts de revue :
+
+- `manual_review_status` : `validated` : 298 ;
+- `decision_reference_status` : `validated` : 298.
+
+Le statut `validated` atteste la décision de revue de chaque cas, mais ne transforme
+pas les 298 cas en références toutes rédigées et annotées par des humains indépendants.
+Le seuil numérique minimal de 300 présente désormais un déficit de 2. Le snapshot historique distinct
+`data/benchmark/dataset-v2-human-154.jsonl` reste la piste humaine immuable
+éligible aux mesures de qualité déjà publiées. Le schéma actif ne possède pas
+encore les champs cibles `track`, `language`, `question_provenance` et
+`relevance_spans`, et ne couvre pas explicitement les strates privé,
+contradictions et injections documentaires requises avant une campagne finale.
