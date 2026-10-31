@@ -1,0 +1,4 @@
+case_id,category,provenance_detail,reviewer_decision,reviewer_name,review_date_utc,notes
+# relecteur DISTINCT du redacteur ; decision in validate|rewrite|reject,,,,,,
+v3na-169,no_answer,user_written_from_scaffold_intent,,,,
+v3na-170,no_answer,user_written_from_scaffold_intent,,,,
