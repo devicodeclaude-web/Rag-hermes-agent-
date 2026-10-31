@@ -31,17 +31,17 @@ finale gelée, annotée et conforme à tous les critères de couverture.
 | Fuite inter-tenant 0 absolu | Barrière ACL Qdrant réelle validée par ailleurs ; le rapport synthétique confirme leak_count 0 (corpus 100 % public) |
 | Élargissement de recherche après erreur ACL 0 absolu | Garanti par le service (refus fermé) ; couvert par la suite de tests |
 | Validité structurelle des citations 1,00 | Générateur RAG fail-closed sur citations invalides |
-| ≥ 300 questions gelées + couverture (privé, abstention, contradictions, injections) | **Critère non atteint** : après revue indépendante, deux cas invalides ont été rejetés et archivés (`v3na-115`, `v3cb-091`). Le dataset QA actif contient 298 cas actifs uniques, tous aux statuts `validated`, et passe `check_dataset_qa.py` (76 simples, 60 paraphrases, 60 distracteurs proches, 44 frontières de chunks, 58 sans réponse). Le déficit de 2 cas n'autorise pas à réintroduire les rejets. Cette piste reste distincte du snapshot de 154 cas humains éligibles qualité et ne couvre pas explicitement privé, contradictions et injections. |
+| ≥ 300 questions gelées + couverture (privé, abstention, contradictions, injections) | **Critère non atteint** : après revue indépendante, deux cas invalides ont été rejetés et archivés (`v3na-115`, `v3cb-091`). Le dataset QA actif contient 300 cas actifs uniques, tous aux statuts `validated`, et passe `check_dataset_qa.py` (76 simples, 60 paraphrases, 60 distracteurs proches, 44 frontières de chunks, 60 sans réponse). Le plancher numérique de 300 est atteint (deux `no_answer` ajoutés, `v3na-169`/`v3na-170`, rédigés par l'humain à partir d'un scaffold et en attente de revue indépendante — l'auteur ne vaut pas réviseur indépendant) ; les rejets restent exclus. Cette piste reste distincte du snapshot de 154 cas humains éligibles qualité et ne couvre pas explicitement privé, contradictions et injections. |
 | Seuils de recall/MRR/abstention | Baseline lexicale humaine mesurée : Recall@10 global 0,3361, MRR 0,1737, rappel d'abstention 0 ; comparaison dense/rerankée et intervalles de confiance encore absents |
 
 ## Reste à faire
 
-1. **Qualifier et compléter le jeu final** : préserver séparément les 298 cas
+1. **Qualifier et compléter le jeu final** : préserver séparément les 300 cas
    actifs revus du schéma QA, les deux rejets archivés et le snapshot historique
-   de 154 cas humains. Ajouter au moins deux nouveaux cas valides puis
-   revoir, dans une piste finale gelée et éligible qualité, les catégories privé,
-   contradictions et injections ; ne pas assimiler le seul compte de 300 à une
-   satisfaction du critère d'acceptation.
+   de 154 cas humains. Soumettre à revue indépendante les deux cas ajoutés
+   (`v3na-169`/`v3na-170`), puis revoir, dans une piste finale gelée et éligible
+   qualité, les catégories privé, contradictions et injections ; ne pas assimiler
+   le seul compte de 300 à une satisfaction du critère d'acceptation.
 2. **Endpoint LLM réel** : brancher `RAG_GENERATOR_*` et `RAG_BASELINE_*` sur un
    serveur OpenAI-compatible pour produire de vraies réponses RAG et closed-book,
    puis relancer le comparateur.

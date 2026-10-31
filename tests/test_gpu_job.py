@@ -31,10 +31,10 @@ class GPUJobTests(unittest.TestCase):
         ]
         runbook = Path("docs/smoke-gpu-runbook.md").read_text(encoding="utf-8")
 
-        self.assertEqual(len(active), 298)
-        self.assertEqual(len({row["case_id"] for row in active}), 298)
+        self.assertEqual(len(active), 300)
+        self.assertEqual(len({row["case_id"] for row in active}), 300)
         self.assertNotIn("jeu final de 300", runbook)
-        self.assertIn("298 cas actifs", runbook)
+        self.assertIn("300 cas actifs", runbook)
         self.assertIn("piste finale distincte", runbook)
         self.assertIn("éligible qualité", runbook)
 
