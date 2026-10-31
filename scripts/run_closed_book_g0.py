@@ -25,6 +25,7 @@ from __future__ import annotations
 import json
 import os
 import platform
+import re
 import time
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -52,6 +53,46 @@ OUTPUT = Path(
 # in rag_hermes.closed_book). The manifest must declare exactly that, so the two
 # cannot silently drift.
 _REQUIRED_DECODING = {"temperature": 0, "max_tokens": 512}
+
+
+def check_protocol_freeze_consistency(
+    protocol_block: object,
+    protocol_attestation: dict[str, str] | None,
+) -> None:
+    """Enforce the freeze-verification gate of docs/evaluation-protocol-v2.md §11.5.
+
+    Pure function (no IO): raises ValueError on any inconsistency, no-op otherwise.
+    - `protocol_sha256` is present in the manifest EXACTLY when
+      `evaluation_protocol_status` is a FROZEN_* value (DRAFT carries neither).
+    - When a frozen `protocol_sha256` is pinned, the raw-bytes hash of the
+      protocol document read at run time must equal it (anti-drift, same spirit
+      as the manifest-SHA and decoding checks).
+
+    A pinned hash is NEVER hard-coded while the document is a DRAFT: this gate
+    only bites once the manifest is frozen (status + hash set together).
+    """
+    block = protocol_block if isinstance(protocol_block, dict) else {}
+    pinned = block.get("protocol_sha256")
+    status = block.get("evaluation_protocol_status")
+    is_frozen = isinstance(status, str) and status.startswith("FROZEN")
+    has_pin = isinstance(pinned, str) and pinned != ""
+    if has_pin != is_frozen:
+        raise ValueError(
+            "manifest protocol freeze is inconsistent: protocol_sha256 must be "
+            "present exactly when evaluation_protocol_status is FROZEN_* "
+            f"(protocol_sha256={'set' if has_pin else 'unset'}, status={status!r})"
+        )
+    if isinstance(pinned, str) and pinned != "":
+        if re.fullmatch(r"[0-9a-f]{64}", pinned) is None:
+            raise ValueError(
+                "manifest protocol_sha256 must be 64 lowercase hex characters"
+            )
+        actual = protocol_attestation.get("sha256") if protocol_attestation else None
+        if actual != pinned:
+            raise ValueError(
+                f"frozen protocol_sha256 mismatch: manifest pins {pinned}, "
+                f"actual {actual}"
+            )
 
 
 def load_cases(dataset_payload: bytes) -> list[dict[str, object]]:
@@ -198,6 +239,7 @@ def main() -> None:
             _protocol_payload, protocol_attestation = read_repository_snapshot(
                 ROOT, ROOT / evaluation_protocol_rel
             )
+    check_protocol_freeze_consistency(protocol_block, protocol_attestation)
 
     base_url = os.environ.get("RAG_GENERATOR_BASE_URL")
     model = os.environ.get("RAG_GENERATOR_MODEL")

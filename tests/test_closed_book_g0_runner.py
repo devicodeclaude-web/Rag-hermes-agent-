@@ -135,6 +135,60 @@ class ManifestContractTests(unittest.TestCase):
     def test_required_decoding_matches_closed_book_generator(self):
         self.assertEqual(g0._REQUIRED_DECODING, {"temperature": 0, "max_tokens": 512})
 
+    def test_freeze_gate_noop_on_draft(self):
+        # DRAFT: neither pin nor FROZEN status -> no enforcement
+        g0.check_protocol_freeze_consistency(
+            {"evaluation_protocol_status": "DRAFT_not_frozen_run_is_not_pre_registered"},
+            {"path": "docs/evaluation-protocol-v2.md", "sha256": "d" * 64},
+        )
+        g0.check_protocol_freeze_consistency(None, None)
+
+    def test_freeze_gate_accepts_matching_frozen_pin(self):
+        g0.check_protocol_freeze_consistency(
+            {
+                "evaluation_protocol_status": "FROZEN_pre_registered_v2",
+                "protocol_sha256": "e" * 64,
+            },
+            {"path": "docs/evaluation-protocol-v2.md", "sha256": "e" * 64},
+        )
+
+    def test_freeze_gate_rejects_hash_mismatch(self):
+        with self.assertRaises(ValueError):
+            g0.check_protocol_freeze_consistency(
+                {
+                    "evaluation_protocol_status": "FROZEN_pre_registered_v2",
+                    "protocol_sha256": "e" * 64,
+                },
+                {"path": "docs/evaluation-protocol-v2.md", "sha256": "f" * 64},
+            )
+
+    def test_freeze_gate_rejects_pin_without_frozen_status(self):
+        with self.assertRaises(ValueError):
+            g0.check_protocol_freeze_consistency(
+                {
+                    "evaluation_protocol_status": "DRAFT_not_frozen_run_is_not_pre_registered",
+                    "protocol_sha256": "e" * 64,
+                },
+                {"path": "docs/evaluation-protocol-v2.md", "sha256": "e" * 64},
+            )
+
+    def test_freeze_gate_rejects_frozen_status_without_pin(self):
+        with self.assertRaises(ValueError):
+            g0.check_protocol_freeze_consistency(
+                {"evaluation_protocol_status": "FROZEN_pre_registered_v2"},
+                {"path": "docs/evaluation-protocol-v2.md", "sha256": "e" * 64},
+            )
+
+    def test_freeze_gate_rejects_non_hex_pin(self):
+        with self.assertRaises(ValueError):
+            g0.check_protocol_freeze_consistency(
+                {
+                    "evaluation_protocol_status": "FROZEN_pre_registered_v2",
+                    "protocol_sha256": "NOT-HEX",
+                },
+                {"path": "docs/evaluation-protocol-v2.md", "sha256": "NOT-HEX"},
+            )
+
     def test_protocol_sha256_is_none_without_attestation(self):
         report = g0.build_g0_report(
             manifest={"job_id": "g0-test", "protocol": {}},
