@@ -80,8 +80,8 @@ class DatasetStatusDocumentationTests(unittest.TestCase):
             )
         }
 
-        self.assertEqual(len(active), 298)
-        self.assertEqual(len({row["case_id"] for row in active}), 298)
+        self.assertEqual(len(active), 300)
+        self.assertEqual(len({row["case_id"] for row in active}), 300)
         self.assertEqual(
             dict(qa.Counter(row["category"] for row in active)),
             {
@@ -89,7 +89,7 @@ class DatasetStatusDocumentationTests(unittest.TestCase):
                 "paraphrase": 60,
                 "close_distractor": 60,
                 "chunk_boundary": 44,
-                "no_answer": 58,
+                "no_answer": 60,
             },
         )
         self.assertEqual(
@@ -152,8 +152,8 @@ class DatasetStatusDocumentationTests(unittest.TestCase):
         status = (ROOT / "docs" / "v1-implementation-status.md").read_text(
             encoding="utf-8"
         )
-        self.assertIn("298 cas actifs", status)
-        self.assertIn("déficit de 2", status)
+        self.assertIn("300 cas actifs", status)
+        self.assertIn("en attente de revue indépendante", status)
         self.assertIn("154 cas humains", status)
         self.assertIn("privé, contradictions et injections", status)
         self.assertNotIn("146 cas", status)

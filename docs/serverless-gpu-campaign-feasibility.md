@@ -78,7 +78,7 @@ Une architecture Serverless queue-based pourrait conserver :
 - le snapshot humain immuable de 154 cas
   `data/benchmark/dataset-v2-human-154.jsonl` (SHA-256
   `4613e8b3b84fb7b24ad66cf01329f40d95934bec189fe7f6cddf1eb751c767d4`),
-  distinct du dataset actif désormais ramené à 298 cas après deux rejets de revue ;
+  distinct du dataset actif désormais à 300 cas (deux rejets de revue, puis deux no_answer ajoutés) ;
 - le corpus immuable correspondant
   `data/generated/hermes_public_documents-human-154.jsonl` (SHA-256
   `af0631abbffaab14b180abc4531497665a6104d6685328d6abbe53a565c53866`),
