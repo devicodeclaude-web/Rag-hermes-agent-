@@ -575,3 +575,56 @@ le résultat attendu est prouvable contre le code d'enforcement réel. Le géné
   dérivée de la politique (`authorship=synthetic_acl_probe_policy_derived`,
   `decision_reference_status=policy_derived`). Ce stratum valide l'enforcement ACL,
   il ne constitue pas une piste de qualité de retrieval sémantique.
+
+## 14. Stratum contradiction (corpus contradictoire) — fichier dédié
+
+Le stratum « contradictions » vit dans un fichier **séparé**,
+`data/benchmark/dataset-v2-contradiction.jsonl`, et s'appuie sur des fixtures
+synthétiques **publiques** `data/fixtures/contradiction_documents.jsonl`. Les
+entités y sont **fictives** (connecteur Halcyon, cache Vermillon, pilote
+Obsidienne, greffon Tancrède) pour garantir qu'aucune troisième source
+autoritaire du corpus réel ne tranche le conflit : la contradiction est donc
+**symétrique**. Le corpus public verrouillé (`corpus.lock.json`) n'est pas modifié.
+
+### 14.1 Composition
+
+4 paires de documents, chacune affirmant **deux valeurs différentes** pour le même
+fait (ex. délai d'expiration 15 min vs 60 min). Chaque paire donne 2 cas (8 au
+total) :
+
+- **abstention** (`no_answer`, `should_abstain=true`) : la question porte sur le
+  fait **contesté** ; les deux docs contradictoires sont en `distractor_document_ids`
+  (annotation du contexte conflictuel, `relevant_document_ids=[]`) ;
+- **contrôle positif** (`simple`, `should_abstain=false`) : la question porte sur un
+  fait **non contesté** présent dans **un seul** doc de la paire (gold unique) ;
+  l'autre doc, même entité mais sans la réponse, est le distracteur proche.
+
+Le contrôle positif prouve que l'abstention du cas jumeau provient bien du
+**conflit**, et non d'un évitement des documents de la paire.
+
+### 14.2 Convention de vérité-terrain et portes
+
+Contrairement au stratum acl_probe (dérivable du code), la vérité-terrain des
+contradictions est une **convention explicite** : sur une contradiction symétrique
+non résolue, le comportement attendu est l'**abstention** (statut terminal
+`abstained`, §6) — le modèle ne doit pas affirmer l'une des valeurs comme un fait
+(cf. « affirmations critiques non soutenues »). Le variant « contradiction
+**résolvable** » (une version récente supplante l'autre) est **déféré** : le
+pipeline n'exploite aujourd'hui aucun signal de supersedence (`doc_version`).
+
+Le générateur `scripts/build_contradiction_dataset.py` refuse d'écrire si une paire
+ne se contredit pas réellement (même clé de fait, valeurs distinctes, chaque valeur
+littéralement présente dans son doc ; fait de contrôle unique au doc A).
+`tests/test_contradiction_dataset.py` re-vérifie ces invariants en CI, et une étape
+dédiée du workflow `dataset-qa` passe `check_dataset_qa.py` sur le fichier.
+
+### 14.3 Règles d'annotation
+
+- Les deux docs contradictoires sont des **annotations d'évaluation** (contexte
+  conflictuel) ; ils **ne doivent pas** être présentés au générateur comme réponse.
+- La métrique du stratum contradiction est rapportée **séparément** de la qualité
+  de retrieval.
+- Provenance honnête : cas **synthétiques**, convention d'abstention documentée
+  (`authorship=synthetic_contradiction_convention`,
+  `decision_reference_status=convention_symmetric_abstain`). Ce stratum teste la
+  robustesse au conflit de sources, pas la qualité de retrieval sémantique.

@@ -43,3 +43,8 @@ jobs:
       # tests/test_acl_probe_dataset.py (suite lock-install).
       - name: QA stratum acl_probe (fichier dédié)
         run: PYTHONPATH=. python3 scripts/check_dataset_qa.py --dataset data/benchmark/dataset-v2-acl-probe.jsonl
+      # Stratum contradiction (fixtures synthétiques publiques) : fichier DÉDIÉ.
+      # La réalité des contradictions et la convention d'abstention sont gardées
+      # par tests/test_contradiction_dataset.py (suite lock-install).
+      - name: QA stratum contradiction (fichier dédié)
+        run: PYTHONPATH=. python3 scripts/check_dataset_qa.py --dataset data/benchmark/dataset-v2-contradiction.jsonl
