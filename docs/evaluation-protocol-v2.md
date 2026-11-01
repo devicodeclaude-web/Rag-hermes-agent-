@@ -521,3 +521,57 @@ réviseur indépendant). Le snapshot historique distinct
 encore les champs cibles `track`, `language`, `question_provenance` et
 `relevance_spans`, et ne couvre pas explicitement les strates privé,
 contradictions et injections documentaires requises avant une campagne finale.
+
+## 13. Stratum acl_probe (corpus privé) — fichier dédié
+
+Le stratum « corpus privé » vit dans un fichier **séparé**,
+`data/benchmark/dataset-v2-acl-probe.jsonl`, et **non** dans `dataset-v2.jsonl`.
+Cette séparation est une invariante gardée par `tests/test_dataset_qa.py` : le jeu
+actif public reste `acl_probe=False` partout et ses cibles sont disjointes des
+documents privés. Mélanger les deux affaiblirait la garantie que des documents
+privés ne fuient pas dans le jeu de qualité public.
+
+### 13.1 Composition
+
+11 cas construits en **paires appariées** sur les 4 documents privés des fixtures
+(`data/fixtures/private_and_synthetic_documents.jsonl`). Dans chaque paire, le cas
+négatif partage l'énoncé **mot pour mot** avec son contrôle positif ; seul le
+principal (`tenant_id`, `user_id`, `groups`, `clearance`) change, isolant **une**
+condition ACL à la fois :
+
+- accès propriétaire : `acl-001..004` (chaque tenant récupère son propre secret) ;
+- accès par groupe : `acl-005` (Carol, non-propriétaire, autorisée via `admins`) ↔
+  refus `acl-009` (Carol sans groupe) — isole le **groupe** ;
+- refus par clearance : `acl-001` ↔ `acl-010` (Alice propriétaire mais
+  `clearance=0 < classification=2`) — isole la **clearance** (le gate clearance
+  s'applique même au propriétaire) ;
+- isolation inter-tenant : `acl-006..008` (un tenant demande le secret d'un autre) ;
+- principal du tenant `public` : `acl-011` (refus au contrôle inter-tenant,
+  clearance suffisante pour que ce soit bien le tenant qui bloque).
+
+Cartographie dans les 5 catégories autorisées : accès légitime → `simple`
+(`should_abstain=false`) ; refus/non-fuite → `no_answer` (`should_abstain=true`,
+`relevant_document_ids=[]`, document interdit en distracteur).
+
+### 13.2 Vérité-terrain dérivée et portes
+
+L'attente de chaque cas est **dérivée mécaniquement** de
+`rag_hermes.acl_authority.AclPolicy.allows()` : pas de jugement humain requis, car
+le résultat attendu est prouvable contre le code d'enforcement réel. Le générateur
+`scripts/build_acl_probe_dataset.py` refuse d'écrire un cas incohérent, et
+`tests/test_acl_probe_dataset.py` re-vérifie en CI que
+`should_abstain == not AclPolicy.allows(principal, doc)`. La structure passe aussi
+`check_dataset_qa.py` (étape dédiée du workflow `dataset-qa`).
+
+### 13.3 Règles d'annotation
+
+- Le `distractor_document_ids` d'un refus est le document **interdit** : c'est une
+  annotation d'évaluation (permet de vérifier la non-fuite), il **ne doit jamais**
+  être injecté dans le contexte fourni au générateur.
+- La métrique `acl_probe` est rapportée **séparément** de la qualité de retrieval.
+  Une absence de fuite doit être vérifiée **dans les passages fournis au
+  générateur**, même lorsque la réponse finale s'abstient.
+- Provenance honnête : cas **synthétiques**, principals de fixtures, vérité-terrain
+  dérivée de la politique (`authorship=synthetic_acl_probe_policy_derived`,
+  `decision_reference_status=policy_derived`). Ce stratum valide l'enforcement ACL,
+  il ne constitue pas une piste de qualité de retrieval sémantique.

@@ -38,3 +38,8 @@ jobs:
       # en entier (jamais --structure-only).
       - name: QA dataset v2 (0 fuite de titre exigée)
         run: PYTHONPATH=. python3 scripts/check_dataset_qa.py --dataset data/benchmark/dataset-v2.jsonl
+      # Stratum acl_probe (corpus privé) : fichier DÉDIÉ, structure + 0 fuite.
+      # La cohérence des attentes vs AclPolicy.allows() est gardée par le test
+      # tests/test_acl_probe_dataset.py (suite lock-install).
+      - name: QA stratum acl_probe (fichier dédié)
+        run: PYTHONPATH=. python3 scripts/check_dataset_qa.py --dataset data/benchmark/dataset-v2-acl-probe.jsonl
