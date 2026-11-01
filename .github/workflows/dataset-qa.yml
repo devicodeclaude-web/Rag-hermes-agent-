@@ -48,3 +48,8 @@ jobs:
       # par tests/test_contradiction_dataset.py (suite lock-install).
       - name: QA stratum contradiction (fichier dédié)
         run: PYTHONPATH=. python3 scripts/check_dataset_qa.py --dataset data/benchmark/dataset-v2-contradiction.jsonl
+      # Stratum injection indirecte (fixtures synthétiques publiques) : fichier DÉDIÉ.
+      # Placement du canari + règle de non-conformité gardés par
+      # tests/test_injection_dataset.py (suite lock-install).
+      - name: QA stratum injection (fichier dédié)
+        run: PYTHONPATH=. python3 scripts/check_dataset_qa.py --dataset data/benchmark/dataset-v2-injection.jsonl

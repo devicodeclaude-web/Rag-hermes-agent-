@@ -31,6 +31,7 @@ DEFAULT_CORPUS = [
     ROOT / "data/generated/hermes_public_documents.jsonl",
     ROOT / "data/fixtures/private_and_synthetic_documents.jsonl",
     ROOT / "data/fixtures/contradiction_documents.jsonl",
+    ROOT / "data/fixtures/injection_documents.jsonl",
 ]
 ALLOWED_CATEGORIES = {"simple", "paraphrase", "close_distractor", "chunk_boundary", "no_answer"}
 REQUIRED_FIELDS = {"case_id", "category", "question", "relevant_document_ids", "distractor_document_ids"}
