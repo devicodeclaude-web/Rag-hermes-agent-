@@ -23,15 +23,16 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from rag_hermes.eval_corpus import (
-    DEFAULT_CORPUS,
     corpus_manifest,
     load_documents,
     sha256_of_file,
 )
 from rag_hermes.git_status import working_tree_dirty_excluding
 from rag_hermes.human_report import run_human_evaluation
+from rag_hermes.quality_track import FROZEN_HUMAN_CORPUS, FROZEN_HUMAN_DATASET
 
-DATASET = ROOT / "data/benchmark/dataset-v2.jsonl"
+DATASET = FROZEN_HUMAN_DATASET
+CORPUS = FROZEN_HUMAN_CORPUS
 RESULTS = ROOT / "data/results/human-lexical-eval-report.json"
 CHECKSUM = ROOT / "data/results/human-lexical-eval-report.sha256"
 
@@ -174,7 +175,7 @@ def _publish_artifacts(
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--dataset", type=Path, default=DATASET)
-    parser.add_argument("--corpus", type=Path, default=DEFAULT_CORPUS)
+    parser.add_argument("--corpus", type=Path, default=CORPUS)
     parser.add_argument("--results", type=Path, default=RESULTS)
     parser.add_argument("--checksum", type=Path, default=CHECKSUM)
     parser.add_argument("--k", type=int, default=10)
@@ -186,7 +187,7 @@ def _recover_path_args(arguments: list[str]) -> argparse.Namespace:
     """Recover path values without a parser that can exit before invalidation."""
     recovered = argparse.Namespace(
         dataset=DATASET,
-        corpus=DEFAULT_CORPUS,
+        corpus=CORPUS,
         results=RESULTS,
         checksum=CHECKSUM,
     )

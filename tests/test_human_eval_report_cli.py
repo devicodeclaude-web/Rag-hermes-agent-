@@ -94,6 +94,22 @@ def _run(dataset: Path, corpus: Path, results: Path, checksum: Path):
 
 
 class HumanEvalReportCliTests(unittest.TestCase):
+    def test_defaults_use_immutable_human_154_input_pair(self):
+        expected_dataset = ROOT / "data/benchmark/dataset-v2-human-154.jsonl"
+        expected_corpus = (
+            ROOT / "data/generated/hermes_public_documents-human-154.jsonl"
+        )
+
+        parsed = report_cli._build_parser().parse_args([])
+        recovered = report_cli._recover_path_args([])
+
+        self.assertEqual(report_cli.DATASET, expected_dataset)
+        self.assertEqual(report_cli.CORPUS, expected_corpus)
+        self.assertEqual(parsed.dataset, expected_dataset)
+        self.assertEqual(parsed.corpus, expected_corpus)
+        self.assertEqual(recovered.dataset, expected_dataset)
+        self.assertEqual(recovered.corpus, expected_corpus)
+
     def test_success_writes_report_and_matching_checksum(self):
         with tempfile.TemporaryDirectory() as raw:
             directory = Path(raw)
