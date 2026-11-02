@@ -7,19 +7,24 @@ on:
       - "data/generated/**"
       - "data/fixtures/**"
       - "manifests/locks/corpus.lock.json"
+      - "manifests/locks/benchmark-v2.lock.json"
       - "scripts/check_dataset_qa.py"
       - "scripts/check_title_leak.py"
       - "scripts/verify_corpus_lock.py"
+      - "scripts/verify_benchmark_lock.py"
       - ".github/workflows/dataset-qa.yml"
   push:
     branches: [main]
     paths:
       - "data/benchmark/**"
       - "data/generated/**"
+      - "data/fixtures/**"
       - "manifests/locks/corpus.lock.json"
+      - "manifests/locks/benchmark-v2.lock.json"
       - "scripts/check_dataset_qa.py"
       - "scripts/check_title_leak.py"
       - "scripts/verify_corpus_lock.py"
+      - "scripts/verify_benchmark_lock.py"
 
 jobs:
   qa:
@@ -33,6 +38,11 @@ jobs:
       # Dépendances : aucune (stdlib pure).
       - name: Vérifie le lock du corpus (version + hash)
         run: PYTHONPATH=. python3 scripts/verify_corpus_lock.py
+      # Gel du benchmark v2 : sha256 brut + comptes de chaque fichier (jeu actif,
+      # 3 strates, fixtures) + empreinte agrégée + invariante public-only.
+      # Dépendances : aucune (stdlib pure). Une dérive non re-gelée casse la CI.
+      - name: Vérifie le lock du benchmark v2 (empreintes + comptes)
+        run: PYTHONPATH=. python3 scripts/verify_benchmark_lock.py
       # Porte dataset : structure, existence des documents dans le corpus, et
       # 0 fuite de titre. Le corpus public étant versionné, le contrôle tourne
       # en entier (jamais --structure-only).
