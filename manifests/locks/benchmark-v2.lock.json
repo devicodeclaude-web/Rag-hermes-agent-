@@ -1,0 +1,70 @@
+{
+  "benchmark_version": "v2",
+  "frozen_at": "2026-11-02",
+  "git_head": "c48e3a0ff147afe876d0c465a894b0402576faed",
+  "git_describe": "audit-20260923-246-gc48e3a0",
+  "benchmark_sha": "654dd33f50049bf7b12002f307b21383b773aad97e9f2a1ebc2212e1b0b5b3fd",
+  "test_suite": "571 tests OK (skipped=19) @ HEAD; PYTHONPATH=. python -m unittest discover -s tests",
+  "active_dataset": {
+    "path": "data/benchmark/dataset-v2.jsonl",
+    "sha256": "e976b648c783018db88440e6e89de01eb50c56e8cfc32edb973ca8a1284209e6",
+    "record_count": 300,
+    "role": "active_eval_set_public_only",
+    "category_distribution": {
+      "simple": 76,
+      "paraphrase": 60,
+      "close_distractor": 60,
+      "chunk_boundary": 44,
+      "no_answer": 60
+    },
+    "acl_probe_all_false": true,
+    "invariant": "jeu actif public-only: acl_probe False partout (grave par tests/test_dataset_qa.py)"
+  },
+  "strata": [
+    {
+      "path": "data/benchmark/dataset-v2-acl-probe.jsonl",
+      "sha256": "9fb1f1933060e9e2505e4093348299b2f7bdb187d3ca56d6d99f6f3f0c6446b0",
+      "record_count": 11,
+      "role": "stratum_acl_probe_private"
+    },
+    {
+      "path": "data/benchmark/dataset-v2-contradiction.jsonl",
+      "sha256": "dc32025b527f065b96cb2859c9cde7f9c63b8a9935b3c653dc618ea8d93daaa2",
+      "record_count": 8,
+      "role": "stratum_contradiction"
+    },
+    {
+      "path": "data/benchmark/dataset-v2-injection.jsonl",
+      "sha256": "90e813cc2e060fdc30ff718239c6a214759faa2aa2fe685ee589bec12605c2f9",
+      "record_count": 8,
+      "role": "stratum_injection_indirecte"
+    }
+  ],
+  "fixture_dependencies": [
+    {
+      "path": "data/fixtures/contradiction_documents.jsonl",
+      "sha256": "fd7c2ae9bf08387ed19956e7297ad221200f7be51971383743848c6d871163ff",
+      "record_count": 8,
+      "role": "fixtures_contradiction"
+    },
+    {
+      "path": "data/fixtures/injection_documents.jsonl",
+      "sha256": "50c19d0c8847287ae8a22251595e0e68a99e1455dbb4763523c6863997a2e4b0",
+      "record_count": 8,
+      "role": "fixtures_injection"
+    },
+    {
+      "path": "data/fixtures/private_and_synthetic_documents.jsonl",
+      "sha256": "8276caa3bcd86d1759b69e34120b804cae3460e8476986e80d079ce9bc65a19b",
+      "record_count": 4,
+      "role": "fixtures_private_acl"
+    }
+  ],
+  "corpus_lock_ref": "manifests/locks/corpus.lock.json",
+  "review_status": {
+    "agent_reviews": "relecteur agent independant (Claude, contexte neuf) + revue croisee inter-vendeur (xAI/Grok), tous deux=validate",
+    "human_independent_review": "NON ATTEINT",
+    "note": "les validations d'auteur (devicodeclaude-web) sont des auto-revues (auteur=reviseur); un second humain independant reste requis. Honnetete gravee dans les review_note du dataset."
+  },
+  "note": "Identite figee du benchmark d'evaluation v2. verify_benchmark_lock.py recalcule sha256+comptes et sort 1 a la moindre derive. Les 4 strates restent dans des fichiers dedies hors dataset-v2.jsonl (invariante public-only). L'identite du corpus est epinglee separement dans corpus.lock.json."
+}
