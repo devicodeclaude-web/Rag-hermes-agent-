@@ -178,9 +178,22 @@ def build_g0_report(
             "answered_case_ids": list(report.answered_case_ids),
             "note": (
                 "Mandatory >=20% blind human review judges these concrete answers; "
-                "no offline metric scores their correctness."
+                "no offline metric scores their correctness. The verbatim model "
+                "answers live in answer_records; the gold should_abstain label there "
+                "is for AUDIT only and must be stripped before a blind review "
+                "(see scripts/export_g0_review_sheet.py)."
             ),
         },
+        "answer_records": [
+            {
+                "case_id": record.case_id,
+                "question": record.question,
+                "answer": record.answer,
+                "did_abstain": record.did_abstain,
+                "should_abstain": record.should_abstain,
+            }
+            for record in report.answer_records
+        ],
         "hardware": {"python": platform.python_version()},
         "quality_gate_passed": False,
         "limitations": [
