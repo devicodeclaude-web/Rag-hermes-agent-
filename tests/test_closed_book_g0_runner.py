@@ -108,6 +108,36 @@ class ReportTests(unittest.TestCase):
         # fully JSON serializable
         json.dumps(report)
 
+    def test_report_embeds_verbatim_answer_records_with_gold_label(self):
+        def perfect(question: str) -> str:
+            return CLOSED_BOOK_ABSTENTION if question in self._abstain_q else "An answer."
+
+        report = _report_for(self.cases, perfect)
+        records = report["answer_records"]
+        # one record per non-failing case (all 5 succeeded here)
+        self.assertEqual(len(records), 5)
+        self.assertEqual({r["case_id"] for r in records}, {"a1", "a2", "a3", "n1", "n2"})
+        by_id = {r["case_id"]: r for r in records}
+        # concrete answer carries verbatim text and its gold label (for audit)
+        self.assertEqual(by_id["a1"]["answer"], "An answer.")
+        self.assertFalse(by_id["a1"]["did_abstain"])
+        self.assertFalse(by_id["a1"]["should_abstain"])
+        # abstention case keeps the fixed abstention string and its gold label
+        self.assertTrue(by_id["n1"]["did_abstain"])
+        self.assertTrue(by_id["n1"]["should_abstain"])
+        json.dumps(report)
+
+    def test_report_excludes_failures_from_answer_records(self):
+        def flaky(question: str) -> str:
+            if question == "capital of Spain?":
+                raise GenerationError("boom")
+            return CLOSED_BOOK_ABSTENTION if question in self._abstain_q else "ok"
+
+        report = _report_for(self.cases, flaky)
+        # a2 failed -> no text -> absent from answer_records (4 of 5 recorded)
+        self.assertEqual(len(report["answer_records"]), 4)
+        self.assertNotIn("a2", {r["case_id"] for r in report["answer_records"]})
+
     def test_always_answering_model_has_zero_abstention(self):
         report = _report_for(self.cases, lambda q: "Always something.")
         m = report["metrics_abstention"]

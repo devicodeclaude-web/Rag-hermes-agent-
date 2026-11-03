@@ -75,6 +75,33 @@ class ClosedBookEvaluationTests(unittest.TestCase):
         self.assertEqual(report.generation_failures, 1)
         self.assertEqual(report.predicted_abstentions, 0)
         self.assertNotIn("a1", report.answered_case_ids)
+        # A failure produced no text, so it is NOT recorded for review.
+        self.assertEqual(report.answer_records, ())
+
+    def test_captures_verbatim_answer_records_for_review(self):
+        cases = [
+            _case("a1", "unknowable 1", True),   # abstains (correct)
+            _case("b1", "answerable 1", False),  # abstains (wrong)
+            _case("b2", "answerable 2", False),  # answers
+        ]
+
+        def generator(question):
+            if question in ("unknowable 1", "answerable 1"):
+                return CLOSED_BOOK_ABSTENTION
+            return "Paris is the capital."
+
+        report = run_closed_book_evaluation(cases, generator)
+        # One record per non-failing case, in input order, with verbatim text.
+        self.assertEqual([r.case_id for r in report.answer_records], ["a1", "b1", "b2"])
+        by_id = {r.case_id: r for r in report.answer_records}
+        self.assertEqual(by_id["b2"].answer, "Paris is the capital.")
+        self.assertFalse(by_id["b2"].did_abstain)
+        self.assertFalse(by_id["b2"].should_abstain)
+        self.assertTrue(by_id["a1"].did_abstain)
+        self.assertTrue(by_id["a1"].should_abstain)
+        # the gold label is retained for AUDIT (stripped only at export time)
+        self.assertTrue(by_id["b1"].did_abstain)
+        self.assertFalse(by_id["b1"].should_abstain)
 
 
 if __name__ == "__main__":

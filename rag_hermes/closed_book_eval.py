@@ -25,6 +25,26 @@ def _safe_ratio(numerator: int, denominator: int) -> float:
 
 
 @dataclass(frozen=True)
+class AnswerRecord:
+    """One per non-failing case: the exact text the model produced.
+
+    This is the audit material for the mandatory >=20% blind human review of
+    concrete answers (which no offline metric can score). Provider failures are
+    NOT recorded here — they produced no text — but they keep their place in the
+    ``generation_failures`` count.
+
+    ``should_abstain`` is the gold label: it belongs in the AUDIT record but must
+    NOT reach a blind reviewer (the review sheet is derived with it stripped).
+    """
+
+    case_id: str
+    question: str
+    answer: str
+    did_abstain: bool
+    should_abstain: bool
+
+
+@dataclass(frozen=True)
 class ClosedBookReport:
     total: int
     required_abstentions: int
@@ -34,6 +54,7 @@ class ClosedBookReport:
     abstention_recall: float
     generation_failures: int
     answered_case_ids: tuple[str, ...]
+    answer_records: tuple[AnswerRecord, ...] = ()
 
 
 def run_closed_book_evaluation(
@@ -47,6 +68,7 @@ def run_closed_book_evaluation(
     true_positive = 0
     failures = 0
     answered: list[str] = []
+    records: list[AnswerRecord] = []
 
     for case in cases:
         case_id = str(case["case_id"])
@@ -64,7 +86,8 @@ def run_closed_book_evaluation(
         try:
             answer = generator(question)
         except GenerationError:
-            # A provider failure is neither an answer nor an abstention.
+            # A provider failure is neither an answer nor an abstention, and it
+            # produced no text to review, so it is intentionally NOT recorded.
             failures += 1
             continue
 
@@ -75,6 +98,15 @@ def run_closed_book_evaluation(
                 true_positive += 1
         else:
             answered.append(case_id)
+        records.append(
+            AnswerRecord(
+                case_id=case_id,
+                question=question,
+                answer=answer,
+                did_abstain=did_abstain,
+                should_abstain=should_abstain,
+            )
+        )
 
     return ClosedBookReport(
         total=len(seen),
@@ -85,4 +117,5 @@ def run_closed_book_evaluation(
         abstention_recall=_safe_ratio(true_positive, required),
         generation_failures=failures,
         answered_case_ids=tuple(answered),
+        answer_records=tuple(records),
     )

@@ -58,6 +58,26 @@ curl -F "file=@data/results/g0_closed_book_human_154_execution_receipt.json" htt
 Renvoie l'URL affichée ; le reçu est ensuite vérifié (sha256 auto-cohérent) et
 committé dans le repo comme artefact officiel.
 
+> **Vérification OBLIGATOIRE avant commit.** Charge le reçu avec
+> `load_consumable_receipt_v2(Path(...))` : il recalcule `report_sha256` sur le
+> `report` embarqué et lève `report_sha256 mismatch` si le fichier a été altéré
+> au transport. Ne JAMAIS committer une transcription-photo comme si c'était le
+> reçu (elle ne vérifiera pas). Rapatrie le FICHIER réel, pas une recopie.
+
+## Export de la feuille de revue aveugle
+
+Le reçu embarque le TEXTE verbatim des réponses (`answer_records`). La revue
+humaine aveugle ≥20 % se fait sur une feuille DÉRIVÉE, sans label gold ni
+`case_id` (sinon la réponse attendue fuite) :
+
+```bash
+PYTHONPATH=. python scripts/export_g0_review_sheet.py
+```
+
+Produit `data/review/g0-closed-book-blind-review-sheet.csv` (blindée, ordre
+mélangé par graine) et `data/review/g0-closed-book-blind-review-key.json` (clé de
+dé-blindage `review_id -> case_id`, à garder SÉPARÉE de la feuille).
+
 ## Après le run
 
 - **Supprime le pod** dès le reçu récupéré (facturation).

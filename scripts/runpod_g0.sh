@@ -123,9 +123,13 @@ print("--- generator"); print(json.dumps(report.get("generator"), indent=2, ensu
 print("--- metrics_abstention"); print(json.dumps(report.get("metrics_abstention"), indent=2, ensure_ascii=False))
 hr = report.get("human_review_sample", {})
 print(f"--- reponses concretes a faire relire (>=20%) : {hr.get('answered_count')}")
+print(f"--- answer_records embarques dans le recu : {len(report.get('answer_records') or [])}")
 PY
 echo "======================================================"
-echo ">> Recu complet (a me renvoyer) :"
+echo ">> Recu complet (a me renvoyer PAR FICHIER, pas en photo) :"
 echo "   data/results/g0_closed_book_human_154_execution_receipt.json"
+echo ">> Il embarque desormais le TEXTE des reponses (answer_records) pour la"
+echo ">> revue humaine aveugle ; l'export blinde se fait cote depot via"
+echo ">>   scripts/export_g0_review_sheet.py (apres verification du report_sha256)."
 echo ">> N'OUBLIE PAS la version de vLLM affichee plus haut (reproductibilite)."
 echo ">> SUPPRIME le pod des que tu as le recu (sinon il continue a facturer)."
