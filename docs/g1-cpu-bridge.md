@@ -24,6 +24,19 @@ filtre à Qdrant, pas son application réelle. Il vérifie aussi un candidat
 inter-tenant, une ACL périmée, un payload contradictoire et un texte/URI/version
 forgés. Aucune inférence GPU ni score de qualité n'est impliqué.
 
+Un second contrôle CPU (`rag_hermes/index_integrity.py`) compare les points
+d'un **scroll non filtré et paginé** à la liste complète des chunks canoniques
+fournie indépendamment de Qdrant. Il échoue si un point manque, est en trop,
+est dupliqué ou si son payload/ACL diffère ; il détecte ainsi un `owner_id`
+indexé trop restrictif qu'une requête préfiltrée n'aurait pas retourné. Le
+scroll sans filtre (`QdrantAuditRestClient.scroll_page`) est destiné au seul
+auditeur hors du chemin des requêtes utilisateur ; la séparation en classes
+n'est **pas** une autorisation réseau. Utiliser des droits/identifiants
+opérateur distincts et ne pas exposer ce client à l'API publique. L'audit
+compare les payloads et IDs (types JSON inclus), **pas les vecteurs**.
+Tests avec faux clients uniquement : aucune collection Qdrant réelle n'a été
+auditée.
+
 Ce n'est **pas encore G1 complet** : la source de candidats R3 dense+sparse,
 le reranking verrouillé, le mapping explicite des statuts terminaux
 `answered` / `abstained` / `acl_error` / `backend_error`, la provenance des
@@ -35,7 +48,9 @@ le préfiltre Qdrant ou par `QdrantChunkRepository` est invisible pour ce pont ;
 il peut masquer une ACL périmée ou une contradiction et produire une abstention
 ordinaire. Le préfiltre transmis n'est donc pas une preuve de complétude du
 contrôle ACL ni de la classe `abstained`. Avant d'utiliser ce statut comme
-mesure d'évaluation G1, il faut un chemin vérifiable des candidats rejetés en
-amont ou une porte d'intégrité de l'index indépendant. La V1 existante garde
-son comportement ; la barrière n'est activée que lorsqu'un client l'enveloppe
-explicitement.
+mesure d'évaluation G1, il faut une exécution réussie de l'audit complet sur
+le **même index figé** pendant la campagne (ou une trace vérifiable des rejets
+en amont). La fonction d'audit n'authentifie pas à elle seule la provenance du
+manifeste et ne verrouille pas les écritures Qdrant : sans ces préconditions,
+son succès CPU n'est pas un reçu G1. La V1 existante garde son comportement ;
+la barrière n'est activée que lorsqu'un client l'enveloppe explicitement.
