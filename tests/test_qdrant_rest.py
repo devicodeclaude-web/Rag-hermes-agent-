@@ -4,7 +4,7 @@ import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
-from rag_hermes.qdrant_rest import QdrantRestClient
+from rag_hermes.qdrant_rest import QdrantAuditRestClient, QdrantRestClient
 
 
 class RecordingHandler(BaseHTTPRequestHandler):
@@ -112,6 +112,27 @@ class QdrantRestClientTests(unittest.TestCase):
             with self.subTest(invalid=invalid):
                 with self.assertRaises(ValueError):
                     self.client.query("chunks", [1.0, 0.0], query_filter=invalid)
+
+    def test_unfiltered_audit_scroll_page_uses_cursor_without_changing_filtered_scroll(self):
+        self.assertFalse(hasattr(self.client, "scroll_page"))
+        audit_client = QdrantAuditRestClient(self.base_url)
+        original = audit_client._request
+        calls = []
+        def request(method, path, body):
+            calls.append((method, path, body))
+            return {"result": {"points": [{"id": "one", "payload": {}}],
+                               "next_page_offset": "next-id"}}
+        audit_client._request = request
+        try:
+            points, cursor = audit_client.scroll_page("chunks", limit=3, offset="start-id")
+        finally:
+            audit_client._request = original
+        self.assertEqual(points, [{"id": "one", "payload": {}}])
+        self.assertEqual(cursor, "next-id")
+        self.assertEqual(calls, [("POST", "/collections/chunks/points/scroll", {
+            "limit": 3, "offset": "start-id", "with_payload": True,
+            "with_vector": False,
+        })])
 
     def test_scroll_sends_mandatory_filter_and_returns_points(self):
         expected_filter = {

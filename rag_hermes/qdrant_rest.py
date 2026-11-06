@@ -145,3 +145,33 @@ class QdrantRestClient:
         )
         result = response.get("result", {})
         return list(result.get("points", []))
+
+
+class QdrantAuditRestClient(QdrantRestClient):
+    """Audit-operator client; only this variant exposes unfiltered scrolling.
+
+    Use separate operator credentials and never inject this class into a user
+    request handler. Python class separation is not an authorization boundary.
+    """
+
+    def scroll_page(
+        self, collection: str, *, limit: int = 100, offset: str | int | None = None
+    ) -> tuple[list[dict[str, Any]], str | int | None]:
+        if not 1 <= limit <= 1000:
+            raise ValueError("bounded scroll limit is required")
+        if offset is not None and type(offset) not in (str, int):
+            raise ValueError("invalid scroll offset")
+        name = quote(collection, safe="")
+        body: dict[str, Any] = {
+            "limit": limit, "with_payload": True, "with_vector": False,
+        }
+        if offset is not None:
+            body["offset"] = offset
+        response = self._request("POST", f"/collections/{name}/points/scroll", body)
+        result = response.get("result")
+        if not isinstance(result, dict) or not isinstance(result.get("points"), list) or "next_page_offset" not in result:
+            raise RuntimeError("Qdrant returned malformed paginated scroll result")
+        cursor = result["next_page_offset"]
+        if cursor is not None and type(cursor) not in (str, int):
+            raise RuntimeError("Qdrant returned malformed scroll cursor")
+        return list(result["points"]), cursor
