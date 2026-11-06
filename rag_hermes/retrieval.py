@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
+import hashlib
 import math
 import re
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 from .acl import AuthorizationContext, Chunk, filter_authorized
 from .acl_authority import CanonicalAclAuthority
+from .ingestion import Document
 from .qdrant_filter import build_qdrant_filter
 from .reranker_budget import assert_pair_fits
 
@@ -23,6 +25,106 @@ class SearchResult:
     @property
     def effective_threshold_score(self) -> float:
         return self.score if self.threshold_score is None else self.threshold_score
+
+
+class CanonicalAclSearch:
+    """Recheck ranked repository candidates against the canonical ACL before answering."""
+
+    def __init__(
+        self, ranked_search: Any, authority: CanonicalAclAuthority, *,
+        minimum_score: float = 0.2,
+        source: Callable[[str], Document | None] | None = None,
+    ) -> None:
+        if not 0.0 < minimum_score <= 1.0:
+            raise ValueError("minimum_score must be between 0 and 1")
+        self._ranked_search = ranked_search
+        self._authority = authority
+        self._source = source
+        self.minimum_score = minimum_score
+
+    def replace_document(self, document: Any, chunks: Iterable[Chunk]) -> Any:
+        return self._ranked_search.replace_document(document, chunks)
+
+    def search(
+        self, query: str, *, context: AuthorizationContext, limit: int = 10
+    ) -> list[SearchResult]:
+        if not isinstance(context, AuthorizationContext):
+            raise ValueError("authorization context is required")
+        if limit < 1:
+            raise ValueError("limit must be positive")
+        if limit > 128:
+            raise ValueError("limit exceeds canonical scan budget")
+        requested = limit
+        while True:
+            results = self._ranked_search.search(query, context=context, limit=requested)
+            if len(results) > requested:
+                raise ValueError("ranked search exceeded requested limit")
+            accepted, stale_authorized = self._recheck(results, context)
+            eligible = [
+                result for result in accepted
+                if result.effective_threshold_score >= self.minimum_score
+            ]
+            if len(eligible) >= limit or len(results) < requested:
+                break
+            if requested == 128:
+                raise PermissionError("canonical candidate scan budget exhausted")
+            requested = min(128, requested * 2)
+        if stale_authorized and not eligible:
+            raise PermissionError("stale ACL index has no usable authorized candidates")
+        return eligible[:limit]
+
+    def _recheck(
+        self, results: list[SearchResult], context: AuthorizationContext
+    ) -> tuple[list[SearchResult], bool]:
+        accepted: list[SearchResult] = []
+        stale_authorized = False
+        for result in results:
+            chunk = result.chunk
+            policy = self._authority.policy_for(chunk.document_id)
+            allowed, reason = self._authority.authorize(
+                chunk.document_id, chunk.acl_version, context
+            )
+            if allowed:
+                if policy is None:
+                    raise PermissionError("canonical policy missing after authorization")
+                if (
+                    chunk.tenant_id != policy.tenant_id
+                    or chunk.visibility != policy.visibility
+                    or chunk.owner_id != policy.owner_id
+                    or chunk.classification != policy.classification
+                    or set(chunk.allowed_groups) != set(policy.allowed_groups)
+                    or set(chunk.allowed_users) != set(policy.allowed_users)
+                ):
+                    raise PermissionError("ACL payload conflicts with canonical policy")
+                source = self._source
+                if source is None:
+                    raise PermissionError("trusted provenance source is required")
+                document = source(chunk.document_id)
+                if document is None:
+                    raise PermissionError("canonical provenance document missing")
+                digest = hashlib.sha256(document.content.encode("utf-8")).hexdigest()
+                if (
+                    document.document_id != chunk.document_id
+                    or document.tenant_id != policy.tenant_id
+                    or document.visibility != policy.visibility
+                    or document.owner_id != policy.owner_id
+                    or document.classification != policy.classification
+                    or set(document.allowed_groups) != set(policy.allowed_groups)
+                    or set(document.allowed_users) != set(policy.allowed_users)
+                    or document.acl_version != policy.acl_version
+                    or document.doc_version != chunk.doc_version
+                    or document.source_uri != chunk.source_uri
+                    or digest != chunk.source_sha
+                    or (chunk.content_hash and chunk.content_hash != digest)
+                    or not (0 <= chunk.start_offset < chunk.end_offset <= len(document.content))
+                    or document.content[chunk.start_offset:chunk.end_offset] != chunk.text
+                ):
+                    raise PermissionError("candidate provenance conflicts with canonical document")
+                if filter_authorized([chunk], context):
+                    accepted.append(result)
+            elif reason == "stale_acl_version" and policy is not None and policy.allows(context):
+                stale_authorized = True
+        return accepted, stale_authorized
 
 
 def _tokens(text: str) -> Counter[str]:

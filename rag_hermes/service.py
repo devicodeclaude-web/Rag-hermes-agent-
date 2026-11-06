@@ -7,7 +7,7 @@ from typing import Any, Callable
 from .acl import AuthorizationContext, Chunk
 from .generator import ABSTENTION_ANSWER, GenerationError
 from .ingestion import Document, chunk_document
-from .retrieval import LexicalRetriever, SearchResult
+from .retrieval import CanonicalAclSearch, LexicalRetriever, SearchResult
 
 _CITATION_MARKER_RE = re.compile(r"\[S(\d+)\]")
 
@@ -70,6 +70,8 @@ class RagService:
             retrieval_k = top_k
         if retrieval_k < top_k:
             raise ValueError("retrieval_k must be >= top_k")
+        if isinstance(repository, CanonicalAclSearch) and repository.minimum_score != minimum_score:
+            raise ValueError("repository and service minimum_score must match")
         self._minimum_score = minimum_score
         self._repository = repository
         self._generator = generator
