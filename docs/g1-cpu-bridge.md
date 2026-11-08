@@ -37,6 +37,24 @@ compare les payloads et IDs (types JSON inclus), **pas les vecteurs**.
 Tests avec faux clients uniquement : aucune collection Qdrant réelle n'a été
 auditée.
 
+`AuditedIndexSession` est une **brique volontaire, sans aucun appelant** dans le
+chemin des requêtes : elle n'encadre, n'intercepte ni ne bloque rien. Lancer
+`open()` avant la première requête d'évaluation et `close()` après la dernière
+est une **obligation de l'opérateur**, pas une garantie de la classe. `close()`
+rejoue l'audit et échoue si l'index a divergé du manifeste. Quatre limites
+honnêtes : un échec d'`open()` ou de `close()` est **terminal** (le portillon
+est fermé sous verrou avant tout audit, donc ni une reprise ni un appel
+concurrent ne transforme une divergence détectée en succès — vérifié sur 8 000
+essais à deux fils) ; l'erreur de clôture porte un message fixe
+(`closing audit failed`, la cause restant dans `__cause__`) car une panne de
+transport ou une réponse Qdrant malformée n'est pas une mutation d'index, ne
+doit pas être étiquetée comme telle, et son texte peut contenir une URL ou des
+identifiants ; les deux rapports
+dérivent du même manifeste, donc leur égalité n'est pas une preuve indépendante
+(le seul signal est que l'audit de clôture a été rejoué et a passé) ; et la
+session n'empêche aucune écriture — une mutation annulée avant `close()`, ou ne
+touchant que les vecteurs, reste invisible.
+
 Ce n'est **pas encore G1 complet** : la source de candidats R3 dense+sparse,
 le reranking verrouillé, le mapping explicite des statuts terminaux
 `answered` / `abstained` / `acl_error` / `backend_error`, la provenance des

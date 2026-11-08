@@ -171,7 +171,13 @@ class QdrantAuditRestClient(QdrantRestClient):
         result = response.get("result")
         if not isinstance(result, dict) or not isinstance(result.get("points"), list) or "next_page_offset" not in result:
             raise RuntimeError("Qdrant returned malformed paginated scroll result")
+        if len(result["points"]) > limit:
+            raise RuntimeError("Qdrant returned more points than the requested limit")
         cursor = result["next_page_offset"]
         if cursor is not None and type(cursor) not in (str, int):
             raise RuntimeError("Qdrant returned malformed scroll cursor")
+        if cursor is not None and offset is not None and cursor == offset:
+            # A cursor pointing at the page just read would loop forever; the
+            # caller cannot distinguish it from progress.
+            raise RuntimeError("Qdrant returned a self-referential scroll cursor")
         return list(result["points"]), cursor

@@ -134,6 +134,61 @@ class QdrantRestClientTests(unittest.TestCase):
             "with_vector": False,
         })])
 
+    def test_audit_scroll_page_rejects_malformed_results(self):
+        audit_client = QdrantAuditRestClient(self.base_url)
+        original = audit_client._request
+        for invalid in (
+            None, [], {}, {"points": None}, {"points": {}},
+            {"points": []},
+            {"points": [], "next_page_offset": []},
+            {"points": [], "next_page_offset": {}},
+            {"points": [], "next_page_offset": 1.5},
+            {"points": [], "next_page_offset": True},
+        ):
+            with self.subTest(invalid=invalid):
+                audit_client._request = lambda *_a, **_k: {"result": invalid}
+                try:
+                    with self.assertRaisesRegex(RuntimeError, "malformed"):
+                        audit_client.scroll_page("chunks", limit=2)
+                finally:
+                    audit_client._request = original
+
+    def test_audit_scroll_page_rejects_self_referential_cursor(self):
+        audit_client = QdrantAuditRestClient(self.base_url)
+        original = audit_client._request
+        audit_client._request = lambda *_a, **_k: {"result": {
+            "points": [{"id": "a"}], "next_page_offset": "same-id",
+        }}
+        try:
+            with self.assertRaisesRegex(RuntimeError, "cursor"):
+                audit_client.scroll_page("chunks", limit=1, offset="same-id")
+        finally:
+            audit_client._request = original
+
+    def test_audit_scroll_page_rejects_oversized_page(self):
+        audit_client = QdrantAuditRestClient(self.base_url)
+        original = audit_client._request
+        audit_client._request = lambda *_a, **_k: {"result": {
+            "points": [{"id": "a"}, {"id": "b"}, {"id": "c"}],
+            "next_page_offset": None,
+        }}
+        try:
+            with self.assertRaisesRegex(RuntimeError, "more points than"):
+                audit_client.scroll_page("chunks", limit=2)
+        finally:
+            audit_client._request = original
+
+    def test_audit_scroll_page_refuses_invalid_limit_or_offset(self):
+        audit_client = QdrantAuditRestClient(self.base_url)
+        for limit in (0, -1, 1001):
+            with self.subTest(limit=limit):
+                with self.assertRaisesRegex(ValueError, "bounded scroll limit"):
+                    audit_client.scroll_page("chunks", limit=limit)
+        for offset in (1.5, True, [], {}):
+            with self.subTest(offset=offset):
+                with self.assertRaisesRegex(ValueError, "invalid scroll offset"):
+                    audit_client.scroll_page("chunks", limit=2, offset=offset)
+
     def test_scroll_sends_mandatory_filter_and_returns_points(self):
         expected_filter = {
             "must": [
