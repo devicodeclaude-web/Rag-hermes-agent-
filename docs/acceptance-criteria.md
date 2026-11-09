@@ -48,9 +48,14 @@ gonflables par les pannes et se jugent donc sur une **borne basse**. Imputation 
 pour l'abstention, chaque panne survenue sur un cas qui **ne devait pas**
 s'abstenir est comptée comme faux positif (une panne sur un cas qui devait
 s'abstenir n'est **pas** imputée — son contrefactuel ne peut qu'augmenter la
-précision ou être neutre) ; pour les citations, chaque citation **observée** d'un
-cas en panne est comptée invalide et non soutenante. Aucun statut n'est recodé en
-`abstained`. **Ces bornes sont calculées mais aucune porte du dépôt ne les
+précision ou être neutre). Aucun statut n'est recodé en
+`abstained`. Pour les **citations**, aucune borne n'est calculable sur une
+campagne incomplète : elles sont alors **non concluantes** (`null`), car un cas
+non exécuté vaut un nombre inconnu de citations (contrairement à l'abstention,
+dont le pire cas vaut au plus une abstention prédite). La **porte de sécurité**
+exige une campagne complète : `security_gate_passed` suppose
+`executed_case_count == case_count`, sinon une panne pourrait effacer une fuite
+observable. **Ces bornes sont calculées mais aucune porte du dépôt ne les
 compare encore à un seuil** : la règle est pré-inscrite, pas exécutée (voir
 protocole v2 §6). La latence doit être mesurée sur la même classe de GPU, avec la même
 quantification, le même contexte et la même concurrence que la livraison.

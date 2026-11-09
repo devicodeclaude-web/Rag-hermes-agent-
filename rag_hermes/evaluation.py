@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Iterable, Literal
 
 TerminalStatus = Literal["answered", "abstained", "acl_error", "backend_error"]
+TechnicalFailure = Literal["acl_error", "backend_error"]
 
 
 @dataclass(frozen=True)
@@ -24,7 +25,7 @@ class EvaluationCase:
     should_abstain: bool
     did_abstain: bool
     leaked_chunk_ids: tuple[str, ...]
-    technical_failure: Literal["acl_error", "backend_error"] | None = None
+    technical_failure: TechnicalFailure | None = None
     citation_judgments: tuple[CitationJudgment, ...] | None = None
     retrieved_relevance_ids_by_rank: tuple[tuple[str, ...], ...] | None = None
 
@@ -47,10 +48,11 @@ class EvaluationCase:
 @dataclass(frozen=True)
 class EvaluationReport:
     case_count: int
+    executed_case_count: int
     recall_at_k: float
     mrr: float
     citation_precision: float
-    citation_precision_lower_bound: float
+    citation_precision_lower_bound: float | None
     citation_validity_precision: float | None
     citation_validity_precision_lower_bound: float | None
     citation_support_precision: float | None
@@ -169,6 +171,17 @@ def evaluate(cases: Iterable[EvaluationCase], k: int) -> EvaluationReport:
     # only -- it is not a bound on citations the run never produced.
     observed_citation_count = sum(len(case.cited_chunk_ids) for case in items)
     failed_case_citation_count = observed_citation_count - len(all_citations)
+    # A citation bound is only CONCLUSIVE on a complete campaign. The pipeline
+    # records no citations for a case it could not execute, so charging the
+    # "observed citations of failed cases" charges nothing in practice -- the
+    # bound was inert exactly where it had to bite (measured: 0.50 -> 1.00 when
+    # a bad citer crashed). Unlike abstention, the worst case is NOT computable
+    # here: one unexecuted case adds at most one predicted abstention (bounded),
+    # but an unknown number of citations, capped only by the service's top_k,
+    # which the scorer does not know. So the bounds are reported as None
+    # (inconclusive) rather than as an unfounded guarantee; the point estimates
+    # remain as a description of the cases that did execute.
+    citation_bounds_conclusive = len(citation_eligible_cases) == len(items)
     strict_citations_available = all(
         case.citation_judgments is not None
         and Counter(judgment.chunk_id for judgment in case.citation_judgments)
@@ -203,11 +216,14 @@ def evaluate(cases: Iterable[EvaluationCase], k: int) -> EvaluationReport:
 
     return EvaluationReport(
         case_count=len(items),
+        executed_case_count=len(citation_eligible_cases),
         recall_at_k=_safe_ratio(sum(recalls), len(recalls)),
         mrr=_safe_ratio(sum(reciprocal_ranks), len(reciprocal_ranks)),
         citation_precision=_safe_ratio(legacy_supported_citations, len(all_citations)),
-        citation_precision_lower_bound=_safe_ratio(
-            legacy_supported_citations, observed_citation_count
+        citation_precision_lower_bound=(
+            _safe_ratio(legacy_supported_citations, observed_citation_count)
+            if citation_bounds_conclusive
+            else None
         ),
         citation_validity_precision=(
             _safe_ratio(
@@ -222,7 +238,7 @@ def evaluate(cases: Iterable[EvaluationCase], k: int) -> EvaluationReport:
                 sum(judgment.is_valid for judgment in citation_judgments),
                 len(citation_judgments) + failed_case_citation_count,
             )
-            if strict_citations_available
+            if strict_citations_available and citation_bounds_conclusive
             else None
         ),
         citation_support_precision=(
@@ -244,7 +260,7 @@ def evaluate(cases: Iterable[EvaluationCase], k: int) -> EvaluationReport:
                 ),
                 len(citation_judgments) + failed_case_citation_count,
             )
-            if strict_citations_available
+            if strict_citations_available and citation_bounds_conclusive
             else None
         ),
         abstention_precision=_safe_ratio(true_positive_abstentions, predicted_abstentions),
@@ -254,14 +270,29 @@ def evaluate(cases: Iterable[EvaluationCase], k: int) -> EvaluationReport:
         ),
         abstention_recall=_safe_ratio(true_positive_abstentions, required_abstentions),
         leak_count=leak_count,
-        security_gate_passed=leak_count == 0,
+        # Fail closed unless the campaign is COMPLETE and leak-free. Two ways a
+        # failure could otherwise launder this verdict, both measured:
+        #   - every case fails -> nothing retrieved -> `leak_count == 0` is
+        #     literally true and the gate reads green while no case ever ran;
+        #   - a case that WOULD have leaked crashes instead -> the leak is
+        #     erased and a red gate turns green (1 -> 0 leaks, measured).
+        # Any unexecuted case is an unobserved ACL opportunity, so a green
+        # security verdict requires every case to have executed. `leak_count`
+        # and the error counters stay published separately, so the operator
+        # still tells "a leak" apart from "incomplete evidence". Sample
+        # sufficiency remains a protocol matter (§6 `n >= 20`).
+        security_gate_passed=(
+            leak_count == 0 and len(citation_eligible_cases) == len(items)
+        ),
         acl_error_count=acl_error_count,
         backend_error_count=backend_error_count,
         terminal_statuses=tuple(
             sorted((case.case_id, case.terminal_status) for case in items)
         ),
-        # States what was OBSERVED, never that an error-reporting pipeline
-        # exists: today run_evaluation sets no technical_failure at all.
+        # States what was OBSERVED in THIS report, never that the pipeline is
+        # fully wired: run_evaluation now feeds these statuses through
+        # CaseExecutionError, but a campaign can still legitimately observe no
+        # runtime error at all.
         terminal_status_source=(
             "runtime_errors_observed"
             if acl_error_count or backend_error_count
