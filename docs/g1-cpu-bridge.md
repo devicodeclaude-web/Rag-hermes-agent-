@@ -57,9 +57,10 @@ session n'empêche aucune écriture — une mutation annulée avant `close()`, o
 touchant que les vecteurs, reste invisible.
 
 Ce n'est **pas encore G1 complet** : la source de candidats R3 dense+sparse,
-le reranking verrouillé, la traduction des erreurs d'exécution en statuts
-terminaux par cas (`acl_error` / `backend_error`), la provenance des
-identifiants de chunks et le reçu de campagne restent à câbler et à tester.
+le reranking verrouillé, la provenance des identifiants de chunks et le reçu
+de campagne restent à câbler et à tester. La traduction des erreurs par cas
+est désormais câblée dans `run_evaluation` (voir ci-dessous), sans présumer
+qu'une campagne réelle G1 a déjà été exécutée.
 Le scoreur `evaluate` dérive déjà `answered` / `abstained` / `acl_error` /
 `backend_error` depuis ses entrées. L'exclusivité est imposée **au constructeur**
 (`EvaluationCase.__post_init__` refuse un cas qui prétendrait à la fois s'être

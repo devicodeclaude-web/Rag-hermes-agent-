@@ -5,7 +5,8 @@ three evidence classes separated and fails closed on inconsistent report sizes.
 """
 from __future__ import annotations
 
-from typing import Any, Mapping
+import math
+from typing import Any, Mapping, TypeGuard
 
 
 def _object(value: Any, field: str) -> Mapping[str, Any]:
@@ -26,6 +27,15 @@ def _boolean(value: Any, field: str) -> bool:
     return value
 
 
+def _probability(value: Any) -> TypeGuard[int | float]:
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+        and 0 <= value <= 1
+    )
+
+
 def build_campaign_summary(
     retrieval: Mapping[str, Any],
     comparison: Mapping[str, Any],
@@ -38,6 +48,8 @@ def build_campaign_summary(
         raise ValueError("quality-eligible input cannot enter the synthetic summary")
 
     retrieval_total = _integer(retrieval.get("cases_total"), "retrieval.cases_total")
+    if retrieval_total == 0:
+        raise ValueError("non-empty campaign required")
     comparison_total = _integer(comparison.get("total"), "comparison.total")
     if retrieval_total != comparison_total:
         raise ValueError(
@@ -56,6 +68,56 @@ def build_campaign_summary(
         metrics.get("security_gate_passed"),
         "retrieval.metrics.security_gate_passed",
     )
+    # Old committed reports predate failure accounting. Their `true` security
+    # verdict could have been vacuous, so retain it as historical data only.
+    bounds_fields = (
+        "case_count", "executed_case_count", "acl_error_count", "backend_error_count",
+        "abstention_precision_lower_bound", "citation_precision_lower_bound",
+        "citation_validity_precision_lower_bound", "citation_support_precision_lower_bound",
+    )
+    modern = all(field in metrics for field in bounds_fields)
+    new_fields = (
+        "executed_case_count", "abstention_precision_lower_bound",
+        "citation_precision_lower_bound", "citation_validity_precision_lower_bound",
+        "citation_support_precision_lower_bound",
+    )
+    if not modern and any(field in metrics for field in new_fields):
+        raise ValueError("partial metrics contract")
+    if modern:
+        count = _integer(metrics["case_count"], "retrieval.metrics.case_count")
+        executed = _integer(metrics["executed_case_count"], "retrieval.metrics.executed_case_count")
+        acl_errors = _integer(metrics["acl_error_count"], "retrieval.metrics.acl_error_count")
+        backend_errors = _integer(metrics["backend_error_count"], "retrieval.metrics.backend_error_count")
+        leaks = _integer(metrics.get("leak_count"), "retrieval.metrics.leak_count")
+        if count != retrieval_total or executed + acl_errors + backend_errors != count:
+            raise ValueError("inconsistent case execution counts")
+        if security_passed != (executed == count and leaks == 0):
+            raise ValueError("inconsistent security gate")
+        if executed != count and any(
+            metrics[field] is not None for field in (
+                "citation_precision_lower_bound",
+                "citation_validity_precision_lower_bound",
+                "citation_support_precision_lower_bound",
+            )
+        ):
+            raise ValueError("inconclusive citation bounds required on incomplete campaign")
+        for point_field in (
+            "abstention_precision", "citation_precision",
+            "citation_validity_precision", "citation_support_precision",
+        ):
+            bound_field = f"{point_field}_lower_bound"
+            point, bound = metrics.get(point_field), metrics[bound_field]
+            if bound is None and point_field.startswith("citation_") and (
+                executed != count or (
+                    point_field != "citation_precision" and point is None
+                )
+            ):
+                continue  # Incomplete campaign, or unavailable strict judgments.
+            if not _probability(bound) or not _probability(point):
+                raise ValueError(f"invalid {bound_field} or point estimate")
+            if bound > point:
+                raise ValueError(f"invalid {bound_field} or point estimate")
+    gate_verdict = security_passed if modern or not security_passed else None
 
     retrieval_section = {
         "status": "technical_witness_only",
@@ -66,8 +128,19 @@ def build_campaign_summary(
         "recall_at_k": metrics.get("recall_at_k"),
         "mrr": metrics.get("mrr"),
         "citation_precision": metrics.get("citation_precision"),
+        "metrics_contract": (
+            "failure_bounds_v2" if modern else "legacy_missing_failure_bounds"
+        ),
+        "executed_case_count": metrics.get("executed_case_count"),
+        "acl_error_count": metrics.get("acl_error_count"),
+        "backend_error_count": metrics.get("backend_error_count"),
+        "abstention_precision_lower_bound": metrics.get("abstention_precision_lower_bound"),
+        "citation_precision_lower_bound": metrics.get("citation_precision_lower_bound"),
+        "citation_validity_precision_lower_bound": metrics.get("citation_validity_precision_lower_bound"),
+        "citation_support_precision_lower_bound": metrics.get("citation_support_precision_lower_bound"),
         "leak_count": metrics.get("leak_count"),
-        "security_gate_passed": security_passed,
+        "security_gate_passed": gate_verdict,
+        "legacy_security_gate_observed": security_passed if not modern else None,
     }
     abstention_section = {
         "status": "offline_comparison",
@@ -121,14 +194,16 @@ def build_campaign_summary(
             else "BLOCKED_human_review_incomplete"
         )
 
-    if not security_passed:
+    if gate_verdict is None and campaign_status == "COMPLETE_synthetic_technical_witness":
+        campaign_status = "BLOCKED_legacy_metrics_missing"
+    if gate_verdict is False:
         campaign_status = "FAILED_security_gate"
 
     return {
         "track": "synthetic",
         "status": campaign_status,
         "quality_evidence": False,
-        "security_gate_passed": security_passed,
+        "security_gate_passed": gate_verdict,
         "retrieval_technical": retrieval_section,
         "abstention_comparison": abstention_section,
         "human_correctness": human_section,

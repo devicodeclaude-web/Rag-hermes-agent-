@@ -164,11 +164,8 @@ def evaluate(cases: Iterable[EvaluationCase], k: int) -> EvaluationReport:
         for chunk_id in case.cited_chunk_ids
     )
     citation_cases = [case for case in citation_eligible_cases if case.cited_chunk_ids]
-    # Pessimistic bound (protocol v2 §6): every OBSERVED citation stays in the
-    # denominator, including those of cases that ended in a technical failure,
-    # and each of those is charged as unsupported. A case that failed before
-    # emitting any citation records none, so the bound covers observed citations
-    # only -- it is not a bound on citations the run never produced.
+    # The former observed-citation imputation was superseded: a pipeline crash
+    # yields no citations, so it could not bound the unobserved counterfactual.
     observed_citation_count = sum(len(case.cited_chunk_ids) for case in items)
     failed_case_citation_count = observed_citation_count - len(all_citations)
     # A citation bound is only CONCLUSIVE on a complete campaign. The pipeline
