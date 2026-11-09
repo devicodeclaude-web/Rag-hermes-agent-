@@ -1,11 +1,14 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Callable, Mapping, Sequence
+from dataclasses import asdict, dataclass
+import json
+from typing import Callable, Mapping, Sequence, cast
 
 from .acl import AuthorizationContext, Chunk
+from .acl_authority import AclPolicy, CanonicalAclAuthority
 from .evaluation import EvaluationCase, EvaluationReport, evaluate
 from .evaluation_dataset import validate_evaluation_case
+from .index_integrity import AuditedIndexSession
 from .service import RagService
 
 
@@ -27,6 +30,11 @@ AnswerFn = Callable[
     tuple[Sequence[RetrievedChunk], Sequence[RetrievedChunk], bool],
 ]
 ContextFn = Callable[[Mapping[str, object]], AuthorizationContext]
+# Audited campaigns receive the SAME resolved context used to score ACL leaks.
+AuditedAnswerFn = Callable[
+    [str, Mapping[str, object], AuthorizationContext],
+    tuple[Sequence[RetrievedChunk], Sequence[RetrievedChunk], bool],
+]
 
 
 def build_service_answer_fn(
@@ -49,6 +57,18 @@ def build_service_answer_fn(
             trace.response.abstained,
         )
 
+    return answer_fn
+
+
+def build_contextual_service_answer_fn(service: RagService) -> AuditedAnswerFn:
+    """Use the audited campaign's resolved context on the service answer path."""
+    def answer_fn(question: str, case: Mapping[str, object], context: AuthorizationContext):
+        trace = service.answer_with_trace(question, context=context)
+        return (
+            tuple(RetrievedChunk(chunk) for chunk in trace.retrieved_chunks),
+            tuple(RetrievedChunk(chunk) for chunk in trace.cited_chunks),
+            trace.response.abstained,
+        )
     return answer_fn
 
 
@@ -84,16 +104,22 @@ def run_evaluation(
     cases: Sequence[Mapping[str, object]],
     documents: Mapping[str, Mapping[str, object]],
     manifest: Mapping[str, object],
-    answer_fn: AnswerFn,
+    answer_fn: AnswerFn | AuditedAnswerFn,
     *,
     k: int,
     authorized_document_ids: set[str] | None = None,
+    context_for_case: ContextFn | None = None,
+    authority: CanonicalAclAuthority | None = None,
 ) -> EvaluationReport:
     """Execute each dataset case through answer_fn and score with evaluate().
 
     Every case is validated against the strict schema BEFORE execution, so a
     stale revision, wrong corpus hash, or chunk-id label aborts the campaign
-    instead of silently producing metrics.
+    instead of silently producing metrics. Without both `context_for_case` and
+    `authority`, `security_gate_passed` is only a scope/allowlist check, not an
+    owner, group, tenant or clearance check; use the audited wrapper for the
+    context-bound path. Even there, a supplied answer_fn is not proven to use
+    the same context or the audited index.
 
     Relevance labels are document spans (not chunk ids). We synthesize a stable
     synthetic "relevant chunk id" per span (document_id + interval) and mark a
@@ -104,6 +130,8 @@ def run_evaluation(
     """
     if type(k) is not int or k < 1:
         raise ValueError("k must be a positive integer")
+    if (context_for_case is None) != (authority is None):
+        raise ValueError("context_for_case and authority must be supplied together")
 
     validated_cases = [
         validate_evaluation_case(raw_case, documents, manifest)
@@ -112,20 +140,99 @@ def run_evaluation(
     case_ids = [str(case["case_id"]) for case in validated_cases]
     if len(case_ids) != len(set(case_ids)):
         raise ValueError("duplicate case_id")
+    if authority is not None:
+        # The span corpus and the ACL registry are two trusted inputs. A clean
+        # Qdrant snapshot does not reconcile them; fail before answering if
+        # either source disagrees or an ACL policy is missing.
+        for document_id, document in documents.items():
+            policy = authority.policy_for(document_id)
+            if type(policy) is not AclPolicy:
+                raise ValueError("canonical document has no exact ACL policy")
+            if type(policy.tenant_id) is not str or not policy.tenant_id:
+                raise ValueError("canonical ACL policy tenant must be a non-empty string")
+            if type(policy.visibility) is not str or policy.visibility not in {"public", "private"}:
+                raise ValueError("canonical ACL policy visibility is invalid")
+            if type(policy.owner_id) is not str:
+                raise ValueError("canonical ACL policy owner must be a string")
+            if type(policy.allowed_groups) is not tuple or any(
+                type(group) is not str for group in policy.allowed_groups
+            ):
+                raise ValueError("canonical ACL policy groups must be strings")
+            if type(policy.allowed_users) is not tuple or any(
+                type(user) is not str for user in policy.allowed_users
+            ):
+                raise ValueError("canonical ACL policy users must be strings")
+            if type(policy.classification) is not int or policy.classification < 0:
+                raise ValueError("canonical ACL policy classification is invalid")
+            if type(policy.acl_version) is not int or policy.acl_version < 1:
+                raise ValueError("canonical ACL policy version is invalid")
+            if document.get("visibility") != policy.visibility:
+                raise ValueError("canonical document visibility disagrees with ACL policy")
+            if "tenant_id" in document and (
+                type(document["tenant_id"]) is not str
+                or document["tenant_id"] != policy.tenant_id
+            ):
+                raise ValueError("canonical document tenant disagrees with ACL policy")
 
     evaluation_cases: list[EvaluationCase] = []
     for case in validated_cases:
+        context = context_for_case(case) if context_for_case is not None else None
+        if context_for_case is not None:
+            if type(context) is not AuthorizationContext:
+                raise ValueError("context_for_case must return AuthorizationContext")
+            if type(context.tenant_id) is not str or not context.tenant_id:
+                raise ValueError("authorization context tenant must be a string")
+            if type(context.user_id) is not str or not context.user_id:
+                raise ValueError("authorization context user must be a string")
+            if type(context.groups) is not tuple or any(
+                type(group) is not str for group in context.groups
+            ):
+                raise ValueError("authorization context groups must be strings")
+            if type(context.clearance) is not int or context.clearance < 0:
+                raise ValueError("authorization context clearance must be a non-negative integer")
         spans = case["relevance_spans"]
-        same_scope_document_ids = {
+        if authority is not None:
+            assert context is not None
+            for span in spans:
+                policy = authority.policy_for(span["document_id"])
+                if policy is None or not policy.allows(context):
+                    raise ValueError("reference document is not authorized for case context")
+        scope_eligible_document_ids = {
             document_id
             for document_id, document in documents.items()
             if document.get("visibility") == case["access_scope"]
+            or (authority is not None and case["access_scope"] == "private"
+                and document.get("visibility") == "public")
         }
-        case_authorized_document_ids = same_scope_document_ids
+        case_authorized_document_ids = scope_eligible_document_ids
         if authorized_document_ids is not None:
             case_authorized_document_ids = (
-                same_scope_document_ids.intersection(authorized_document_ids)
+                scope_eligible_document_ids.intersection(authorized_document_ids)
             )
+
+        def is_authorized(chunk: Chunk) -> bool:
+            if chunk.document_id not in case_authorized_document_ids:
+                return False
+            if authority is None:
+                return True  # Legacy scorer: scope/explicit allowlist only.
+            assert context is not None
+            policy = authority.policy_for(chunk.document_id)
+            if policy is None:
+                return False
+            indexed_policy = AclPolicy(
+                tenant_id=chunk.tenant_id,
+                visibility=chunk.visibility,
+                owner_id=chunk.owner_id,
+                allowed_groups=chunk.allowed_groups,
+                allowed_users=chunk.allowed_users,
+                classification=chunk.classification,
+                acl_version=chunk.acl_version,
+            )
+            if json.dumps(asdict(policy), sort_keys=True, allow_nan=False) != json.dumps(
+                asdict(indexed_policy), sort_keys=True, allow_nan=False
+            ):
+                return False
+            return authority.authorize(chunk.document_id, chunk.acl_version, context)[0]
 
         # Assign a stable synthetic label id to each relevance span.
         span_labels: list[tuple[str, str, int, int]] = []
@@ -136,7 +243,13 @@ def run_evaluation(
             label = f"span:{document_id}#span{index}:{start}-{end}"
             span_labels.append((label, document_id, start, end))
 
-        retrieved, cited, abstained = answer_fn(case["question"], case)
+        if authority is None:
+            retrieved, cited, abstained = cast(AnswerFn, answer_fn)(case["question"], case)
+        else:
+            assert context is not None
+            retrieved, cited, abstained = cast(AuditedAnswerFn, answer_fn)(
+                case["question"], case, context
+            )
         if type(abstained) is not bool:
             raise ValueError("answer_fn abstained must be a bool")
 
@@ -149,7 +262,7 @@ def run_evaluation(
             chunk = item.chunk
             retrieved_chunks.append(chunk)
             _validate_chunk(chunk, documents)
-            if chunk.document_id not in case_authorized_document_ids:
+            if not is_authorized(chunk):
                 leaked.add(chunk.chunk_id)
             matched = [
                 label
@@ -170,7 +283,7 @@ def run_evaluation(
             if chunk not in retrieved_chunks:
                 raise ValueError("citation was not retrieved")
             _validate_chunk(chunk, documents)
-            if chunk.document_id not in case_authorized_document_ids:
+            if not is_authorized(chunk):
                 leaked.add(chunk.chunk_id)
             matched = [
                 label
@@ -197,3 +310,65 @@ def run_evaluation(
         )
 
     return evaluate(evaluation_cases, k=k)
+
+
+def run_audited_evaluation(
+    session: AuditedIndexSession,
+    cases: Sequence[Mapping[str, object]],
+    documents: Mapping[str, Mapping[str, object]],
+    manifest: Mapping[str, object],
+    answer_fn: AuditedAnswerFn,
+    *,
+    k: int,
+    context_for_case: ContextFn,
+    authority: CanonicalAclAuthority,
+    authorized_document_ids: set[str] | None = None,
+) -> EvaluationReport:
+    """Score a campaign only if the index audit passed before AND after it.
+
+    This makes the audit a precondition for CALLERS OF THIS FUNCTION: the opening
+    audit runs before the first question, so a failing index answers no case at
+    all, and the closing audit must pass before any report is returned. What this
+    establishes is bounded: **the session's index** matched the canonical manifest
+    at both ends of the run. `answer_fn` is an arbitrary callable, so this
+    function cannot verify that the questions were actually served by the audited
+    collection — binding the two remains the operator's job. The audited path
+    requires a canonical ACL authority and a context for each case before its
+    `security_gate_passed` score can be interpreted as an ACL leak check. The
+    resolved context is handed to the three-argument `answer_fn` (the supplied
+    service adapter uses it directly), but an arbitrary callable can ignore it.
+    The score checks ACL, not chunk provenance/version/URI or search completeness.
+
+    It does not make the audit a property of the system: a campaign driven
+    through `run_evaluation` directly, or any query issued outside this call,
+    remains unaudited. The session's own limits still apply — it prevents no
+    write, and a divergence reverted before the closing audit, or one touching
+    only vectors, stays invisible.
+    """
+    if type(session) is not AuditedIndexSession:
+        raise TypeError("session must be an exact AuditedIndexSession")
+    if type(authority) is not CanonicalAclAuthority:
+        raise TypeError("authority must be an exact CanonicalAclAuthority")
+    if not callable(context_for_case):
+        raise TypeError("context_for_case must be callable")
+    session.open()
+    try:
+        report = run_evaluation(
+            cases,
+            documents,
+            manifest,
+            answer_fn,
+            k=k,
+            authorized_document_ids=authorized_document_ids,
+            context_for_case=context_for_case,
+            authority=authority,
+        )
+    except BaseException:
+        # Burn the session WITHOUT auditing: an aborted campaign claims nothing
+        # about the index, and a closing audit here would both cost a full scroll
+        # on an interrupt path and discard its own divergence error while the
+        # scoring error propagates.
+        session.invalidate()
+        raise
+    session.close()
+    return report

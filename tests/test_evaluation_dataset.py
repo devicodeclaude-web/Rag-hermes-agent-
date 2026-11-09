@@ -48,6 +48,84 @@ class EvaluationDatasetSchemaTests(unittest.TestCase):
         self.assertEqual(validated["case_id"], "q-001")
         self.assertNotIn("relevant_chunk_ids", validated)
 
+    def test_rejects_case_id_that_is_not_a_non_empty_string(self):
+        for invalid in (None, "", "   ", 7, True, ["q-001"]):
+            with self.subTest(invalid=invalid):
+                case = self.valid_case()
+                case["case_id"] = invalid
+                with self.assertRaisesRegex(ValueError, "case_id"):
+                    validate_evaluation_case(case, self.documents, self.manifest)
+
+    def test_rejects_category_outside_the_declared_strata(self):
+        for invalid in ("nope", "", None, "Simple", 3):
+            with self.subTest(invalid=invalid):
+                case = self.valid_case()
+                case["category"] = invalid
+                with self.assertRaisesRegex(ValueError, "category"):
+                    validate_evaluation_case(case, self.documents, self.manifest)
+
+    def test_rejects_unhashable_category_with_validation_error(self):
+        case = self.valid_case()
+        case["category"] = ["simple"]
+        with self.assertRaisesRegex(ValueError, "category"):
+            validate_evaluation_case(case, self.documents, self.manifest)
+
+    def test_accepts_every_declared_category(self):
+        for category in ("simple", "paraphrase", "close_distractor", "chunk_boundary"):
+            with self.subTest(category=category):
+                case = self.valid_case()
+                case["category"] = category
+                validated = validate_evaluation_case(case, self.documents, self.manifest)
+                self.assertEqual(validated["category"], category)
+        # The fifth stratum is abstention-shaped, so it needs its own fixture.
+        case = self.valid_case()
+        case.update(
+            category="no_answer",
+            should_abstain=True,
+            unanswerable_reason="outside_corpus_scope",
+            relevance_spans=[],
+        )
+        validated = validate_evaluation_case(case, self.documents, self.manifest)
+        self.assertEqual(validated["category"], "no_answer")
+
+    def test_rejects_case_id_padded_with_whitespace(self):
+        # '  q-001  ' and 'q-001' would otherwise both be accepted as distinct
+        # ids, defeating duplicate detection downstream.
+        case = self.valid_case()
+        case["case_id"] = "  q-001  "
+        with self.assertRaisesRegex(ValueError, "case_id"):
+            validate_evaluation_case(case, self.documents, self.manifest)
+
+    def test_rejects_no_answer_category_on_an_answerable_case(self):
+        case = self.valid_case()
+        case["category"] = "no_answer"
+        with self.assertRaisesRegex(ValueError, "no_answer"):
+            validate_evaluation_case(case, self.documents, self.manifest)
+
+    def test_rejects_abstention_case_filed_under_an_answerable_category(self):
+        case = self.valid_case()
+        case.update(
+            category="simple",
+            should_abstain=True,
+            unanswerable_reason="outside_corpus_scope",
+            relevance_spans=[],
+        )
+        with self.assertRaisesRegex(ValueError, "no_answer"):
+            validate_evaluation_case(case, self.documents, self.manifest)
+
+    def test_validator_vocabulary_matches_the_dataset_qa_gate(self):
+        # Drift between the two sets must fail a gate, not a review.
+        import importlib.util
+        from pathlib import Path
+
+        from rag_hermes.evaluation_dataset import _ALLOWED_CATEGORIES
+
+        gate_path = Path(__file__).resolve().parents[1] / "scripts/check_dataset_qa.py"
+        spec = importlib.util.spec_from_file_location("_qa_gate", gate_path)
+        gate = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(gate)
+        self.assertEqual(_ALLOWED_CATEGORIES, gate.ALLOWED_CATEGORIES)
+
     def test_rejects_chunk_ids_as_primary_labels(self):
         case = self.valid_case()
         case["relevant_chunk_ids"] = ["chunk-new-7"]
@@ -62,6 +140,7 @@ class EvaluationDatasetSchemaTests(unittest.TestCase):
 
     def test_no_answer_requires_empty_spans_and_a_reason(self):
         case = self.valid_case()
+        case["category"] = "no_answer"
         case["should_abstain"] = True
         case["relevance_spans"] = []
         case["unanswerable_reason"] = "outside_corpus_scope"

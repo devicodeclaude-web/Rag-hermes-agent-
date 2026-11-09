@@ -110,8 +110,8 @@ class AuditedIndexSessionError(RuntimeError):
 
     Raised for every audit-level failure at open() or close(), whatever the
     cause (manifest divergence, transport fault, malformed Qdrant reply). The
-    cause is preserved in the message and in __cause__ precisely because this
-    class must NOT assert which one occurred.
+    message is fixed and does not expose the cause; details remain available
+    only through __cause__ to the operator.
     """
 
 
@@ -123,10 +123,10 @@ class AuditedIndexSession:
     neither a retry nor a concurrent caller can turn a detected divergence into a
     pass.
 
-    This is a voluntary building block with no caller in the query path yet. It
-    does not frame, intercept or gate any query: running `open()` before the
-    first evaluation query and `close()` after the last one is an OPERATOR
-    obligation, not a property this class enforces. It prevents no writes, and a
+    This is a voluntary building block outside the ordinary query path.
+    `run_audited_evaluation` explicitly calls open()/close() for its campaigns,
+    but no ordinary query is intercepted or gated by this class. Other
+    callers must arrange both audits themselves. It prevents no writes, and a
     divergence reverted before `close()` — or one touching only vectors — stays
     invisible. The two reports derive from the same manifest, so their equality
     is not independent evidence; the only signal is that the closing audit re-ran
@@ -154,6 +154,7 @@ class AuditedIndexSession:
         self._page_size = page_size
         self._state = "new"
         self._lock = threading.Lock()
+        self._invalidated = False
         self._opening: IndexSnapshotReport | None = None
 
     def _begin(self, allowed_state: str, misuse: str) -> None:
@@ -178,20 +179,40 @@ class AuditedIndexSession:
             # credentials or a response body. It stays in __cause__ for logs.
             raise AuditedIndexSessionError(f"{label} audit failed") from exc
 
+    def invalidate(self) -> None:
+        """Make the session terminal with NO I/O and no audit.
+
+        For an aborted run: the caller is not claiming anything about the index,
+        only ensuring this session can never bless a later campaign. Unlike
+        close() this performs no scroll, so it is safe on an interrupt path.
+        """
+        with self._lock:
+            self._invalidated = True
+            self._state = "finished"
+
     def open(self) -> IndexSnapshotReport:
         self._begin("new", "audited index session is already opened or finished")
-        self._opening = self._audit("opening")
-        self._state = "open"
-        return self._opening
+        opening = self._audit("opening")
+        with self._lock:
+            # An abort can invalidate the session while the opening scroll is
+            # in flight. Never restore it to "open" after that cancellation.
+            if self._invalidated:
+                raise AuditedIndexSessionError("opening audit was invalidated")
+            self._opening = opening
+            self._state = "open"
+        return opening
 
     def close(self) -> IndexSnapshotReport:
         if self._state == "new":
             raise ValueError("audited index session was not opened")
         self._begin("open", "audited index session is already finished")
         closing = self._audit("closing")
-        if closing != self._opening:
-            # Defence in depth, expected to be unreachable: both reports are
-            # derived from the same frozen manifest, so they cannot differ once
-            # both audits pass. Kept as an assertion, not as corroboration.
-            raise AuditedIndexSessionError("closing report disagreed with the opening report")
+        with self._lock:
+            if self._invalidated:
+                raise AuditedIndexSessionError("closing audit was invalidated")
+            if closing != self._opening:
+                # Defence in depth, expected to be unreachable: both reports are
+                # derived from the same frozen manifest, so they cannot differ once
+                # both audits pass. Kept as an assertion, not as corroboration.
+                raise AuditedIndexSessionError("closing report disagreed with the opening report")
         return closing

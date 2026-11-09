@@ -132,6 +132,84 @@ class IndexSnapshotAuditTests(unittest.TestCase):
             self.assertEqual(len(losers), 1)
             self.assertIsInstance(losers[0], ValueError)
 
+    def test_invalidate_during_opening_cannot_resurrect_the_session(self):
+        started = threading.Event()
+        release = threading.Event()
+        outcomes = []
+        points = self.points
+
+        class PausedClient:
+            def scroll_page(self, collection, *, limit, offset=None):
+                started.set()
+                if not release.wait(timeout=5):
+                    raise TimeoutError("opening audit did not resume")
+                return points, None
+
+        session = AuditedIndexSession(PausedClient(), "chunks", self.chunks)
+
+        def open_session():
+            try:
+                outcomes.append(("ok", session.open()))
+            except Exception as exc:
+                outcomes.append(("err", exc))
+
+        worker = threading.Thread(target=open_session)
+        worker.start()
+        try:
+            self.assertTrue(started.wait(timeout=5))
+            session.invalidate()
+        finally:
+            release.set()
+            worker.join(timeout=5)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(len(outcomes), 1)
+        self.assertEqual(outcomes[0][0], "err")
+        with self.assertRaises(ValueError):
+            session.open()
+        with self.assertRaises(ValueError):
+            session.close()
+
+    def test_invalidate_during_closing_cannot_return_a_report(self):
+        started = threading.Event()
+        release = threading.Event()
+        outcomes = []
+        points = self.points
+        calls = 0
+
+        class PausedClient:
+            def scroll_page(self, collection, *, limit, offset=None):
+                nonlocal calls
+                calls += 1
+                if calls == 2:
+                    started.set()
+                    if not release.wait(timeout=5):
+                        raise TimeoutError("closing audit did not resume")
+                return points, None
+
+        session = AuditedIndexSession(PausedClient(), "chunks", self.chunks)
+        session.open()
+
+        def close_session():
+            try:
+                outcomes.append(("ok", session.close()))
+            except Exception as exc:
+                outcomes.append(("err", exc))
+
+        worker = threading.Thread(target=close_session)
+        worker.start()
+        try:
+            self.assertTrue(started.wait(timeout=5))
+            session.invalidate()
+        finally:
+            release.set()
+            worker.join(timeout=5)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(calls, 2)
+        self.assertEqual(len(outcomes), 1)
+        self.assertEqual(outcomes[0][0], "err")
+        with self.assertRaises(ValueError):
+            session.close()
+
     def test_state_is_terminal_before_the_audit_runs(self):
         points = self.points
         observed = []
