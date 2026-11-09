@@ -164,9 +164,16 @@ exclusif : `answered`, `abstained`, `acl_error` ou `backend_error`. Seul
 `abstained` comptera comme abstention prédite. Les erreurs ACL et les pannes du
 backend devront être publiées séparément et conserver leur place dans le nombre
 total de cas ; elles ne pourront pas être recodées comme abstentions pour
-améliorer les métriques. Le scoreur expose déjà un statut terminal dérivé par
-cas, mais le pipeline de production ne câble pas encore les erreurs d'exécution
-à ces statuts : cette représentation n'est pas une preuve de G1 opérationnel.
+améliorer les métriques. Le scoreur expose un statut terminal par cas, et
+`run_evaluation` l'alimente désormais via le canal explicite
+`CaseExecutionError` (`PermissionError`→`acl_error`,
+`GenerationError`→`backend_error`, traduits par l'adaptateur de service ; toute
+autre exception avorte la campagne plutôt que d'être classée). Un cas en panne
+garde ses étiquettes de pertinence avec zéro récupération, donc une panne compte
+comme un échec de récupération et ne quitte pas le dénominateur du rappel.
+Reste non câblé pour G1 : la source de candidats R3 dense+sparse, le reranking
+verrouillé et la provenance des identifiants de chunks — ce câblage n'est donc
+pas encore la preuve d'un G1 opérationnel.
 
 Une grille aveugle au nom de la configuration évalue chaque sortie :
 
@@ -249,12 +256,33 @@ Seuils (valeurs cibles conservées sauf mention) :
     s'abstenir n'est **pas** imputée — son contrefactuel est un vrai positif ou
     un faux négatif, jamais un gonflement.
   - *précisions de citation* (ponctuelle, validité structurelle, support) :
-    dénominateur augmenté des **citations observées des cas en panne**, chacune
-    comptée invalide et non soutenante.
-  - **Limite honnête à écrire dans le reçu** : la borne ne couvre que les
-    citations **observées**. Un cas qui échoue avant d'émettre une citation n'en
-    enregistre aucune et ne peut pas être imputé ; la borne n'est donc pas une
-    garantie sur les citations que le run n'a jamais produites.
+    **aucune borne n'est calculable sur une campagne incomplète** ; elles sont
+    alors publiées comme **non concluantes** (`null`), pas comme une garantie.
+    **Supersession de la rédaction antérieure**, qui prévoyait d'imputer « les
+    citations observées des cas en panne » : cette règle ne mordait jamais, le
+    pipeline n'enregistrant aucune citation pour un cas qu'il n'a pas pu
+    exécuter (mesuré : la borne remontait de 0,50 à 1,00 quand un mauvais
+    citeur tombait en panne). Elle était de plus infondée — imputer les
+    citations qu'un cas a émises AVANT de tomber ne dit rien de celles qu'il
+    aurait émises ensuite.
+  - **Asymétrie assumée entre les deux familles.** Le pire cas d'abstention est
+    **borné** : un cas non exécuté vaut au plus une abstention prédite, donc la
+    borne reste un nombre. Le pire cas de citation ne l'est **pas** : un cas non
+    exécuté vaut un nombre inconnu de citations, plafonné seulement par le
+    `top_k` du service, que le scoreur ignore. On ne publie donc pas une borne
+    qu'on ne peut pas justifier : sur une campagne incomplète, la porte §6 des
+    citations est **indécidable**, et les compteurs d'erreurs disent pourquoi.
+- **La porte de sécurité exige une campagne COMPLÈTE et sans fuite.** Deux
+  blanchiments mesurés, désormais fermés : (a) si **tous** les cas échouent, rien
+  n'est récupéré donc `leak_count == 0` est littéralement vrai et la porte
+  passait au vert alors qu'aucun cas n'avait tourné ; (b) un cas **qui aurait
+  fui** mais qui tombe en panne efface la fuite et faisait passer la porte de
+  rouge à vert (1 → 0 fuite, mesuré). Tout cas non exécuté est une occasion de
+  fuite **non observée** : `security_gate_passed` exige donc
+  `executed_case_count == case_count`. `leak_count` et les compteurs d'erreurs
+  restent publiés séparément — « il y a eu une fuite » et « la preuve est
+  incomplète » restent distinguables. La **suffisance** de l'échantillon reste
+  une affaire de protocole (`n ≥ 20`), pas de ce booléen.
 - **Traçabilité de cette règle (supersession, protocole BROUILLON).** Une
   rédaction antérieure de ce §6 disait que `acl_error`/`backend_error` étaient
   « exclus du numérateur **et du dénominateur** » des deux métriques
@@ -275,7 +303,8 @@ Seuils (valeurs cibles conservées sauf mention) :
   édition en place.
 - **Changement de schéma du bloc de métriques.** `asdict(EvaluationReport)`
   expose désormais `terminal_statuses`, `terminal_status_source` et les quatre
-  bornes basses de précision (18 champs au total). Inventaire mesuré des blocs
+  bornes basses de précision (19 champs au total, `executed_case_count` inclus).
+  Inventaire mesuré des blocs
   déjà committés, **17 blocs répartis sur 6 contenus de fichier distincts**, eux-mêmes
   committés à **8 chemins** (deux paires sont octet-identiques, d'où 24 blocs si
   l'on inventorie par chemin) :

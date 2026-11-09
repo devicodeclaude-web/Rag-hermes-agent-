@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from typing import cast
 import unittest
 
 from rag_hermes.acl import AuthorizationContext, Chunk
 from rag_hermes.evaluation_runner import (
+    CaseExecutionError,
     RetrievedChunk,
     build_service_answer_fn,
     run_evaluation,
 )
+from rag_hermes.generator import GenerationError
 from rag_hermes.ingestion import Document
 from rag_hermes.service import RagService
 
@@ -524,6 +527,161 @@ class EvaluationRunnerTests(unittest.TestCase):
         )
         self.assertEqual(report.leak_count, 1)
         self.assertFalse(report.security_gate_passed)
+
+    def test_absent_evidence_abstains_while_a_failed_acl_barrier_errors(self) -> None:
+        """The two paths must stay distinct, or abstention metrics are destroyed.
+
+        A `no_answer` case legitimately finds nothing authorized and must score
+        as `abstained`. Only an ACL barrier that FAILS CLOSED (PermissionError)
+        becomes `acl_error`. If the service ever raised PermissionError on an
+        empty result set, every honest abstention would be reclassified as a
+        technical failure and the abstention recall would collapse -- this test
+        pins the boundary from both sides.
+        """
+        context = AuthorizationContext(
+            tenant_id="public", user_id="evaluator", groups=(), clearance=0
+        )
+        service = RagService(top_k=1)
+        service.import_document(
+            Document(
+                document_id="guide",
+                content=DOC_CONTENT,
+                tenant_id="public",
+                visibility="public",
+                owner_id="evaluator",
+                allowed_groups=(),
+                allowed_users=(),
+                classification=0,
+                doc_version=1,
+                source_uri="synthetic://guide",
+            ),
+            context=context,
+        )
+
+        # Side 1: nothing authorized matches -> honest abstention, no error.
+        answer_fn = build_service_answer_fn(service, lambda case: context)
+        retrieved, cited, abstained = answer_fn(
+            "Quelle constante lunaire ?", _abstention_case()
+        )
+        self.assertTrue(abstained)
+        self.assertEqual((len(retrieved), len(cited)), (0, 0))
+
+        # Side 2: the barrier itself fails closed -> acl_error, never abstention.
+        class _Barred:
+            def answer_with_trace(self, question, *, context):
+                raise PermissionError("stale ACL index has no usable candidates")
+
+        barred_fn = build_service_answer_fn(
+            cast(RagService, _Barred()), lambda case: context
+        )
+        with self.assertRaises(CaseExecutionError) as caught:
+            barred_fn("Quelle constante lunaire ?", _abstention_case())
+        self.assertEqual(caught.exception.terminal_status, "acl_error")
+
+    def test_service_adapter_translates_the_service_exception_vocabulary(self) -> None:
+        """Only the adapter that KNOWS the service maps its exceptions.
+
+        PermissionError is what the canonical ACL bridge raises when it fails
+        closed; GenerationError is the backend/generator failure. The mapping
+        lives here, not in run_evaluation, because an arbitrary answer_fn could
+        raise PermissionError for an unrelated reason (a filesystem denial, say)
+        and recording that as an ACL error would be a false audit finding.
+        """
+        context = AuthorizationContext(
+            tenant_id="public", user_id="evaluator", groups=(), clearance=0
+        )
+
+        class _Failing:
+            def __init__(self, error):
+                self._error = error
+
+            def answer_with_trace(self, question, *, context):
+                raise self._error
+
+        for error, expected in (
+            (PermissionError("stale ACL index"), "acl_error"),
+            (GenerationError("generator is unavailable"), "backend_error"),
+        ):
+            answer_fn = build_service_answer_fn(
+                cast(RagService, _Failing(error)), lambda case: context
+            )
+            with self.assertRaises(CaseExecutionError) as caught:
+                answer_fn("q?", _answerable_case())
+            self.assertEqual(caught.exception.terminal_status, expected)
+            # The original cause stays available to the operator...
+            self.assertIs(caught.exception.__cause__, error)
+            # ...but its text, which can carry a URL or credentials, is not
+            # copied into the signalled error.
+            self.assertNotIn(str(error), str(caught.exception))
+
+    def test_service_adapter_lets_unknown_exceptions_propagate(self) -> None:
+        context = AuthorizationContext(
+            tenant_id="public", user_id="evaluator", groups=(), clearance=0
+        )
+
+        class _Buggy:
+            def answer_with_trace(self, question, *, context):
+                raise KeyError("harness bug")
+
+        answer_fn = build_service_answer_fn(
+            cast(RagService, _Buggy()), lambda case: context
+        )
+        with self.assertRaises(KeyError):
+            answer_fn("q?", _answerable_case())
+
+    def test_signalled_case_failure_is_recorded_as_its_terminal_status(self) -> None:
+        """A case the harness could not execute becomes acl_error/backend_error.
+
+        Until now run_evaluation set no technical_failure at all, so every report
+        read `no_runtime_error_observed` and the terminal-status contract was
+        decorative. A signalled failure must NOT be scored as an abstention: it
+        stays in the case total, feeds its own counter, and leaves the predicted
+        abstentions untouched.
+        """
+        def answer_fn(question, case):
+            if case["case_id"] == "q-1":
+                raise CaseExecutionError("acl_error", "canonical authority refused")
+            return ([], [], True)
+
+        report = run_evaluation(
+            [_answerable_case(), _abstention_case()],
+            _documents(),
+            _manifest(),
+            answer_fn,
+            k=5,
+        )
+
+        self.assertEqual(
+            report.terminal_statuses,
+            (("q-1", "acl_error"), ("q-2", "abstained")),
+        )
+        self.assertEqual(report.terminal_status_source, "runtime_errors_observed")
+        self.assertEqual(report.acl_error_count, 1)
+        self.assertEqual(report.backend_error_count, 0)
+        self.assertEqual(report.case_count, 2)
+        # The failed case is answerable, so it is charged to the pessimistic
+        # precision bound while the point estimate stays blind to it.
+        self.assertEqual(report.abstention_precision, 1.0)
+        self.assertEqual(report.abstention_precision_lower_bound, 0.5)
+
+    def test_unexpected_exception_from_answer_fn_aborts_the_campaign(self) -> None:
+        """Only SIGNALLED failures are classified; anything else must propagate.
+
+        Catching broad exception classes here would turn a harness bug, a typo
+        or a transport crash into a published `backend_error` -- a false audit
+        finding in a component meant to produce evidence.
+        """
+        def answer_fn(question, case):
+            raise RuntimeError("harness bug, not a backend failure")
+
+        with self.assertRaisesRegex(RuntimeError, "harness bug"):
+            run_evaluation(
+                [_answerable_case()],
+                _documents(),
+                _manifest(),
+                answer_fn,
+                k=5,
+            )
 
 
 if __name__ == "__main__":

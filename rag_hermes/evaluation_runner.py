@@ -6,10 +6,39 @@ from typing import Callable, Mapping, Sequence, cast
 
 from .acl import AuthorizationContext, Chunk
 from .acl_authority import AclPolicy, CanonicalAclAuthority
-from .evaluation import EvaluationCase, EvaluationReport, evaluate
+from .evaluation import (
+    EvaluationCase,
+    EvaluationReport,
+    TechnicalFailure,
+    evaluate,
+)
 from .evaluation_dataset import validate_evaluation_case
+from .generator import GenerationError
 from .index_integrity import AuditedIndexSession
 from .service import RagService
+
+
+class CaseExecutionError(Exception):
+    """A case could not be executed, with the terminal status it must receive.
+
+    This is the ONLY way an answer_fn tells the runner "record this case as a
+    technical failure". Broad exception classes are deliberately NOT caught: a
+    harness bug, a typo or a transport crash relabelled as `backend_error`
+    would be a false audit finding in a component whose whole purpose is to
+    produce evidence. Callers that know a service's exception vocabulary
+    translate it here explicitly (see `build_service_answer_fn`); anything
+    unrecognised aborts the campaign instead of being classified.
+
+    The message is kept for the operator but is NEVER published in the report:
+    a transport error's text routinely embeds a URL, a response body or
+    credentials, and the report is a committed artefact.
+    """
+
+    def __init__(self, terminal_status: TechnicalFailure, detail: str = "") -> None:
+        if terminal_status not in {"acl_error", "backend_error"}:
+            raise ValueError("terminal_status must be acl_error or backend_error")
+        super().__init__(detail or terminal_status)
+        self.terminal_status: TechnicalFailure = terminal_status
 
 
 @dataclass(frozen=True)
@@ -37,6 +66,37 @@ AuditedAnswerFn = Callable[
 ]
 
 
+def _answer_via_service(
+    service: RagService,
+    question: str,
+    context: AuthorizationContext,
+) -> tuple[Sequence[RetrievedChunk], Sequence[RetrievedChunk], bool]:
+    """Call the service, translating ITS exception vocabulary -- and only that.
+
+    `PermissionError` is what the canonical ACL bridge raises when it fails
+    closed; `GenerationError` is a generator/backend failure. Both become a
+    signalled `CaseExecutionError` so the runner can record a terminal status.
+    Every other exception propagates untouched and aborts the campaign: a
+    harness bug or a transport crash must not be published as an ACL finding.
+
+    The cause is attached (`from exc`) so the operator keeps the detail, but its
+    text is NOT interpolated into the signalled message -- a transport error
+    routinely embeds a URL, a response body or credentials, and the campaign
+    report is a committed artefact.
+    """
+    try:
+        trace = service.answer_with_trace(question, context=context)
+    except PermissionError as exc:
+        raise CaseExecutionError("acl_error", "ACL barrier failed closed") from exc
+    except GenerationError as exc:
+        raise CaseExecutionError("backend_error", "generation backend failed") from exc
+    return (
+        tuple(RetrievedChunk(chunk) for chunk in trace.retrieved_chunks),
+        tuple(RetrievedChunk(chunk) for chunk in trace.cited_chunks),
+        trace.response.abstained,
+    )
+
+
 def build_service_answer_fn(
     service: RagService,
     context_for_case: ContextFn,
@@ -50,12 +110,7 @@ def build_service_answer_fn(
         context = context_for_case(case)
         if not isinstance(context, AuthorizationContext):
             raise ValueError("context_for_case must return AuthorizationContext")
-        trace = service.answer_with_trace(question, context=context)
-        return (
-            tuple(RetrievedChunk(chunk) for chunk in trace.retrieved_chunks),
-            tuple(RetrievedChunk(chunk) for chunk in trace.cited_chunks),
-            trace.response.abstained,
-        )
+        return _answer_via_service(service, question, context)
 
     return answer_fn
 
@@ -63,12 +118,7 @@ def build_service_answer_fn(
 def build_contextual_service_answer_fn(service: RagService) -> AuditedAnswerFn:
     """Use the audited campaign's resolved context on the service answer path."""
     def answer_fn(question: str, case: Mapping[str, object], context: AuthorizationContext):
-        trace = service.answer_with_trace(question, context=context)
-        return (
-            tuple(RetrievedChunk(chunk) for chunk in trace.retrieved_chunks),
-            tuple(RetrievedChunk(chunk) for chunk in trace.cited_chunks),
-            trace.response.abstained,
-        )
+        return _answer_via_service(service, question, context)
     return answer_fn
 
 
@@ -243,13 +293,41 @@ def run_evaluation(
             label = f"span:{document_id}#span{index}:{start}-{end}"
             span_labels.append((label, document_id, start, end))
 
-        if authority is None:
-            retrieved, cited, abstained = cast(AnswerFn, answer_fn)(case["question"], case)
-        else:
-            assert context is not None
-            retrieved, cited, abstained = cast(AuditedAnswerFn, answer_fn)(
-                case["question"], case, context
+        try:
+            if authority is None:
+                retrieved, cited, abstained = cast(AnswerFn, answer_fn)(
+                    case["question"], case
+                )
+            else:
+                assert context is not None
+                retrieved, cited, abstained = cast(AuditedAnswerFn, answer_fn)(
+                    case["question"], case, context
+                )
+        except CaseExecutionError as failure:
+            # Record the signalled terminal status and move on. The case keeps
+            # its relevance labels with ZERO retrievals, so a crash counts as a
+            # retrieval miss rather than vanishing from recall -- the same
+            # anti-inflation direction as the abstention denominators. Error
+            # counts are published separately so a reader can recompute the
+            # alternative. The exception message is deliberately dropped: it can
+            # embed a URL, a response body or credentials, and the report is a
+            # committed artefact.
+            evaluation_cases.append(
+                EvaluationCase(
+                    case_id=str(case["case_id"]),
+                    relevant_chunk_ids=tuple(
+                        label for (label, _d, _s, _e) in span_labels
+                    ),
+                    retrieved_chunk_ids=(),
+                    cited_chunk_ids=(),
+                    should_abstain=case["should_abstain"],
+                    did_abstain=False,
+                    leaked_chunk_ids=(),
+                    technical_failure=failure.terminal_status,
+                    retrieved_relevance_ids_by_rank=(),
+                )
             )
+            continue
         if type(abstained) is not bool:
             raise ValueError("answer_fn abstained must be a bool")
 

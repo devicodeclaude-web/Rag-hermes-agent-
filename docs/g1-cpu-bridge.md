@@ -68,9 +68,35 @@ abstenu et avoir échoué) **et re-vérifiée au scoring** : `object.__new__`,
 contrôle un cas forgé publiait un statut de panne pendant que
 `terminal_status_source` affirmait encore `no_runtime_error_observed`. Ce n'est
 donc pas une propriété du type, c'est une porte à deux étages, tous deux
-fail-closed. Mais `run_evaluation` ne renseigne encore aucune erreur technique :
-en pratique `terminal_status_source` vaut `no_runtime_error_observed` et seuls
-`answered`/`abstained` apparaissent. Son rapport ne constitue pas un reçu G1.
+fail-closed.
+
+`run_evaluation` **alimente désormais ces statuts**. Le canal est explicite :
+un `answer_fn` signale un cas inexécutable en levant
+`CaseExecutionError(terminal_status)`, seule exception que le runner intercepte ;
+tout le reste **remonte et avorte la campagne**. C'est volontaire — attraper une
+classe large transformerait un bug du harnais ou une panne de transport en
+`backend_error` publié, c'est-à-dire un constat d'audit faux dans un composant
+censé produire de la preuve. La traduction du vocabulaire du service vit dans
+l'adaptateur qui le connaît (`_answer_via_service`) : `PermissionError` (barrière
+ACL en échec fermé) → `acl_error`, `GenerationError` → `backend_error`. La cause
+reste dans `__cause__` pour l'opérateur, mais son texte n'est **jamais** recopié
+dans le message signalé ni dans le rapport : une erreur de transport embarque
+souvent une URL, un corps de réponse ou des identifiants, et le rapport est un
+artefact committé.
+
+Frontière à ne pas confondre, verrouillée par un test à double sens : un cas
+`no_answer` qui ne trouve **aucune preuve autorisée** s'abstient honnêtement
+(`abstained`) ; seule une barrière qui **échoue fermé** devient `acl_error`. Si
+le service levait `PermissionError` sur un résultat vide, toute abstention
+honnête serait reclassée en panne et le rappel d'abstention s'effondrerait.
+
+Un cas en panne conserve ses étiquettes de pertinence avec **zéro récupération** :
+une panne compte donc comme un échec de récupération au lieu de disparaître du
+rappel — même direction anti-gonflement que les dénominateurs d'abstention. Les
+compteurs d'erreurs étant publiés à part, un lecteur peut recalculer l'autre
+convention. Tant que la campagne tourne sur un service réel, ce n'est toujours
+pas un reçu G1 : la source de candidats R3 dense+sparse, le reranking verrouillé
+et la provenance des identifiants de chunks restent à câbler.
 
 `run_audited_evaluation` (`rag_hermes/evaluation_runner.py`) fait de l'audit une
 précondition **pour ses appelants** : l'audit d'ouverture tourne avant la
