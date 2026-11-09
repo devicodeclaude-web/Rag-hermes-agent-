@@ -27,6 +27,10 @@ class SearchResult:
         return self.score if self.threshold_score is None else self.threshold_score
 
 
+class CanonicalAclError(PermissionError):
+    """Refus émis par la barrière canonique, distinct d'une panne de stockage."""
+
+
 class CanonicalAclSearch:
     """Recheck ranked repository candidates against the canonical ACL before answering."""
 
@@ -67,10 +71,10 @@ class CanonicalAclSearch:
             if len(eligible) >= limit or len(results) < requested:
                 break
             if requested == 128:
-                raise PermissionError("canonical candidate scan budget exhausted")
+                raise CanonicalAclError("canonical candidate scan budget exhausted")
             requested = min(128, requested * 2)
         if stale_authorized and not eligible:
-            raise PermissionError("stale ACL index has no usable authorized candidates")
+            raise CanonicalAclError("stale ACL index has no usable authorized candidates")
         return eligible[:limit]
 
     def _recheck(
@@ -86,7 +90,7 @@ class CanonicalAclSearch:
             )
             if allowed:
                 if policy is None:
-                    raise PermissionError("canonical policy missing after authorization")
+                    raise CanonicalAclError("canonical policy missing after authorization")
                 if (
                     chunk.tenant_id != policy.tenant_id
                     or chunk.visibility != policy.visibility
@@ -95,13 +99,13 @@ class CanonicalAclSearch:
                     or set(chunk.allowed_groups) != set(policy.allowed_groups)
                     or set(chunk.allowed_users) != set(policy.allowed_users)
                 ):
-                    raise PermissionError("ACL payload conflicts with canonical policy")
+                    raise CanonicalAclError("ACL payload conflicts with canonical policy")
                 source = self._source
                 if source is None:
-                    raise PermissionError("trusted provenance source is required")
+                    raise CanonicalAclError("trusted provenance source is required")
                 document = source(chunk.document_id)
                 if document is None:
-                    raise PermissionError("canonical provenance document missing")
+                    raise CanonicalAclError("canonical provenance document missing")
                 digest = hashlib.sha256(document.content.encode("utf-8")).hexdigest()
                 if (
                     document.document_id != chunk.document_id
@@ -119,7 +123,7 @@ class CanonicalAclSearch:
                     or not (0 <= chunk.start_offset < chunk.end_offset <= len(document.content))
                     or document.content[chunk.start_offset:chunk.end_offset] != chunk.text
                 ):
-                    raise PermissionError("candidate provenance conflicts with canonical document")
+                    raise CanonicalAclError("candidate provenance conflicts with canonical document")
                 if filter_authorized([chunk], context):
                     accepted.append(result)
             elif reason == "stale_acl_version" and policy is not None and policy.allows(context):
