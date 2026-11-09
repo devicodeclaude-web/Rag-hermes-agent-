@@ -43,12 +43,17 @@ après falsification de l'ACL indexée. L'embedder et le générateur sont facti
 la collection temporaire est effacée. Ce n'est pas un essai de qualité G1.
 La source locale (`rag_hermes/canonical_snapshot.py`) vérifie l'empreinte du
 fichier avant décodage, mais l'autorité de cette empreinte reste extérieure.
-`g1_wiring.py` impose un digest de manifeste épinglé avant tout scroll et
-retourne une surface de réponse sans import. Les anciens appels d'audit
-restent compatibles sans épingle : ce mode **ne prouve pas** la provenance du
-manifeste. Une session peut aussi recevoir l'épingle et l'exige à l'ouverture
-et à la clôture. Un test CPU raccorde la source épinglée au vrai adaptateur de
-`run_audited_evaluation`, sans modèle GPU ni seuil de qualité.
+Dans le smoke test, les deux empreintes sont calculées à partir des données
+créées pour l'essai : cela démontre le câblage, **pas** une approbation
+indépendante des valeurs. `g1_wiring.py` impose un digest de manifeste épinglé
+avant tout scroll et retourne une surface de réponse sans import ; l'objet
+interne `_service` reste accessible à un appelant Python non fiable : cette
+surface n'est **pas** une frontière de sécurité ni un verrou Qdrant. Les
+anciens appels d'audit restent compatibles sans épingle : ce mode **ne
+prouve pas** la provenance du manifeste. Une session peut aussi recevoir
+l'épingle et l'exige à l'ouverture et à la clôture. Un test CPU raccorde la
+source épinglée au vrai adaptateur de `run_audited_evaluation`, sans modèle
+GPU ni seuil de qualité.
 
 `AuditedIndexSession` est une **brique volontaire non intégrée au chemin des
 requêtes ordinaires** : `run_audited_evaluation` l'appelle pour encadrer une
