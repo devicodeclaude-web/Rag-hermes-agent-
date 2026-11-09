@@ -1,0 +1,116 @@
+# G1 — première tranche CPU : seconde barrière ACL
+
+`CanonicalAclSearch` (`rag_hermes/retrieval.py`) enveloppe un dépôt classant ses
+résultats via `search(question, context=..., limit=...)`. Configuré comme
+`repository` de `RagService`, il réévalue **avant génération et citations** les
+candidats contre `CanonicalAclAuthority` et leur ACL indexée. Pour tout candidat
+autorisé, il exige une source canonique de `Document` **indépendante de l'index**
+(`source(document_id)`) et compare locataire, ACL, version documentaire, hash du
+contenu, tranche de texte et URI. Sans source, il refuse les candidats autorisés.
+Une version ACL périmée **observée par le pont** est écartée ; si aucun
+autre passage autorisé n'atteint le seuil de score, le parcours lève
+`PermissionError` plutôt que de compter une abstention honnête. Le pont élargit
+la requête classée en cas de candidats rejetés (budget de 128) ; si le budget
+est saturé, il échoue fermé. Le `minimum_score` du pont doit être identique à
+celui du service (vérifié à la construction). Un payload contradictoire avec
+la politique canonique échoue explicitement **s'il est retourné par le dépôt**
+et si la politique autorise le demandeur ; un candidat refusé observé ne peut
+pas bloquer un document légitime classé juste après lui.
+
+Le test `tests/test_g1_canonical_bridge.py` exerce sur CPU : requête Qdrant
+préfiltrée (client simulé), seconde barrière, réponse factice `[S1]` et citation
+limitée au document autorisé. Le client simulé vérifie **la transmission** du
+filtre à Qdrant, pas son application réelle. Il vérifie aussi un candidat
+inter-tenant, une ACL périmée, un payload contradictoire et un texte/URI/version
+forgés. Aucune inférence GPU ni score de qualité n'est impliqué.
+
+Un second contrôle CPU (`rag_hermes/index_integrity.py`) compare les points
+d'un **scroll non filtré et paginé** à la liste complète des chunks canoniques
+fournie indépendamment de Qdrant. Il échoue si un point manque, est en trop,
+est dupliqué ou si son payload/ACL diffère ; il détecte ainsi un `owner_id`
+indexé trop restrictif qu'une requête préfiltrée n'aurait pas retourné. Le
+scroll sans filtre (`QdrantAuditRestClient.scroll_page`) est destiné au seul
+auditeur hors du chemin des requêtes utilisateur ; la séparation en classes
+n'est **pas** une autorisation réseau. Utiliser des droits/identifiants
+opérateur distincts et ne pas exposer ce client à l'API publique. L'audit
+compare les payloads et IDs (types JSON inclus), **pas les vecteurs**.
+Tests avec faux clients uniquement : aucune collection Qdrant réelle n'a été
+auditée.
+
+`AuditedIndexSession` est une **brique volontaire non intégrée au chemin des
+requêtes ordinaires** : `run_audited_evaluation` l'appelle pour encadrer une
+campagne explicite, mais elle n'intercepte ni ne bloque les autres requêtes.
+Sans ce wrapper, lancer `open()` avant la première requête d'évaluation et
+`close()` après la dernière est une **obligation de l'opérateur**. `close()`
+rejoue l'audit et échoue si l'index a divergé du manifeste. Quatre limites
+honnêtes : un échec d'`open()` ou de `close()` est **terminal** (le portillon
+est fermé sous verrou avant tout audit, donc ni une reprise ni un appel
+concurrent ne transforme une divergence détectée en succès — testé avec 100
+essais à deux fils) ; l'erreur de clôture porte un message fixe
+(`closing audit failed`, la cause restant dans `__cause__`) car une panne de
+transport ou une réponse Qdrant malformée n'est pas une mutation d'index, ne
+doit pas être étiquetée comme telle, et son texte peut contenir une URL ou des
+identifiants ; les deux rapports
+dérivent du même manifeste, donc leur égalité n'est pas une preuve indépendante
+(le seul signal est que l'audit de clôture a été rejoué et a passé) ; et la
+session n'empêche aucune écriture — une mutation annulée avant `close()`, ou ne
+touchant que les vecteurs, reste invisible.
+
+Ce n'est **pas encore G1 complet** : la source de candidats R3 dense+sparse,
+le reranking verrouillé, le mapping explicite des statuts terminaux
+`answered` / `abstained` / `acl_error` / `backend_error`, la provenance des
+identifiants de chunks et le reçu de campagne restent à câbler et à tester.
+
+`run_audited_evaluation` (`rag_hermes/evaluation_runner.py`) fait de l'audit une
+précondition **pour ses appelants** : l'audit d'ouverture tourne avant la
+première question, donc un index divergent ne fait répondre aucun cas, et
+l'audit de clôture doit passer avant qu'un rapport soit renvoyé. Ce que cela
+établit est borné : **l'index de la session** était conforme au manifeste aux
+deux bouts de la campagne. `answer_fn` étant un appelable arbitraire, la
+fonction ne peut pas vérifier que les questions ont réellement été servies par
+la collection auditée — lier les deux reste le travail de l'opérateur. Le
+rapport audité exige désormais `context_for_case` et une
+`CanonicalAclAuthority` indépendante de l'index : le calcul des fuites compare
+chaque chunk récupéré/cité à la politique canonique, à ses métadonnées ACL et
+au contexte du cas (locataire, propriétaire, groupes, habilitation). Deux
+documents privés de même visibilité ne sont donc pas automatiquement
+mutuellement autorisés ; un document global public reste utilisable par un cas
+privé quand la politique le permet. La visibilité des documents de référence
+est confrontée à celle de l'autorité avant toute réponse, et chaque document
+référencé doit être autorisé pour le contexte du cas ; sinon la campagne échoue.
+Les identifiants de locataire, les champs de politique et le contexte sont
+validés avec leurs types exacts (un booléen ne vaut pas l'entier 1).
+Seules les classes exactes de session d'audit et d'autorité sont admises : une
+sous-classe redéfinissant `open()`/`close()` ou `authorize()` ne peut simuler un
+contrôle réussi. Le contexte n'est résolu qu'une fois et transmis à
+`answer_fn(question, case, context)` ;
+`build_contextual_service_answer_fn` l'utilise directement pour appeler le
+service. Un appelable arbitraire peut néanmoins ignorer ce contexte : ce n'est
+pas une preuve de l'identité réellement utilisée par le service. Le score
+`security_gate_passed` vérifie les fuites ACL constatées, **pas** la provenance,
+la version, l'URI ou le hash de chaque chunk renvoyé, ni la complétude de la
+recherche. Sans ces deux paramètres, `run_evaluation` direct conserve un score
+de fuite limité à la visibilité/liste fournie ; son `security_gate_passed`
+n'est pas une preuve d'autorisation multi-tenant. Ce n'est
+pas non plus une propriété du système : une campagne lancée directement via
+`run_evaluation`, ou toute requête émise hors de cet appel, reste non auditée.
+Une campagne interrompue invalide la session **sans auditer** : elle ne prétend
+rien sur l'index, n'impose pas un scroll complet sur un Ctrl-C, et n'écrase pas
+une erreur de divergence par l'erreur de scoring.
+
+Le résolveur canonique des tests est une source locale factice ; le brancher à
+un vrai stockage documentaire fiable et exercer Qdrant réel sont préalables
+à une garantie de production. Attention : un candidat écarté **en amont** par
+le préfiltre Qdrant ou par `QdrantChunkRepository` est invisible pour ce pont ;
+il peut masquer une ACL périmée ou une contradiction et produire une abstention
+ordinaire. Le préfiltre transmis n'est donc pas une preuve de complétude du
+contrôle ACL ni de la classe `abstained`. Avant d'utiliser ce statut comme
+mesure d'évaluation G1, il faut une exécution réussie de l'audit complet sur
+le **même index figé** pendant la campagne (ou une trace vérifiable des rejets
+en amont). Même conforme, l'audit d'intégrité des points ne prouve pas que la
+recherche/préfiltre a exploré tous les candidats utiles : à lui seul, il ne
+qualifie aucune abstention. La fonction d'audit n'authentifie pas à elle seule
+la provenance du manifeste et ne verrouille pas les écritures Qdrant : sans
+ces préconditions, son succès CPU n'est pas un reçu G1. La V1 existante garde
+son comportement ; la barrière n'est activée que lorsqu'un client l'enveloppe
+explicitement.

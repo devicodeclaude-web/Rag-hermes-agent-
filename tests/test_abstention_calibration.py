@@ -107,7 +107,7 @@ class AbstentionCalibrationTests(unittest.TestCase):
             "question": "What is relevant?",
             "language": "en",
             "track": "en2en",
-            "category": "fact",
+            "category": "simple",
             "access_scope": "public",
             "question_provenance": "human_task_without_corpus_view",
             "should_abstain": False,
@@ -137,7 +137,7 @@ class AbstentionCalibrationTests(unittest.TestCase):
         manifest = {"source_revision": "abc1234", "corpus_manifest_sha": "f" * 64}
         case = {
             "case_id": "p1-en", "pair_id": "p1", "question": "What is relevant?",
-            "language": "en", "track": "en2en", "category": "fact",
+            "language": "en", "track": "en2en", "category": "simple",
             "access_scope": "public", "question_provenance": "human_task_without_corpus_view",
             "should_abstain": False, "unanswerable_reason": None,
             "reference_status": "validated", **manifest,

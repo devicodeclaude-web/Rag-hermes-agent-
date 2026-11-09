@@ -82,7 +82,9 @@ def build_synthetic_case(
         unanswerable_reason = None
 
     case: dict[str, Any] = {
-        "case_id": str(raw["case_id"]),
+        # Never coerce the id: str(None) would mint the plausible-looking "None",
+        # and str(7) a string the canonical validator can no longer reject.
+        "case_id": raw["case_id"],
         "question": str(raw["question"]),
         "language": "en",
         "track": "en2en",

@@ -5,6 +5,15 @@ import hashlib
 from typing import Any, Mapping
 
 _ALLOWED_SCOPES = {"public", "private"}
+# The five declared strata of the dataset; must stay identical to
+# scripts/check_dataset_qa.py ALLOWED_CATEGORIES.
+_ALLOWED_CATEGORIES = {
+    "simple",
+    "paraphrase",
+    "close_distractor",
+    "chunk_boundary",
+    "no_answer",
+}
 _ALLOWED_REFERENCE_STATUS = {"pending", "validated", "arbitrated"}
 # Human-authored provenances are the ONLY ones eligible as quality evidence.
 _QUALITY_ELIGIBLE_PROVENANCE = {
@@ -75,6 +84,16 @@ def validate_evaluation_case(
     if missing:
         raise ValueError(f"missing fields: {', '.join(missing)}")
 
+    # Identity and stratum are load-bearing: case_id keys duplicate detection and
+    # every per-case receipt, category keys the stratum counts. Presence alone is
+    # not enough — a null id silently became the string "None" downstream, and an
+    # unknown category inflated no stratum while still being scored.
+    case_id = case["case_id"]
+    if type(case_id) is not str or not case_id or case_id != case_id.strip():
+        raise ValueError("case_id must be a non-empty string without surrounding whitespace")
+    if type(case["category"]) is not str or case["category"] not in _ALLOWED_CATEGORIES:
+        raise ValueError(f"invalid category: {case['category']!r}")
+
     # Corpus identity: refuse a case pinned to a different revision or corpus hash.
     if str(case["source_revision"]) != pinned_revision:
         raise ValueError(
@@ -111,6 +130,14 @@ def validate_evaluation_case(
     if type(case["should_abstain"]) is not bool:
         raise ValueError("should_abstain must be a bool")
     should_abstain = case["should_abstain"]
+    # The stratum must agree with the abstention flag: the by-category buckets of
+    # every report key off this value, so an answerable case parked in no_answer
+    # (or the reverse) corrupts exactly the counts the stratum is there to carry.
+    if (case["category"] == "no_answer") is not should_abstain:
+        raise ValueError(
+            "category no_answer and should_abstain must agree "
+            f"(category={case['category']!r}, should_abstain={should_abstain!r})"
+        )
     if should_abstain:
         if spans:
             raise ValueError("an abstention case cannot contain relevance spans")

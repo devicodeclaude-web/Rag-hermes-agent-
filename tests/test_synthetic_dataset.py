@@ -23,6 +23,21 @@ class BuildSyntheticCaseTests(unittest.TestCase):
             "corpus_manifest_sha": PINNED_SHA,
         }
 
+    def test_null_or_blank_case_id_is_not_coerced_into_a_fake_id(self):
+        # str(None) == "None" would mint a plausible-looking id that the
+        # canonical validator can no longer catch.
+        for invalid in (None, "", "   ", 7, ["v1-001"]):
+            with self.subTest(invalid=invalid):
+                raw = {
+                    "case_id": invalid,
+                    "category": "simple",
+                    "question": "What does doc-a explain?",
+                    "relevant_document_ids": ["doc-a"],
+                    "distractor_document_ids": ["doc-b"],
+                }
+                with self.assertRaisesRegex(ValueError, "case_id"):
+                    build_synthetic_case(raw, self.documents, self.manifest)
+
     def test_answerable_case_becomes_full_document_span_synthetic(self):
         raw = {
             "case_id": "v1-001",
