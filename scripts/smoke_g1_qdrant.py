@@ -22,7 +22,8 @@ from rag_hermes.evaluation_runner import (
 )
 from rag_hermes.g1_wiring import build_audited_g1_service
 from rag_hermes.index_integrity import (
-    AuditedIndexSession, audit_qdrant_index, verify_index_snapshot,
+    AuditedIndexSession, AuditedIndexSessionError,
+    audit_qdrant_index, verify_index_snapshot,
 )
 from rag_hermes.ingestion import Document, chunk_document
 from rag_hermes.qdrant_rest import QdrantAuditRestClient, QdrantRestClient
@@ -114,20 +115,22 @@ def main() -> None:
             )
             if scored.case_count != 1 or not scored.security_gate_passed:
                 raise AssertionError("le harnais audité n'a pas scoré l'essai")
+        closing_check = AuditedIndexSession(
+            auditor, collection, chunks, page_size=1,
+            expected_manifest_sha256=pinned,
+        )
+        closing_check.open()
         forged = deepcopy(points[0])
         forged["payload"]["owner_id"] = "bob"
         client.upsert(collection, [forged])
         try:
-            audit_qdrant_index(
-                auditor, collection, chunks, expected_manifest_sha256=pinned,
-                page_size=1,
-            )
-        except ValueError as exc:
-            if "payload conflicts" not in str(exc):
+            closing_check.close()
+        except AuditedIndexSessionError as exc:
+            if not isinstance(exc.__cause__, ValueError) or "payload conflicts" not in str(exc.__cause__):
                 raise
         else:
-            raise AssertionError("ACL falsifiée non détectée")
-        print("Qdrant réel OK : audit, campagne CPU 1 cas, citation, ACL altérée refusée")
+            raise AssertionError("session d'audit a accepté une ACL falsifiée")
+        print("Qdrant réel OK : audit, campagne CPU 1 cas, citation, clôture altérée refusée")
     finally:
         if created:
             client.delete_collection(collection)
