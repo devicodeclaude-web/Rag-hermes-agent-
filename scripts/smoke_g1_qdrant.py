@@ -17,9 +17,13 @@ from uuid import uuid4
 
 from rag_hermes.acl import AuthorizationContext
 from rag_hermes.canonical_snapshot import load_pinned_document_snapshot
+from rag_hermes.evaluation_runner import (
+    build_contextual_service_answer_fn, run_audited_evaluation,
+)
 from rag_hermes.g1_wiring import build_audited_g1_service
-
-from rag_hermes.index_integrity import audit_qdrant_index, verify_index_snapshot
+from rag_hermes.index_integrity import (
+    AuditedIndexSession, audit_qdrant_index, verify_index_snapshot,
+)
 from rag_hermes.ingestion import Document, chunk_document
 from rag_hermes.qdrant_rest import QdrantAuditRestClient, QdrantRestClient
 from rag_hermes.qdrant_store import chunk_to_point
@@ -80,6 +84,36 @@ def main() -> None:
             )
             if audited.point_count != 2 or answer.abstained or not answer.citations:
                 raise AssertionError("réponse citée sur Qdrant réel absente")
+            revision = "a" * 40
+            corpus_sha = "b" * 64
+            case = {
+                "case_id": "smoke-1", "question": "Source A",
+                "language": "en", "track": "en2en", "category": "simple",
+                "access_scope": "private", "question_provenance": "human_task_without_corpus_view",
+                "should_abstain": False, "unanswerable_reason": None,
+                "reference_status": "validated", "source_revision": revision,
+                "corpus_manifest_sha": corpus_sha,
+                "relevance_spans": [{
+                    "document_id": "a", "start_char": 0, "end_char": len("Source A"),
+                    "passage_sha256": hashlib.sha256(b"Source A").hexdigest(),
+                    "relevance_grade": 2,
+                }],
+            }
+            session = AuditedIndexSession(
+                auditor, collection, chunks, page_size=1,
+                expected_manifest_sha256=pinned,
+            )
+            scored = run_audited_evaluation(
+                session, [case], {
+                    "a": {"content": "Source A", "visibility": "private"},
+                    "b": {"content": "Source B", "visibility": "private"},
+                }, {"source_revision": revision, "corpus_manifest_sha": corpus_sha},
+                build_contextual_service_answer_fn(service), k=1,
+                context_for_case=lambda row: AuthorizationContext("alpha", "alice", (), 1),
+                authority=snapshot.authority(),
+            )
+            if scored.case_count != 1 or not scored.security_gate_passed:
+                raise AssertionError("le harnais audité n'a pas scoré l'essai")
         forged = deepcopy(points[0])
         forged["payload"]["owner_id"] = "bob"
         client.upsert(collection, [forged])
@@ -93,7 +127,7 @@ def main() -> None:
                 raise
         else:
             raise AssertionError("ACL falsifiée non détectée")
-        print("Qdrant réel OK : audit paginé, réponse citée, ACL falsifiée détectée")
+        print("Qdrant réel OK : audit, campagne CPU 1 cas, citation, ACL altérée refusée")
     finally:
         if created:
             client.delete_collection(collection)

@@ -36,8 +36,10 @@ n'est **pas** une autorisation réseau. Utiliser des droits/identifiants
 opérateur distincts et ne pas exposer ce client à l'API publique. L'audit
 compare les payloads et IDs (types JSON inclus), **pas les vecteurs**.
 L'essai `scripts/smoke_g1_qdrant.py` sur **Qdrant 1.20.0 réel** vérifie
-l'audit paginé, une réponse citée depuis une source JSONL épinglée, puis le
-rejet d'une ACL indexée falsifiée. L'embedder et le générateur sont factices ;
+l'audit paginé, une réponse citée depuis une source JSONL épinglée, une
+campagne synthétique **d'un cas** passée dans le vrai harnais audité (audit
+d'ouverture et de clôture), puis le rejet d'une ACL indexée falsifiée.
+L'embedder et le générateur sont factices ;
 la collection temporaire est effacée. Ce n'est pas un essai de qualité G1.
 La source locale (`rag_hermes/canonical_snapshot.py`) vérifie l'empreinte du
 fichier avant décodage, mais l'autorité de cette empreinte reste extérieure.
