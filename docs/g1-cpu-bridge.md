@@ -57,9 +57,20 @@ session n'empêche aucune écriture — une mutation annulée avant `close()`, o
 touchant que les vecteurs, reste invisible.
 
 Ce n'est **pas encore G1 complet** : la source de candidats R3 dense+sparse,
-le reranking verrouillé, le mapping explicite des statuts terminaux
-`answered` / `abstained` / `acl_error` / `backend_error`, la provenance des
+le reranking verrouillé, la traduction des erreurs d'exécution en statuts
+terminaux par cas (`acl_error` / `backend_error`), la provenance des
 identifiants de chunks et le reçu de campagne restent à câbler et à tester.
+Le scoreur `evaluate` dérive déjà `answered` / `abstained` / `acl_error` /
+`backend_error` depuis ses entrées. L'exclusivité est imposée **au constructeur**
+(`EvaluationCase.__post_init__` refuse un cas qui prétendrait à la fois s'être
+abstenu et avoir échoué) **et re-vérifiée au scoring** : `object.__new__`,
+`copy.deepcopy` et `pickle` contournent `__post_init__`, et sans ce second
+contrôle un cas forgé publiait un statut de panne pendant que
+`terminal_status_source` affirmait encore `no_runtime_error_observed`. Ce n'est
+donc pas une propriété du type, c'est une porte à deux étages, tous deux
+fail-closed. Mais `run_evaluation` ne renseigne encore aucune erreur technique :
+en pratique `terminal_status_source` vaut `no_runtime_error_observed` et seuls
+`answered`/`abstained` apparaissent. Son rapport ne constitue pas un reçu G1.
 
 `run_audited_evaluation` (`rag_hermes/evaluation_runner.py`) fait de l'audit une
 précondition **pour ses appelants** : l'audit d'ouverture tourne avant la
