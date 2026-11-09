@@ -157,6 +157,11 @@ class AuditedIndexSession:
         self._invalidated = False
         self._opening: IndexSnapshotReport | None = None
 
+    @property
+    def canonical_chunks(self) -> tuple[Chunk, ...]:
+        """The manifest this exact session audits; not a claim of index immutability."""
+        return tuple(self._expected)
+
     def _begin(self, allowed_state: str, misuse: str) -> None:
         """Close the gate ATOMICALLY, before any audit work starts.
 

@@ -10,10 +10,15 @@ from dataclasses import replace
 
 from rag_hermes.acl import AuthorizationContext
 from rag_hermes.acl_authority import AclPolicy, CanonicalAclAuthority
-from rag_hermes.evaluation_runner import RetrievedChunk, run_audited_evaluation
+from rag_hermes.evaluation_runner import (
+    RetrievedChunk, build_contextual_service_answer_fn, run_audited_evaluation,
+)
 from rag_hermes.index_integrity import AuditedIndexSession, AuditedIndexSessionError
 from rag_hermes.ingestion import Document, chunk_document
 from rag_hermes.qdrant_store import chunk_to_point
+from rag_hermes.qdrant_repository import QdrantChunkRepository
+from rag_hermes.retrieval import CanonicalAclSearch
+from rag_hermes.service import RagService
 
 from test_evaluation_runner import (  # reuse the strict dataset fixtures
     DOC_CONTENT,
@@ -65,9 +70,7 @@ class AuditedCampaignTests(unittest.TestCase):
         )
         self.answered = []
 
-        passage = "installer Hermes avec pipx"
-        start = DOC_CONTENT.index(passage)
-        retrieved = (RetrievedChunk(_chunk("c1", "guide", start, start + len(passage))),)
+        retrieved = (RetrievedChunk(self.chunks[0]),)
 
         def answer_fn(question, case, context):
             self.answered.append(case["case_id"])
@@ -200,6 +203,78 @@ class AuditedCampaignTests(unittest.TestCase):
         )
         self.assertEqual(report.leak_count, 1)
         self.assertFalse(report.security_gate_passed)
+
+    def test_authorized_chunk_id_not_in_audited_manifest_aborts_campaign(self):
+        # ACL and passage text alone cannot prove the emitted chunk ID was
+        # indexed. The audited manifest is the independent list of real IDs.
+        forged = replace(self.chunks[0], chunk_id="unindexed-but-authorized")
+        session = self._session([self.points, self.points])
+        with self.assertRaisesRegex(ValueError, "audited manifest"):
+            run_audited_evaluation(
+                session, [_answerable_case()], _documents(), _manifest(),
+                lambda question, case, context: ([RetrievedChunk(forged)], [], False),
+                k=1, context_for_case=self.context_for_case, authority=self.authority,
+            )
+        with self.assertRaisesRegex(ValueError, "already opened or finished"):
+            session.open()
+
+    def test_raw_qdrant_query_point_must_match_its_decoded_chunk(self):
+        # The scroll sees a canonical point; QUERY returns a raw point that
+        # decodes to the same Chunk. Regenerating an ID or int(True) is not
+        # evidence of the point Qdrant actually returned.
+        original = self.points[0]
+        document = Document(
+            document_id="guide", content=DOC_CONTENT, tenant_id="public",
+            visibility="public", owner_id="system", allowed_groups=(),
+            allowed_users=(), classification=0, doc_version=1,
+            source_uri="synthetic://guide",
+        )
+        for change in ("point_id", "doc_version_type"):
+            with self.subTest(change=change):
+                query_point = dict(original, payload=dict(original["payload"]), score=0.9)
+                if change == "point_id":
+                    query_point["id"] = "unindexed-qdrant-point"
+                else:
+                    query_point["payload"]["doc_version"] = True
+
+                class Client:
+                    def scroll_page(self, collection, *, limit, offset=None):
+                        return [original], None
+
+                    def query(self, collection, vector, *, query_filter, limit):
+                        return [query_point]
+
+                client = Client()
+                session = AuditedIndexSession(client, "chunks", self.chunks)
+                repository = QdrantChunkRepository(
+                    client, collection="chunks", embed=lambda text: [1.0]
+                )
+                service = RagService(repository=CanonicalAclSearch(
+                    repository, self.authority,
+                    source=lambda doc_id: document if doc_id == "guide" else None,
+                ))
+                with self.assertRaisesRegex(ValueError, "Qdrant candidate point"):
+                    run_audited_evaluation(
+                        session, [_answerable_case()], _documents(), _manifest(),
+                        build_contextual_service_answer_fn(service), k=1,
+                        context_for_case=self.context_for_case, authority=self.authority,
+                    )
+
+    def test_cited_clone_with_boolean_document_version_is_rejected(self):
+        # Python dataclass equality treats True == 1; a cloned citation can
+        # pass the membership check while carrying a different indexed payload.
+        indexed = self.chunks[0]
+        forged_citation = replace(indexed, doc_version=True)
+        self.assertEqual(forged_citation, indexed)
+        with self.assertRaisesRegex(ValueError, "audited manifest"):
+            run_audited_evaluation(
+                self._session([self.points, self.points]), [_answerable_case()],
+                _documents(), _manifest(),
+                lambda question, case, context: (
+                    [RetrievedChunk(indexed)], [RetrievedChunk(forged_citation)], False
+                ),
+                k=1, context_for_case=self.context_for_case, authority=self.authority,
+            )
 
     def test_forged_chunk_acl_cannot_inherit_canonical_permission(self):
         forged = replace(self.chunks[0], owner_id="intruder")
