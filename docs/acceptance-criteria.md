@@ -41,6 +41,16 @@ Le smoke set actuel valide le câblage, pas la qualité statistique. Une campagn
 
 Un score moyen ne peut jamais compenser une fuite, un élargissement après erreur
 ACL ou une citation structurellement invalide. Le rapport publie le nombre de
-pannes techniques séparément des abstentions et conserve leur dénominateur
-d'origine. La latence doit être mesurée sur la même classe de GPU, avec la même
+pannes techniques séparément des abstentions. Dénominateurs (protocole v2 §6) :
+une panne sur un cas devant s'abstenir **reste** au dénominateur du rappel
+d'abstention sans entrer à son numérateur ; les précisions, elles, sont
+gonflables par les pannes et se jugent donc sur une **borne basse**. Imputation :
+pour l'abstention, chaque panne survenue sur un cas qui **ne devait pas**
+s'abstenir est comptée comme faux positif (une panne sur un cas qui devait
+s'abstenir n'est **pas** imputée — son contrefactuel ne peut qu'augmenter la
+précision ou être neutre) ; pour les citations, chaque citation **observée** d'un
+cas en panne est comptée invalide et non soutenante. Aucun statut n'est recodé en
+`abstained`. **Ces bornes sont calculées mais aucune porte du dépôt ne les
+compare encore à un seuil** : la règle est pré-inscrite, pas exécutée (voir
+protocole v2 §6). La latence doit être mesurée sur la même classe de GPU, avec la même
 quantification, le même contexte et la même concurrence que la livraison.
