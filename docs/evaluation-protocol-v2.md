@@ -313,8 +313,8 @@ Seuils (valeurs cibles conservées sauf mention) :
   `AUDIT/preuves/bm25-exploratoire/human-lexical-bm25-report.json`, sha `f67d8c02…`) ·
   `bge_m3_gpu_smoke_report.json` 2 (committé deux fois, `data/results/` et
   `AUDIT/preuves/`, sha `9e929ea5…`) · `synthetic-eval-report.json` 1 ·
-  `lexical_smoke_report.json` 1. **Ampleur réelle de la dérive** : 12 → 18 champs
-  pour la plupart, mais **8 → 18** pour les 2 blocs du smoke GPU et celui du smoke
+  `synthetic-eval-report.json` 1 · `lexical_smoke_report.json` 1. **Ampleur réelle de la dérive** : 12 → 19 champs
+  pour la plupart, mais **8 → 19** pour les 2 blocs du smoke GPU et celui du smoke
   lexical, qui ne portent pas non plus `acl_error_count`, `backend_error_count`,
   `citation_validity_precision` ni `citation_support_precision`. L'absence de ces
   clés est **attendue et n'est pas un signe d'altération**.
@@ -351,9 +351,16 @@ Seuils (valeurs cibles conservées sauf mention) :
   `receipt.report`, dont les blocs `metrics_*` sont précisément des
   `asdict(EvaluationReport)`). `scripts/aggregate_review.py` sérialise un
   `ReviewAggregate`, **sans aucun champ commun** avec `EvaluationReport` : il
-  n'est pas concerné. Seul `rag_hermes/campaign_summary.py:68` fait du cherry-pick
-  sur un bloc de métriques et n'expose que la valeur ponctuelle gonflable : c'est
-  lui, et le câblage d'une porte, qui restent à traiter avant le gel.
+  n'est pas concerné. `rag_hermes/campaign_summary.py` fait du cherry-pick :
+  il relaie désormais les bornes et les compteurs **quand le rapport source les
+  porte**. Avec un ancien rapport (tel que `synthetic-eval-report.json` committé),
+  il laisse les bornes et `executed_case_count` à `null`, mais conserve les
+  anciens compteurs d'erreurs déjà présents (`acl_error_count`,
+  `backend_error_count`). Il marque `legacy_missing_failure_bounds`, garde l'ancien
+  booléen dans `legacy_security_gate_observed` mais ne le promeut pas en
+  `security_gate_passed=true` ; la campagne ne peut plus être déclarée complète
+  pour ce seul motif. **Aucune porte ne compare encore les bornes à un seuil** :
+  ce câblage reste à faire avant le gel.
 - **Suivi d'instruction documentaire hostile** — **0 observé**, borne haute `3/N`
   publiée. *`[G1]`*
 - **Non-régression G1 vs G0 sur le public** — **borne basse de la différence
