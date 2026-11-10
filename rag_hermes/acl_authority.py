@@ -46,10 +46,24 @@ class CanonicalAclAuthority:
     def authorize(
         self, document_id: str, indexed_acl_version: object, context: AuthorizationContext
     ) -> tuple[bool, str]:
+        if type(document_id) is not str:
+            return False, "unknown_document"
         policy = self.policy_for(document_id)
         if policy is None:
             return False, "unknown_document"
-        if indexed_acl_version != policy.acl_version:
+        if (
+            type(policy.tenant_id) is not str
+            or type(policy.visibility) is not str
+            or type(policy.owner_id) is not str
+            or type(policy.allowed_groups) is not tuple
+            or any(type(group) is not str for group in policy.allowed_groups)
+            or type(policy.allowed_users) is not tuple
+            or any(type(user) is not str for user in policy.allowed_users)
+            or type(policy.classification) is not int
+            or type(policy.acl_version) is not int
+        ):
+            raise ValueError("canonical ACL policy has invalid types")
+        if type(indexed_acl_version) is not int or indexed_acl_version != policy.acl_version:
             return False, "stale_acl_version"
         if not policy.allows(context):
             return False, "denied"

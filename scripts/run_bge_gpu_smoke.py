@@ -57,7 +57,10 @@ from rag_hermes.eval_corpus import (
 )
 from rag_hermes.evaluation import EvaluationCase, evaluate
 from rag_hermes.ingestion import chunk_document_tokens
-from rag_hermes.retrieval import hybrid_rrf_indices, postfilter_candidates, score_authorized_pairs
+from rag_hermes.retrieval import (
+    acl_candidate_from_chunk, hybrid_rrf_indices, postfilter_candidates,
+    score_authorized_pairs,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = Path(os.environ.get(
@@ -372,12 +375,8 @@ def main() -> None:
     for question, candidate_indices, pre_detail in zip(
         questions, hybrid_candidates, pre_case_details
     ):
-        candidates = [{"payload": {
-            "document_id": chunks[index].document_id,
-            "acl_version": chunks[index].acl_version,
-            "text": chunks[index].text,
-            "chunk_index": index,
-        }} for index in candidate_indices]
+        candidates = [acl_candidate_from_chunk(chunks[index], index)
+                      for index in candidate_indices]
         authorized, acl_counters = postfilter_candidates(candidates, question.context, authority)
         for key in acl_barrier_totals:
             acl_barrier_totals[key] += getattr(acl_counters, key)
