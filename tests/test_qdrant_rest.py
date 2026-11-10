@@ -107,6 +107,77 @@ class QdrantRestClientTests(unittest.TestCase):
         self.assertEqual(body["filter"], expected_filter)
         self.assertEqual(body["using"], "dense")
 
+    def test_query_rejects_missing_or_malformed_points_instead_of_abstaining(self):
+        original = self.client._request
+        for invalid in (None, [], {}, {"points": None}, {"points": {}}, {"points": ""}):
+            with self.subTest(invalid=invalid):
+                self.client._request = lambda *_args, **_kwargs: {"result": invalid}
+                try:
+                    with self.assertRaisesRegex(RuntimeError, "malformed query result"):
+                        self.client.query(
+                            "chunks", [1.0],
+                            query_filter={"must": [{"has_id": ["one"]}]},
+                        )
+                finally:
+                    self.client._request = original
+
+    def test_query_rejects_more_points_than_requested(self):
+        original = self.client._request
+        self.client._request = lambda *_args, **_kwargs: {"result": {"points": [{"id": 1}, {"id": 2}]}}
+        try:
+            with self.assertRaisesRegex(RuntimeError, "more points than"):
+                self.client.query(
+                    "chunks", [1.0],
+                    query_filter={"must": [{"has_id": ["one"]}]}, limit=1,
+                )
+        finally:
+            self.client._request = original
+
+    def test_query_rejects_missing_or_invalid_point_scores(self):
+        original = self.client._request
+        for score in (None, True, "0.9", float("nan"), float("inf")):
+            with self.subTest(score=score):
+                point = {"id": "one", "payload": {}}
+                if score is not None:
+                    point["score"] = score
+                self.client._request = lambda *_args, **_kwargs: {"result": {"points": [point]}}
+                try:
+                    with self.assertRaisesRegex(RuntimeError, "invalid query score"):
+                        self.client.query(
+                            "chunks", [1.0], query_filter={"must": [{"has_id": ["one"]}]},
+                        )
+                finally:
+                    self.client._request = original
+
+    def test_query_rejects_explicit_error_status_instead_of_abstaining(self):
+        original = self.client._request
+        self.client._request = lambda *_args, **_kwargs: {
+            "status": "error", "result": {"points": []},
+        }
+        try:
+            with self.assertRaisesRegex(RuntimeError, "query status"):
+                self.client.query(
+                    "chunks", [1.0], query_filter={"must": [{"has_id": ["one"]}]},
+                )
+        finally:
+            self.client._request = original
+        self.assertEqual(self.client.query(
+            "chunks", [1.0], query_filter={"must": [{"has_id": ["one"]}]},
+        ), [])
+
+    def test_query_accepts_well_formed_scored_point(self):
+        original = self.client._request
+        point = {"id": "one", "score": 0.9, "payload": {"document_id": "guide"}}
+        self.client._request = lambda *_args, **_kwargs: {
+            "status": "ok", "result": {"points": [point]},
+        }
+        try:
+            self.assertEqual(self.client.query(
+                "chunks", [1.0], query_filter={"must": [{"has_id": ["one"]}]},
+            ), [point])
+        finally:
+            self.client._request = original
+
     def test_query_refuses_missing_or_empty_filter(self):
         for invalid in (None, {}):
             with self.subTest(invalid=invalid):

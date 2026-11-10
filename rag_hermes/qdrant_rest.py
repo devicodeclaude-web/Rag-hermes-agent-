@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
@@ -143,8 +144,20 @@ class QdrantRestClient:
                 "with_payload": True,
             },
         )
-        result = response.get("result", {})
-        return list(result.get("points", []))
+        if "status" in response and response["status"] != "ok":
+            raise RuntimeError("Qdrant returned invalid query status")
+        result = response.get("result")
+        if not isinstance(result, dict) or not isinstance(result.get("points"), list):
+            raise RuntimeError("Qdrant returned malformed query result")
+        if len(result["points"]) > limit:
+            raise RuntimeError("Qdrant returned more points than requested")
+        for point in result["points"]:
+            if not isinstance(point, dict) or (
+                type(point.get("score")) not in (int, float)
+                or not math.isfinite(point["score"])
+            ):
+                raise RuntimeError("Qdrant returned invalid query score")
+        return list(result["points"])
 
 
 class QdrantAuditRestClient(QdrantRestClient):

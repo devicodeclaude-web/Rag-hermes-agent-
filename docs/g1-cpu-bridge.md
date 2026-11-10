@@ -16,7 +16,14 @@ est saturé, il échoue fermé. Le `minimum_score` du pont doit être identique 
 celui du service (vérifié à la construction). Un payload contradictoire avec
 la politique canonique échoue explicitement **s'il est retourné par le dépôt**
 et si la politique autorise le demandeur ; un candidat refusé observé ne peut
-pas bloquer un document légitime classé juste après lui.
+pas bloquer un document légitime classé juste après lui. La réponse HTTP de
+`QdrantRestClient.query` exige un `result.points` de type liste, au plus la
+limite demandée et un score numérique fini par point ; il refuse aussi un
+statut d'erreur **explicite** dans l'enveloppe HTTP. Le dépôt Qdrant répète
+le contrôle du score même avec un client de requête injecté. Un résultat sans
+score ne peut plus être converti en score zéro, donc en fausse abstention.
+Une liste vide bien formée (ou une réponse sans champ `status`) reste acceptée :
+ces contrôles ne prouvent ni sa complétude ni le bon index interrogé.
 
 Le test `tests/test_g1_canonical_bridge.py` exerce sur CPU : requête Qdrant
 préfiltrée (client simulé), seconde barrière, réponse factice `[S1]` et citation

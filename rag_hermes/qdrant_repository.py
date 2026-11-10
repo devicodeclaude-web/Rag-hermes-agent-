@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import math
 from typing import Any, Callable, Iterable
 
 from .acl import AuthorizationContext, Chunk, filter_authorized
@@ -142,6 +143,11 @@ class QdrantChunkRepository:
         )
         results: list[SearchResult] = []
         for point in candidates:
+            if not isinstance(point, dict) or (
+                type(point.get("score")) not in (int, float)
+                or not math.isfinite(point["score"])
+            ):
+                raise ValueError("Qdrant candidate score is invalid")
             chunk = self._chunk_from_point(point)
             # Do not let coercion in _chunk_from_point erase the raw Qdrant
             # identity or JSON types: int(True) == 1 and a reconstructed point
@@ -162,5 +168,5 @@ class QdrantChunkRepository:
                 raise ValueError("Qdrant candidate point conflicts with decoded chunk")
             if not filter_authorized([chunk], context):
                 continue
-            results.append(SearchResult(chunk=chunk, score=float(point.get("score", 0.0))))
+            results.append(SearchResult(chunk=chunk, score=float(point["score"])))
         return results
