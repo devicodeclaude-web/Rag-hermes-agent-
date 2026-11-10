@@ -160,6 +160,18 @@ class QdrantChunkRepositoryTests(unittest.TestCase):
         self.assertEqual([result.chunk.document_id for result in results], ["guide"])
         self.assertEqual(results[0].score, 0.8)
 
+    def test_search_rejects_missing_or_invalid_score_before_abstention(self) -> None:
+        chunk = chunk_document(self.document)[0]
+        context = AuthorizationContext("alpha", "alice", ("support",), 1)
+        for score in (None, True, "0.9", float("nan"), float("inf")):
+            with self.subTest(score=score):
+                point = chunk_to_point(chunk, [1.0, 0.0])
+                if score is not None:
+                    point["score"] = score
+                self.client.query_results = [point]
+                with self.assertRaisesRegex(ValueError, "candidate score"):
+                    self.repository.search("Installer Hermes", context=context)
+
     def test_failed_upsert_does_not_delete_existing_document(self) -> None:
         chunks = chunk_document(self.document)
         self.client.fail_upsert = True
