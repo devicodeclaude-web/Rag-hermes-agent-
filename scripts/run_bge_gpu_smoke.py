@@ -242,13 +242,17 @@ def main() -> None:
         execution_metadata["staging_report_consumable"] = True
 
     download_started = time.perf_counter()
+    # Les poids ONNX et les illustrations ne servent pas au parcours PyTorch.
+    # Les écarter évite un téléchargement inutile de plusieurs Go sur le Pod.
+    excluded_artifacts = ["onnx/*", "*.jpg", "*.webp", ".DS_Store"]
     emb_dir = Path(snapshot_download(
         repo_id=emb_lock["repo_id"], revision=emb_lock["revision"],
-        local_dir=MODEL_ROOT / "bge-m3", local_dir_use_symlinks=False,
+        local_dir=MODEL_ROOT / "bge-m3", ignore_patterns=excluded_artifacts,
     ))
     rerank_dir = Path(snapshot_download(
         repo_id=rerank_lock["repo_id"], revision=rerank_lock["revision"],
-        local_dir=MODEL_ROOT / "bge-reranker-v2-m3", local_dir_use_symlinks=False,
+        local_dir=MODEL_ROOT / "bge-reranker-v2-m3",
+        ignore_patterns=excluded_artifacts,
     ))
     verified_embedding = verify_locked_files(emb_dir, emb_lock)
     verified_reranker = verify_locked_files(rerank_dir, rerank_lock)
