@@ -159,7 +159,14 @@ Pour un chunk **autorisé dans le parcours audité**, ou un point traité par
 `QdrantChunkRepository`, un ID inventé, une version ou une URI contrefaite
 **avorte** la campagne au lieu de laisser une porte verte ; un chunk non
 autorisé qui atteint le scoreur reste compté comme fuite et garde la porte rouge.
-Les autres voies de postfiltrage ne bénéficient pas de ce contrôle du point brut.
+La voie distincte `postfilter_candidates` contrôle désormais les types exacts
+`document_id`/`acl_version` et compare les champs ACL du payload à la politique
+canonique avant d'accepter un candidat ; une contradiction observée échoue fermé.
+Elle sert notamment à la matrice ACL ; le runner GPU en mémoire construit
+maintenant un payload complet depuis chaque chunk avant de l'appeler (câblage
+testé sur CPU, **sans nouveau run GPU**). Elle ne réconcilie **ni l'ID du
+point ni le texte** avec une source indépendante : ne pas l'utiliser comme
+preuve de provenance d'une réponse G1. Les candidats filtrés en amont restent invisibles.
 Cette réconciliation ne prouve ni que le service a effectivement interrogé la
 collection auditée (l'appelable peut renvoyer un chunk canonique sans requête),
 ni que le manifeste a une provenance indépendante fiable, ni que la recherche

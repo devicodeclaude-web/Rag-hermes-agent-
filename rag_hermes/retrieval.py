@@ -11,6 +11,7 @@ from .acl import AuthorizationContext, Chunk, filter_authorized
 from .acl_authority import CanonicalAclAuthority
 from .ingestion import Document
 from .qdrant_filter import build_qdrant_filter
+from .qdrant_store import chunk_to_point
 from .reranker_budget import assert_pair_fits
 
 _TOKEN_RE = re.compile(r"\w+", re.UNICODE)
@@ -216,14 +217,39 @@ class RerankerBudgetCounters:
     rejected_pairs: int
 
 
+def acl_candidate_from_chunk(chunk: Chunk, index: int) -> dict[str, Any]:
+    """Build a complete ACL payload for an in-memory GPU candidate."""
+    payload = chunk_to_point(chunk, [1.0])["payload"]
+    return {"payload": {**payload, "chunk_index": index}}
+
+
 def postfilter_candidates(candidates: Iterable[dict[str, Any]], context: AuthorizationContext, authority: CanonicalAclAuthority) -> tuple[list[dict[str, Any]], AclBarrierCounters]:
     accepted: list[dict[str, Any]] = []
     examined = stale = denied = 0
     for candidate in candidates:
         examined += 1
         payload = candidate.get("payload") or {}
-        allowed, reason = authority.authorize(str(payload.get("document_id", "")), payload.get("acl_version"), context)
+        allowed, reason = authority.authorize(payload.get("document_id"), payload.get("acl_version"), context)
         if allowed:
+            policy = authority.policy_for(payload["document_id"])
+            if policy is None or (
+                type(payload.get("tenant_id")) is not str
+                or payload["tenant_id"] != policy.tenant_id
+                or type(payload.get("visibility")) is not str
+                or payload["visibility"] != policy.visibility
+                or type(payload.get("owner_id")) is not str
+                or payload["owner_id"] != policy.owner_id
+                or type(payload.get("classification")) is not int
+                or payload["classification"] != policy.classification
+                or type(payload.get("allowed_group_ids")) is not list
+                or any(type(group) is not str for group in payload["allowed_group_ids"])
+                or set(payload["allowed_group_ids"]) != set(policy.allowed_groups)
+                or type(payload.get("allowed_user_ids")) is not list
+                or any(type(user) is not str for user in payload["allowed_user_ids"])
+                or set(payload["allowed_user_ids"]) != set(policy.allowed_users)
+                or payload.get("tombstone") is not False
+            ):
+                raise CanonicalAclError("ACL payload conflicts with canonical policy")
             accepted.append(candidate)
         elif reason == "stale_acl_version":
             stale += 1
@@ -241,7 +267,11 @@ def retrieve_authorized_candidates(
     authority: CanonicalAclAuthority,
     limit: int,
 ) -> tuple[list[dict[str, Any]], AclBarrierCounters]:
-    """Production path: Qdrant prefilter then canonical ACL recheck."""
+    """Qdrant ACL-matrix path: prefilter, then compare complete ACL metadata.
+
+    This helper has no independent point-ID/text provenance source. A passing
+    ACL check here is not an audited G1 retrieval or a safe answer citation.
+    """
     candidates = client.query(
         collection,
         vector,

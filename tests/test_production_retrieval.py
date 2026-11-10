@@ -8,6 +8,7 @@ import unittest
 from rag_hermes.acl import AuthorizationContext
 from rag_hermes.acl_authority import AclPolicy, CanonicalAclAuthority
 from rag_hermes.retrieval import (
+    CanonicalAclError,
     postfilter_candidates,
     retrieve_authorized_candidates,
     score_authorized_pairs,
@@ -54,21 +55,107 @@ class ProductionAclBarrierTests(unittest.TestCase):
             }
         )
 
+    def _candidate(self, document_id="allowed", acl_version=7, **overrides):
+        payload = {
+            "document_id": document_id, "acl_version": acl_version, "text": "ok",
+            "tenant_id": "alpha", "visibility": "private", "owner_id": "alice",
+            "classification": 2, "allowed_group_ids": ["admins"],
+            "allowed_user_ids": [], "tombstone": False,
+        }
+        payload.update(overrides)
+        return {"payload": payload}
+
     def test_postfilter_uses_authority_and_rejects_revoked_or_stale_payload(self):
         candidates = [
-            {"payload": {"document_id": "allowed", "acl_version": 7, "text": "ok"}},
-            {"payload": {"document_id": "revoked", "acl_version": 7, "text": "stale"}},
-            {"payload": {"document_id": "missing", "acl_version": 1, "text": "unknown"}},
+            self._candidate(),
+            self._candidate("revoked"),
+            self._candidate("missing", 1),
         ]
         accepted, counters = postfilter_candidates(candidates, self.context, self.authority)
         self.assertEqual([item["payload"]["document_id"] for item in accepted], ["allowed"])
         self.assertEqual(counters.stale_acl_version, 1)
         self.assertEqual(counters.denied_by_authority, 1)
 
-    def test_production_query_applies_qdrant_filter_then_canonical_authority(self):
+    def test_postfilter_does_not_accept_boolean_acl_version_as_integer(self):
+        authority = CanonicalAclAuthority({
+            "allowed": AclPolicy("alpha", "private", "alice", ("admins",), (), 2, 1),
+        })
+        candidates = [{"payload": {"document_id": "allowed", "acl_version": True}}]
+        accepted, counters = postfilter_candidates(candidates, self.context, authority)
+        self.assertEqual(accepted, [])
+        self.assertEqual(counters.stale_acl_version, 1)
+
+    def test_postfilter_does_not_coerce_document_identifier(self):
+        authority = CanonicalAclAuthority({
+            "1": AclPolicy("alpha", "private", "alice", ("admins",), (), 2, 7),
+        })
+        candidates = [{"payload": {"document_id": 1, "acl_version": 7}}]
+        accepted, counters = postfilter_candidates(candidates, self.context, authority)
+        self.assertEqual(accepted, [])
+        self.assertEqual(counters.denied_by_authority, 1)
+
+    def test_postfilter_fails_closed_on_index_acl_conflict(self):
+        candidate = {"payload": {
+            "document_id": "allowed", "acl_version": 7,
+            "tenant_id": "alpha", "visibility": "private", "owner_id": "bob",
+            "classification": 2, "allowed_group_ids": ["admins"],
+            "allowed_user_ids": [], "tombstone": False,
+        }}
+        with self.assertRaisesRegex(PermissionError, "ACL payload conflicts"):
+            postfilter_candidates([candidate], self.context, self.authority)
+
+    def test_postfilter_rejects_every_acl_payload_conflict_and_missing_field(self):
+        conflicts = (
+            {"tenant_id": "foreign"}, {"visibility": "public"},
+            {"classification": True}, {"allowed_group_ids": ["outsiders"]},
+            {"allowed_user_ids": ["mallory"]}, {"tombstone": 0},
+            {"owner_id": None}, {"allowed_group_ids": None},
+        )
+        for change in conflicts:
+            with self.subTest(change=change):
+                with self.assertRaises(CanonicalAclError):
+                    postfilter_candidates(
+                        [self._candidate(**change)], self.context, self.authority
+                    )
+        accepted, counters = postfilter_candidates(
+            [self._candidate()], self.context, self.authority
+        )
+        self.assertEqual(len(accepted), 1)
+        self.assertEqual(counters.accepted, 1)
+
+    def test_postfilter_rejects_boolean_fields_in_canonical_policy(self):
+        authority = CanonicalAclAuthority({
+            "allowed": AclPolicy("alpha", "private", "alice", ("admins",), (), True, True),
+        })
+        candidate = self._candidate(acl_version=1, classification=1)
+        with self.assertRaisesRegex(ValueError, "canonical ACL policy"):
+            postfilter_candidates([candidate], self.context, authority)
+
+    def test_gpu_candidate_has_complete_acl_payload_for_postfilter(self):
+        from rag_hermes import retrieval
+        from rag_hermes.ingestion import Document, chunk_document
+        chunk = chunk_document(Document(
+            document_id="allowed", content="evidence", tenant_id="alpha",
+            visibility="private", owner_id="alice", allowed_groups=("admins",),
+            allowed_users=(), classification=2, doc_version=1,
+            source_uri="synthetic://allowed", acl_version=7,
+        ))[0]
+        self.assertTrue(hasattr(retrieval, "acl_candidate_from_chunk"))
+        candidate = retrieval.acl_candidate_from_chunk(chunk, 3)
+        accepted, counters = postfilter_candidates([candidate], self.context, self.authority)
+        self.assertEqual(len(accepted), 1)
+        self.assertEqual(accepted[0]["payload"]["chunk_index"], 3)
+        self.assertEqual(counters.accepted, 1)
+
+    def test_gpu_runner_uses_complete_acl_candidate(self):
+        from pathlib import Path
+        runner = Path("scripts/run_bge_gpu_smoke.py").read_text(encoding="utf-8")
+        self.assertIn("acl_candidate_from_chunk(chunks[index], index)", runner)
+
+    def test_matrix_query_applies_qdrant_filter_then_canonical_authority(self):
         client = FakeQdrantClient([
-            {"payload": {"document_id": "allowed", "acl_version": 7, "text": "ok"}},
-            {"payload": {"document_id": "revoked", "acl_version": 7, "text": "stale"}},
+            self._candidate(),
+            self._candidate("revoked"),
         ])
         accepted, counters = retrieve_authorized_candidates(
             client,
