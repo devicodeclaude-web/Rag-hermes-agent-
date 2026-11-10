@@ -172,8 +172,13 @@ autre exception avorte la campagne plutôt que d'être classée). Un cas en pann
 garde ses étiquettes de pertinence avec zéro récupération, donc une panne compte
 comme un échec de récupération et ne quitte pas le dénominateur du rappel.
 Reste non câblé pour G1 : la source de candidats R3 dense+sparse, le reranking
-verrouillé et la provenance des identifiants de chunks — ce câblage n'est donc
-pas encore la preuve d'un G1 opérationnel.
+verrouillé et la liaison vérifiable des requêtes à la collection auditée. Le
+parcours audité réconcilie maintenant les IDs et payloads des chunks autorisés
+récupérés ou cités avec son manifeste. `QdrantChunkRepository` refuse en outre
+un point de requête dont l'ID ou le payload **brut** ne correspond pas au chunk
+décodé (sans conversion silencieuse `true`→`1`). Ni l'un ni l'autre ne prouve
+qu'un appelable arbitraire a interrogé cette même collection : ce n'est pas
+encore un G1 opérationnel.
 
 Une grille aveugle au nom de la configuration évalue chaque sortie :
 
@@ -313,7 +318,7 @@ Seuils (valeurs cibles conservées sauf mention) :
   `AUDIT/preuves/bm25-exploratoire/human-lexical-bm25-report.json`, sha `f67d8c02…`) ·
   `bge_m3_gpu_smoke_report.json` 2 (committé deux fois, `data/results/` et
   `AUDIT/preuves/`, sha `9e929ea5…`) · `synthetic-eval-report.json` 1 ·
-  `synthetic-eval-report.json` 1 · `lexical_smoke_report.json` 1. **Ampleur réelle de la dérive** : 12 → 19 champs
+  `lexical_smoke_report.json` 1. **Ampleur réelle de la dérive** : 12 → 19 champs
   pour la plupart, mais **8 → 19** pour les 2 blocs du smoke GPU et celui du smoke
   lexical, qui ne portent pas non plus `acl_error_count`, `backend_error_count`,
   `citation_validity_precision` ni `citation_support_precision`. L'absence de ces

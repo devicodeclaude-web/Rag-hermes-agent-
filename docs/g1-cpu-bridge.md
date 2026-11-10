@@ -75,8 +75,8 @@ session n'empêche aucune écriture — une mutation annulée avant `close()`, o
 touchant que les vecteurs, reste invisible.
 
 Ce n'est **pas encore G1 complet** : la source de candidats R3 dense+sparse,
-le reranking verrouillé, la provenance des identifiants de chunks et le reçu
-de campagne restent à câbler et à tester. La traduction des erreurs par cas
+le reranking verrouillé, la liaison des requêtes à la collection auditée et le
+reçu de campagne restent à câbler et à tester. La traduction des erreurs par cas
 est désormais câblée dans `run_evaluation` (voir ci-dessous), sans présumer
 qu'une campagne réelle G1 a déjà été exécutée.
 Le scoreur `evaluate` dérive déjà `answered` / `abstained` / `acl_error` /
@@ -116,8 +116,10 @@ une panne compte donc comme un échec de récupération au lieu de disparaître 
 rappel — même direction anti-gonflement que les dénominateurs d'abstention. Les
 compteurs d'erreurs étant publiés à part, un lecteur peut recalculer l'autre
 convention. Tant que la campagne tourne sur un service réel, ce n'est toujours
-pas un reçu G1 : la source de candidats R3 dense+sparse, le reranking verrouillé
-et la provenance des identifiants de chunks restent à câbler.
+pas un reçu G1 : la source de candidats R3 dense+sparse, le reranking verrouillé,
+la liaison vérifiable entre les requêtes et la collection auditée, et le reçu de
+campagne restent à câbler. La réconciliation des IDs de chunks avec le manifeste
+s'applique au parcours audité, pas à `run_evaluation` direct.
 
 `run_audited_evaluation` (`rag_hermes/evaluation_runner.py`) fait de l'audit une
 précondition **pour ses appelants** : l'audit d'ouverture tourne avant la
@@ -145,9 +147,24 @@ contrôle réussi. Le contexte n'est résolu qu'une fois et transmis à
 `build_contextual_service_answer_fn` l'utilise directement pour appeler le
 service. Un appelable arbitraire peut néanmoins ignorer ce contexte : ce n'est
 pas une preuve de l'identité réellement utilisée par le service. Le score
-`security_gate_passed` vérifie les fuites ACL constatées, **pas** la provenance,
-la version, l'URI ou le hash de chaque chunk renvoyé, ni la complétude de la
-recherche. Sans ces deux paramètres, `run_evaluation` direct conserve un score
+`security_gate_passed` vérifie les fuites ACL constatées, et, pour le parcours
+**audité seulement**, chaque chunk autorisé récupéré ou cité est désormais
+réconcilié avec l'ID et le payload complets du manifeste que la session a
+contrôlé (comparaison JSON sensible aux types). Sur le chemin
+`QdrantChunkRepository`, le point **brut de la requête** est aussi comparé à
+son décodage AVANT de perdre son ID ou de convertir `true` en `1` : un ID Qdrant
+inventé et un `doc_version: true` sont refusés. Ce contrôle local du point
+renvoyé ne démontre toujours pas que l'appelable a utilisé la collection auditée.
+Pour un chunk **autorisé dans le parcours audité**, ou un point traité par
+`QdrantChunkRepository`, un ID inventé, une version ou une URI contrefaite
+**avorte** la campagne au lieu de laisser une porte verte ; un chunk non
+autorisé qui atteint le scoreur reste compté comme fuite et garde la porte rouge.
+Les autres voies de postfiltrage ne bénéficient pas de ce contrôle du point brut.
+Cette réconciliation ne prouve ni que le service a effectivement interrogé la
+collection auditée (l'appelable peut renvoyer un chunk canonique sans requête),
+ni que le manifeste a une provenance indépendante fiable, ni que la recherche
+est complète ; l'audit reste borné à ses deux instantanés et n'empêche aucune
+écriture. Sans ces deux paramètres, `run_evaluation` direct conserve un score
 de fuite limité à la visibilité/liste fournie ; son `security_gate_passed`
 n'est pas une preuve d'autorisation multi-tenant. Ce n'est
 pas non plus une propriété du système : une campagne lancée directement via
@@ -156,10 +173,11 @@ Une campagne interrompue invalide la session **sans auditer** : elle ne prétend
 rien sur l'index, n'impose pas un scroll complet sur un Ctrl-C, et n'écrase pas
 une erreur de divergence par l'erreur de scoring.
 
-Le résolveur canonique des tests est une source locale factice ; le brancher à
-un vrai stockage documentaire fiable et exercer Qdrant réel sont préalables
-à une garantie de production. Attention : un candidat écarté **en amont** par
-le préfiltre Qdrant ou par `QdrantChunkRepository` est invisible pour ce pont ;
+Le résolveur canonique de l'essai reste une source locale synthétique ; malgré
+l'essai sur Qdrant réel décrit plus haut, le brancher à un stockage documentaire
+fiable et exécuter une campagne sur un index de production contrôlé restent
+préalables à toute garantie de production. Attention : un candidat écarté
+**en amont** par le préfiltre Qdrant ou par `QdrantChunkRepository` est invisible pour ce pont ;
 il peut masquer une ACL périmée ou une contradiction et produire une abstention
 ordinaire. Le préfiltre transmis n'est donc pas une preuve de complétude du
 contrôle ACL ni de la classe `abstained`. Avant d'utiliser ce statut comme

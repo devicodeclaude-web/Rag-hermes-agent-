@@ -15,6 +15,7 @@ from .evaluation import (
 from .evaluation_dataset import validate_evaluation_case
 from .generator import GenerationError
 from .index_integrity import AuditedIndexSession
+from .qdrant_store import chunk_to_point
 from .retrieval import CanonicalAclError
 from .service import AnswerTrace
 
@@ -169,6 +170,7 @@ def run_evaluation(
     authorized_document_ids: set[str] | None = None,
     context_for_case: ContextFn | None = None,
     authority: CanonicalAclAuthority | None = None,
+    canonical_chunks: Sequence[Chunk] | None = None,
 ) -> EvaluationReport:
     """Execute each dataset case through answer_fn and score with evaluate().
 
@@ -178,7 +180,10 @@ def run_evaluation(
     `authority`, `security_gate_passed` is only a scope/allowlist check, not an
     owner, group, tenant or clearance check; use the audited wrapper for the
     context-bound path. Even there, a supplied answer_fn is not proven to use
-    the same context or the audited index.
+    the same context or the audited index. When `canonical_chunks` is supplied
+    by the audited wrapper, every authorized retrieved/cited chunk must match
+    the session's manifest by point ID and type-sensitive JSON payload; a
+    mismatch aborts the campaign rather than counting as an ACL leak.
 
     Relevance labels are document spans (not chunk ids). We synthesize a stable
     synthetic "relevant chunk id" per span (document_id + interval) and mark a
@@ -191,6 +196,25 @@ def run_evaluation(
         raise ValueError("k must be a positive integer")
     if (context_for_case is None) != (authority is None):
         raise ValueError("context_for_case and authority must be supplied together")
+    canonical_points: dict[str, str] | None = None
+    if canonical_chunks is not None:
+        canonical_points = {}
+        for chunk in canonical_chunks:
+            point = chunk_to_point(chunk, [1.0])
+            if point["id"] in canonical_points:
+                raise ValueError("duplicate point in audited manifest")
+            canonical_points[point["id"]] = json.dumps(
+                point["payload"], sort_keys=True, allow_nan=False
+            )
+
+    def assert_manifest_chunk(chunk: Chunk) -> None:
+        if canonical_points is None:
+            return  # Direct scorer: no audited manifest was supplied.
+        point = chunk_to_point(chunk, [1.0])
+        if canonical_points.get(point["id"]) != json.dumps(
+            point["payload"], sort_keys=True, allow_nan=False
+        ):
+            raise ValueError("authorized candidate chunk is not in audited manifest")
 
     validated_cases = [
         validate_evaluation_case(raw_case, documents, manifest)
@@ -351,6 +375,8 @@ def run_evaluation(
             _validate_chunk(chunk, documents)
             if not is_authorized(chunk):
                 leaked.add(chunk.chunk_id)
+            else:
+                assert_manifest_chunk(chunk)
             matched = [
                 label
                 for (label, document_id, start, end) in span_labels
@@ -372,6 +398,8 @@ def run_evaluation(
             _validate_chunk(chunk, documents)
             if not is_authorized(chunk):
                 leaked.add(chunk.chunk_id)
+            else:
+                assert_manifest_chunk(chunk)
             matched = [
                 label
                 for (label, document_id, start, end) in span_labels
@@ -424,7 +452,11 @@ def run_audited_evaluation(
     `security_gate_passed` score can be interpreted as an ACL leak check. The
     resolved context is handed to the three-argument `answer_fn` (the supplied
     service adapter uses it directly), but an arbitrary callable can ignore it.
-    The score checks ACL, not chunk provenance/version/URI or search completeness.
+    Authorized retrieved/cited chunks must match this session's audited manifest
+    (point ID and type-sensitive payload), or the run aborts; unauthorized chunks
+    still register ACL leaks. This does NOT prove that the callable queried the
+    audited collection, that the manifest is independently trustworthy, or that
+    the search was complete.
 
     It does not make the audit a property of the system: a campaign driven
     through `run_evaluation` directly, or any query issued outside this call,
@@ -449,6 +481,7 @@ def run_audited_evaluation(
             authorized_document_ids=authorized_document_ids,
             context_for_case=context_for_case,
             authority=authority,
+            canonical_chunks=session.canonical_chunks,
         )
     except BaseException:
         # Burn the session WITHOUT auditing: an aborted campaign claims nothing
