@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from typing import Any, Callable, Iterable
 
 from .acl import AuthorizationContext, Chunk, filter_authorized
@@ -142,6 +143,23 @@ class QdrantChunkRepository:
         results: list[SearchResult] = []
         for point in candidates:
             chunk = self._chunk_from_point(point)
+            # Do not let coercion in _chunk_from_point erase the raw Qdrant
+            # identity or JSON types: int(True) == 1 and a reconstructed point
+            # ID says nothing about the ID returned by the query. A mismatched
+            # candidate aborts instead of silently becoming an honest abstention
+            # or a seemingly well-provenanced citation.
+            canonical = chunk_to_point(chunk, [1.0])
+            try:
+                raw_payload = json.dumps(
+                    point["payload"], sort_keys=True, allow_nan=False
+                )
+                decoded_payload = json.dumps(
+                    canonical["payload"], sort_keys=True, allow_nan=False
+                )
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ValueError("Qdrant candidate point is invalid") from exc
+            if type(point.get("id")) is not str or point["id"] != canonical["id"] or raw_payload != decoded_payload:
+                raise ValueError("Qdrant candidate point conflicts with decoded chunk")
             if not filter_authorized([chunk], context):
                 continue
             results.append(SearchResult(chunk=chunk, score=float(point.get("score", 0.0))))
