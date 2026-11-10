@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 import json
-from typing import Callable, Mapping, Sequence, cast
+from typing import Callable, Mapping, Protocol, Sequence, cast
 
 from .acl import AuthorizationContext, Chunk
 from .acl_authority import AclPolicy, CanonicalAclAuthority
@@ -16,7 +16,14 @@ from .evaluation_dataset import validate_evaluation_case
 from .generator import GenerationError
 from .index_integrity import AuditedIndexSession
 from .qdrant_store import chunk_to_point
-from .service import RagService
+from .retrieval import CanonicalAclError
+from .service import AnswerTrace
+
+
+class AnswerPath(Protocol):
+    def answer_with_trace(
+        self, question: str, *, context: AuthorizationContext,
+    ) -> AnswerTrace: ...
 
 
 class CaseExecutionError(Exception):
@@ -68,14 +75,16 @@ AuditedAnswerFn = Callable[
 
 
 def _answer_via_service(
-    service: RagService,
+    service: AnswerPath,
     question: str,
     context: AuthorizationContext,
 ) -> tuple[Sequence[RetrievedChunk], Sequence[RetrievedChunk], bool]:
     """Call the service, translating ITS exception vocabulary -- and only that.
 
-    `PermissionError` is what the canonical ACL bridge raises when it fails
-    closed; `GenerationError` is a generator/backend failure. Both become a
+    `CanonicalAclError` is emitted by the canonical bridge on fail-closed
+    decisions. Other `PermissionError` exceptions propagate and abort the
+    campaign: a storage permission failure is not evidence of an ACL refusal.
+    `GenerationError` indicates a generator/backend failure. Both become a
     signalled `CaseExecutionError` so the runner can record a terminal status.
     Every other exception propagates untouched and aborts the campaign: a
     harness bug or a transport crash must not be published as an ACL finding.
@@ -87,7 +96,7 @@ def _answer_via_service(
     """
     try:
         trace = service.answer_with_trace(question, context=context)
-    except PermissionError as exc:
+    except CanonicalAclError as exc:
         raise CaseExecutionError("acl_error", "ACL barrier failed closed") from exc
     except GenerationError as exc:
         raise CaseExecutionError("backend_error", "generation backend failed") from exc
@@ -99,7 +108,7 @@ def _answer_via_service(
 
 
 def build_service_answer_fn(
-    service: RagService,
+    service: AnswerPath,
     context_for_case: ContextFn,
 ) -> AnswerFn:
     """Adapt RagService's production answer path to the evaluation runner."""
@@ -116,7 +125,7 @@ def build_service_answer_fn(
     return answer_fn
 
 
-def build_contextual_service_answer_fn(service: RagService) -> AuditedAnswerFn:
+def build_contextual_service_answer_fn(service: AnswerPath) -> AuditedAnswerFn:
     """Use the audited campaign's resolved context on the service answer path."""
     def answer_fn(question: str, case: Mapping[str, object], context: AuthorizationContext):
         return _answer_via_service(service, question, context)

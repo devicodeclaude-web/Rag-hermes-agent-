@@ -28,13 +28,23 @@ def audit_qdrant_index(
     expected_chunks: Iterable[Chunk],
     *,
     page_size: int = 100,
+    expected_manifest_sha256: str | None = None,
 ) -> IndexSnapshotReport:
-    """Audit unfiltered pages; caller must freeze writes for the whole audit and run."""
+    """Audit unfiltered pages; an independently approved pin is optional for legacy callers."""
     if not collection or not 1 <= page_size <= 1000:
         raise ValueError("collection and bounded page_size are required")
     expected = list(expected_chunks)
     if not expected:
         raise ValueError("empty canonical chunk manifest")
+    if expected_manifest_sha256 is not None:
+        if not isinstance(expected_manifest_sha256, str) or len(expected_manifest_sha256) != 64 or any(
+            char not in "0123456789abcdef" for char in expected_manifest_sha256
+        ):
+            raise ValueError("invalid manifest digest")
+        canonical_points = [chunk_to_point(chunk, [1.0]) for chunk in expected]
+        actual = verify_index_snapshot(expected, canonical_points).payload_sha256
+        if actual != expected_manifest_sha256:
+            raise ValueError("manifest digest does not match pinned value")
     points: list[dict[str, Any]] = []
     offset: str | int | None = None
     seen_offsets: set[str | int] = set()
@@ -140,6 +150,7 @@ class AuditedIndexSession:
         expected_chunks: Iterable[Chunk],
         *,
         page_size: int = 100,
+        expected_manifest_sha256: str | None = None,
     ) -> None:
         if not collection:
             raise ValueError("collection is required")
@@ -152,6 +163,7 @@ class AuditedIndexSession:
         self._collection = collection
         self._expected = expected
         self._page_size = page_size
+        self._expected_manifest_sha256 = expected_manifest_sha256
         self._state = "new"
         self._lock = threading.Lock()
         self._invalidated = False
@@ -177,7 +189,9 @@ class AuditedIndexSession:
     def _audit(self, label: str) -> IndexSnapshotReport:
         try:
             return audit_qdrant_index(
-                self._client, self._collection, self._expected, page_size=self._page_size
+                self._client, self._collection, self._expected,
+                page_size=self._page_size,
+                expected_manifest_sha256=self._expected_manifest_sha256,
             )
         except Exception as exc:
             # Fixed message on purpose: the cause may embed a Qdrant URL,

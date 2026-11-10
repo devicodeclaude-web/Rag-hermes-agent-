@@ -9,7 +9,8 @@ autorisé, il exige une source canonique de `Document` **indépendante de l'inde
 contenu, tranche de texte et URI. Sans source, il refuse les candidats autorisés.
 Une version ACL périmée **observée par le pont** est écartée ; si aucun
 autre passage autorisé n'atteint le seuil de score, le parcours lève
-`PermissionError` plutôt que de compter une abstention honnête. Le pont élargit
+`CanonicalAclError` (sous-classe de `PermissionError`) plutôt que de compter
+une abstention honnête. Le pont élargit
 la requête classée en cas de candidats rejetés (budget de 128) ; si le budget
 est saturé, il échoue fermé. Le `minimum_score` du pont doit être identique à
 celui du service (vérifié à la construction). Un payload contradictoire avec
@@ -34,8 +35,25 @@ auditeur hors du chemin des requêtes utilisateur ; la séparation en classes
 n'est **pas** une autorisation réseau. Utiliser des droits/identifiants
 opérateur distincts et ne pas exposer ce client à l'API publique. L'audit
 compare les payloads et IDs (types JSON inclus), **pas les vecteurs**.
-Tests avec faux clients uniquement : aucune collection Qdrant réelle n'a été
-auditée.
+L'essai `scripts/smoke_g1_qdrant.py` sur **Qdrant 1.20.0 réel** vérifie
+l'audit paginé, une réponse citée depuis une source JSONL épinglée, une
+campagne synthétique **d'un cas** passée dans le vrai harnais audité (audit
+d'ouverture et de clôture), puis le rejet à la clôture d'une seconde session
+après falsification de l'ACL indexée. L'embedder et le générateur sont factices ;
+la collection temporaire est effacée. Ce n'est pas un essai de qualité G1.
+La source locale (`rag_hermes/canonical_snapshot.py`) vérifie l'empreinte du
+fichier avant décodage, mais l'autorité de cette empreinte reste extérieure.
+Dans le smoke test, les deux empreintes sont calculées à partir des données
+créées pour l'essai : cela démontre le câblage, **pas** une approbation
+indépendante des valeurs. `g1_wiring.py` impose un digest de manifeste épinglé
+avant tout scroll et retourne une surface de réponse sans import ; l'objet
+interne `_service` reste accessible à un appelant Python non fiable : cette
+surface n'est **pas** une frontière de sécurité ni un verrou Qdrant. Les
+anciens appels d'audit restent compatibles sans épingle : ce mode **ne
+prouve pas** la provenance du manifeste. Une session peut aussi recevoir
+l'épingle et l'exige à l'ouverture et à la clôture. Un test CPU raccorde la
+source épinglée au vrai adaptateur de `run_audited_evaluation`, sans modèle
+GPU ni seuil de qualité.
 
 `AuditedIndexSession` est une **brique volontaire non intégrée au chemin des
 requêtes ordinaires** : `run_audited_evaluation` l'appelle pour encadrer une
@@ -78,8 +96,10 @@ tout le reste **remonte et avorte la campagne**. C'est volontaire — attraper u
 classe large transformerait un bug du harnais ou une panne de transport en
 `backend_error` publié, c'est-à-dire un constat d'audit faux dans un composant
 censé produire de la preuve. La traduction du vocabulaire du service vit dans
-l'adaptateur qui le connaît (`_answer_via_service`) : `PermissionError` (barrière
-ACL en échec fermé) → `acl_error`, `GenerationError` → `backend_error`. La cause
+l'adaptateur qui le connaît (`_answer_via_service`) : `CanonicalAclError`
+(barrière ACL en échec fermé) → `acl_error`, `GenerationError` →
+`backend_error`. Un `PermissionError` du stockage reste une erreur inattendue
+qui avorte la campagne au lieu d'être blanchi en refus ACL. La cause
 reste dans `__cause__` pour l'opérateur, mais son texte n'est **jamais** recopié
 dans le message signalé ni dans le rapport : une erreur de transport embarque
 souvent une URL, un corps de réponse ou des identifiants, et le rapport est un
@@ -153,10 +173,11 @@ Une campagne interrompue invalide la session **sans auditer** : elle ne prétend
 rien sur l'index, n'impose pas un scroll complet sur un Ctrl-C, et n'écrase pas
 une erreur de divergence par l'erreur de scoring.
 
-Le résolveur canonique des tests est une source locale factice ; le brancher à
-un vrai stockage documentaire fiable et exercer Qdrant réel sont préalables
-à une garantie de production. Attention : un candidat écarté **en amont** par
-le préfiltre Qdrant ou par `QdrantChunkRepository` est invisible pour ce pont ;
+Le résolveur canonique de l'essai reste une source locale synthétique ; malgré
+l'essai sur Qdrant réel décrit plus haut, le brancher à un stockage documentaire
+fiable et exécuter une campagne sur un index de production contrôlé restent
+préalables à toute garantie de production. Attention : un candidat écarté
+**en amont** par le préfiltre Qdrant ou par `QdrantChunkRepository` est invisible pour ce pont ;
 il peut masquer une ACL périmée ou une contradiction et produire une abstention
 ordinaire. Le préfiltre transmis n'est donc pas une preuve de complétude du
 contrôle ACL ni de la classe `abstained`. Avant d'utiliser ce statut comme

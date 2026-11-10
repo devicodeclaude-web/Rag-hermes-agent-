@@ -1,0 +1,140 @@
+"""Essai d'intégration sur Qdrant local : audit paginé et ACL altérée.
+
+Démarrer Qdrant sur 127.0.0.1:16333 puis :
+    PYTHONPATH=. python scripts/smoke_g1_qdrant.py
+Une collection temporaire unique est créée puis supprimée ; aucune collection
+préexistante n'est touchée. Ce n'est pas un test de campagne de production.
+"""
+from __future__ import annotations
+
+from copy import deepcopy
+from dataclasses import asdict
+import hashlib
+import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from uuid import uuid4
+
+from rag_hermes.acl import AuthorizationContext
+from rag_hermes.canonical_snapshot import load_pinned_document_snapshot
+from rag_hermes.evaluation_runner import (
+    build_contextual_service_answer_fn, run_audited_evaluation,
+)
+from rag_hermes.g1_wiring import build_audited_g1_service
+from rag_hermes.index_integrity import (
+    AuditedIndexSession, AuditedIndexSessionError,
+    audit_qdrant_index, verify_index_snapshot,
+)
+from rag_hermes.ingestion import Document, chunk_document
+from rag_hermes.qdrant_rest import QdrantAuditRestClient, QdrantRestClient
+from rag_hermes.qdrant_store import chunk_to_point
+
+
+def document(identifiant: str, contenu: str) -> Document:
+    return Document(
+        document_id=identifiant, content=contenu, tenant_id="alpha",
+        visibility="private", owner_id="alice", allowed_groups=(),
+        allowed_users=(), classification=1, doc_version=1,
+        source_uri=f"file:///docs/{identifiant}.md",
+    )
+
+
+def main() -> None:
+    url = "http://127.0.0.1:16333"
+    collection = f"hermes_g1_audit_smoke_{uuid4().hex}"
+    client = QdrantRestClient(url)
+    auditor = QdrantAuditRestClient(url)
+    chunks = [
+        chunk_document(document("a", "Source A"))[0],
+        chunk_document(document("b", "Source B"))[0],
+    ]
+    points = [chunk_to_point(chunk, [1.0]) for chunk in chunks]
+    # L'empreinte provient des documents de cet essai, jamais du scroll Qdrant.
+    pinned = verify_index_snapshot(chunks, points).payload_sha256
+    created = False
+    try:
+        if client.collection_exists(collection):
+            raise RuntimeError("collision de nom : ne pas toucher cette collection")
+        client.create_collection(collection, vector_size=1)
+        created = True
+        client.upsert(collection, points)
+        report = audit_qdrant_index(
+            auditor, collection, chunks, expected_manifest_sha256=pinned,
+            page_size=1,
+        )
+        if report.point_count != 2 or report.payload_sha256 != pinned:
+            raise AssertionError("l'audit initial a échoué")
+        with TemporaryDirectory(prefix="hermes-g1-docs-") as directory:
+            source = Path(directory) / "documents.jsonl"
+            source.write_text(
+                "".join(json.dumps(asdict(doc), ensure_ascii=False) + "\n"
+                        for doc in (document("a", "Source A"), document("b", "Source B"))),
+                encoding="utf-8",
+            )
+            snapshot = load_pinned_document_snapshot(
+                source, expected_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
+            )
+            service, audited = build_audited_g1_service(
+                snapshot=snapshot, expected_manifest_sha256=pinned,
+                audit_client=auditor, query_client=client, collection=collection,
+                chunker=chunk_document, embed=lambda text: [1.0],
+                generator=lambda question, evidence: "Source A [S1].",
+            )
+            answer = service.answer(
+                "Source A", context=AuthorizationContext("alpha", "alice", (), 1),
+            )
+            if audited.point_count != 2 or answer.abstained or not answer.citations:
+                raise AssertionError("réponse citée sur Qdrant réel absente")
+            revision = "a" * 40
+            corpus_sha = "b" * 64
+            case = {
+                "case_id": "smoke-1", "question": "Source A",
+                "language": "en", "track": "en2en", "category": "simple",
+                "access_scope": "private", "question_provenance": "human_task_without_corpus_view",
+                "should_abstain": False, "unanswerable_reason": None,
+                "reference_status": "validated", "source_revision": revision,
+                "corpus_manifest_sha": corpus_sha,
+                "relevance_spans": [{
+                    "document_id": "a", "start_char": 0, "end_char": len("Source A"),
+                    "passage_sha256": hashlib.sha256(b"Source A").hexdigest(),
+                    "relevance_grade": 2,
+                }],
+            }
+            session = AuditedIndexSession(
+                auditor, collection, chunks, page_size=1,
+                expected_manifest_sha256=pinned,
+            )
+            scored = run_audited_evaluation(
+                session, [case], {
+                    "a": {"content": "Source A", "visibility": "private"},
+                    "b": {"content": "Source B", "visibility": "private"},
+                }, {"source_revision": revision, "corpus_manifest_sha": corpus_sha},
+                build_contextual_service_answer_fn(service), k=1,
+                context_for_case=lambda row: AuthorizationContext("alpha", "alice", (), 1),
+                authority=snapshot.authority(),
+            )
+            if scored.case_count != 1 or not scored.security_gate_passed:
+                raise AssertionError("le harnais audité n'a pas scoré l'essai")
+        closing_check = AuditedIndexSession(
+            auditor, collection, chunks, page_size=1,
+            expected_manifest_sha256=pinned,
+        )
+        closing_check.open()
+        forged = deepcopy(points[0])
+        forged["payload"]["owner_id"] = "bob"
+        client.upsert(collection, [forged])
+        try:
+            closing_check.close()
+        except AuditedIndexSessionError as exc:
+            if not isinstance(exc.__cause__, ValueError) or "payload conflicts" not in str(exc.__cause__):
+                raise
+        else:
+            raise AssertionError("session d'audit a accepté une ACL falsifiée")
+        print("Qdrant réel OK : audit, campagne CPU 1 cas, citation, clôture altérée refusée")
+    finally:
+        if created:
+            client.delete_collection(collection)
+
+
+if __name__ == "__main__":
+    main()

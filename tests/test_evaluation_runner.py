@@ -12,6 +12,7 @@ from rag_hermes.evaluation_runner import (
     run_evaluation,
 )
 from rag_hermes.generator import GenerationError
+from rag_hermes.retrieval import CanonicalAclError
 from rag_hermes.ingestion import Document
 from rag_hermes.service import RagService
 
@@ -569,7 +570,7 @@ class EvaluationRunnerTests(unittest.TestCase):
         # Side 2: the barrier itself fails closed -> acl_error, never abstention.
         class _Barred:
             def answer_with_trace(self, question, *, context):
-                raise PermissionError("stale ACL index has no usable candidates")
+                raise CanonicalAclError("stale ACL index has no usable candidates")
 
         barred_fn = build_service_answer_fn(
             cast(RagService, _Barred()), lambda case: context
@@ -581,7 +582,7 @@ class EvaluationRunnerTests(unittest.TestCase):
     def test_service_adapter_translates_the_service_exception_vocabulary(self) -> None:
         """Only the adapter that KNOWS the service maps its exceptions.
 
-        PermissionError is what the canonical ACL bridge raises when it fails
+        CanonicalAclError is what the canonical ACL bridge raises when it fails
         closed; GenerationError is the backend/generator failure. The mapping
         lives here, not in run_evaluation, because an arbitrary answer_fn could
         raise PermissionError for an unrelated reason (a filesystem denial, say)
@@ -599,7 +600,7 @@ class EvaluationRunnerTests(unittest.TestCase):
                 raise self._error
 
         for error, expected in (
-            (PermissionError("stale ACL index"), "acl_error"),
+            (CanonicalAclError("stale ACL index"), "acl_error"),
             (GenerationError("generator is unavailable"), "backend_error"),
         ):
             answer_fn = build_service_answer_fn(
@@ -613,6 +614,19 @@ class EvaluationRunnerTests(unittest.TestCase):
             # ...but its text, which can carry a URL or credentials, is not
             # copied into the signalled error.
             self.assertNotIn(str(error), str(caught.exception))
+
+    def test_storage_permission_error_does_not_become_acl_error(self) -> None:
+        context = AuthorizationContext("public", "evaluator", (), 0)
+
+        class _StorageDenied:
+            def answer_with_trace(self, question, *, context):
+                raise PermissionError("storage unavailable")
+
+        answer_fn = build_service_answer_fn(
+            cast(RagService, _StorageDenied()), lambda case: context
+        )
+        with self.assertRaisesRegex(PermissionError, "storage unavailable"):
+            answer_fn("q?", _answerable_case())
 
     def test_service_adapter_lets_unknown_exceptions_propagate(self) -> None:
         context = AuthorizationContext(
