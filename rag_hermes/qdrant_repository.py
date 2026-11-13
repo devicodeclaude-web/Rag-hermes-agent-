@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 import json
 import math
 from typing import Any, Callable, Iterable
@@ -8,6 +9,7 @@ from typing import Any, Callable, Iterable
 from .acl import AuthorizationContext, Chunk, filter_authorized
 from .ingestion import Document
 from .qdrant_filter import build_qdrant_filter
+from .qdrant_preflight import verify_collection_ready
 from .qdrant_store import chunk_to_point
 from .retrieval import SearchResult
 
@@ -30,12 +32,18 @@ class QdrantChunkRepository:
         *,
         collection: str,
         embed: Callable[[str], list[float]],
+        embed_hybrid: Callable[[str], tuple[list[float], object]] | None = None,
     ) -> None:
         if not collection.strip():
             raise ValueError("collection is required")
+        if embed_hybrid is not None and not callable(embed_hybrid):
+            raise ValueError("embed_hybrid must be callable")
         self._client = client
         self._collection = collection
         self._embed = embed
+        self._embed_hybrid = embed_hybrid
+        if embed_hybrid is not None:
+            verify_collection_ready(client, collection, require_sparse=True)
 
     def _assert_document_owner(self, document: Document) -> None:
         existing = self._client.scroll(
@@ -65,6 +73,52 @@ class QdrantChunkRepository:
             ):
                 raise PermissionError("only the existing document owner can replace it")
 
+    _PROVENANCE_FIELDS = (
+        "document_id",
+        "tenant_id",
+        "owner_id",
+        "visibility",
+        "allowed_groups",
+        "allowed_users",
+        "classification",
+        "doc_version",
+        "acl_version",
+        "source_uri",
+    )
+
+    def _assert_chunks_match_document(
+        self,
+        document: Document,
+        chunks: list[Chunk],
+    ) -> None:
+        """Refuse any chunk whose ACL/provenance disagrees with its document.
+
+        The ingestion caller supplies the chunks, so a forged or stale chunk
+        would otherwise be written with its own tenant/visibility and become a
+        cross-tenant leak that no retrieval-side filter can repair.
+        """
+        expected_sha = hashlib.sha256(document.content.encode("utf-8")).hexdigest()
+        length = len(document.content)
+        for chunk in chunks:
+            if type(chunk) is not Chunk or any(
+                type(getattr(chunk, field)) is not type(getattr(document, field))
+                or getattr(chunk, field) != getattr(document, field)
+                for field in self._PROVENANCE_FIELDS
+            ) or chunk.source_sha != expected_sha:
+                raise ValueError("chunk conflicts with its source document")
+            start, end = chunk.start_offset, chunk.end_offset
+            # Offsets are the only link between the stored passage and the
+            # document bytes: a document-wide hash cannot detect a forged
+            # text, and negative or inverted bounds would silently slice
+            # something else (or nothing) instead of failing.
+            if (
+                type(start) is not int
+                or type(end) is not int
+                or not 0 <= start < end <= length
+                or document.content[start:end] != chunk.text
+            ):
+                raise ValueError("chunk text does not match its source document")
+
     def replace_document(
         self,
         document: Document,
@@ -72,10 +126,14 @@ class QdrantChunkRepository:
     ) -> QdrantReplaceResult:
         self._assert_document_owner(document)
         materialized = list(chunks)
-        points = [
-            chunk_to_point(chunk, self._embed(chunk.text))
-            for chunk in materialized
-        ]
+        self._assert_chunks_match_document(document, materialized)
+        points = []
+        for chunk in materialized:
+            if self._embed_hybrid is None:
+                points.append(chunk_to_point(chunk, self._embed(chunk.text)))
+            else:
+                dense, sparse = self._embed_hybrid(chunk.text)
+                points.append(chunk_to_point(chunk, dense, sparse_weights=sparse))
         new_point_ids = [point["id"] for point in points]
         if points:
             # Upsert the new revision first so a failure never leaves the

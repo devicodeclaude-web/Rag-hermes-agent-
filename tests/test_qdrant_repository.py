@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import unittest
 
 from rag_hermes.acl import AuthorizationContext
@@ -7,6 +8,7 @@ from rag_hermes.ingestion import Document, chunk_document
 from rag_hermes.qdrant_filter import build_qdrant_filter
 from rag_hermes.qdrant_repository import QdrantChunkRepository
 from rag_hermes.qdrant_store import chunk_to_point
+from tests.test_qdrant_preflight import _collection
 
 
 class FakeQdrantClient:
@@ -44,6 +46,18 @@ class FakeQdrantClient:
         self.scrolls.append((collection, query_filter, limit))
         return self.scroll_results
 
+
+class FakeHybridClient(FakeQdrantClient):
+    def __init__(self) -> None:
+        super().__init__()
+        self.metadata = _collection()
+        self.metadata["config"]["params"]["vectors"]["dense"]["size"] = 2
+        self.metadata["config"]["params"]["sparse_vectors"] = {"sparse": {}}
+        self.metadata_calls: list[str] = []
+
+    def get_collection(self, collection: str) -> dict:
+        self.metadata_calls.append(collection)
+        return self.metadata
 
 class QdrantSemanticsClient(FakeQdrantClient):
     """Emulate Qdrant match semantics for scalar and array payload values."""
@@ -92,6 +106,92 @@ class QdrantChunkRepositoryTests(unittest.TestCase):
             collection="hermes_chunks_v1",
             embed=lambda text: [float(len(text)), 1.0],
         )
+
+    def test_hybrid_ingestion_writes_both_vectors_without_changing_id_or_payload(self) -> None:
+        client = FakeHybridClient()
+        calls: list[str] = []
+        repository = QdrantChunkRepository(
+            client, collection="hermes_chunks_v1", embed=lambda text: [1.0, 0.0],
+            embed_hybrid=lambda text: (calls.append(text) or [1.0, 0.0], {"12": 0.75}),
+        )
+        chunks = chunk_document(self.document, max_tokens=4, overlap_tokens=0)
+        report = repository.replace_document(self.document, chunks)
+        self.assertEqual(report.chunk_count, len(chunks))
+        self.assertEqual(calls, [chunk.text for chunk in chunks])
+        self.assertEqual(client.metadata_calls, ["hermes_chunks_v1"])
+        self.assertEqual(len(client.upserted), 1)
+        self.assertEqual(len(client.deleted), 1)
+        for chunk, point in zip(chunks, client.upserted[0][1]):
+            original = chunk_to_point(chunk, [1.0, 0.0])
+            self.assertEqual((point["id"], point["payload"]),
+                             (original["id"], original["payload"]))
+            self.assertEqual(point["vector"], {
+                "dense": [1.0, 0.0],
+                "sparse": {"indices": [12], "values": [0.75]},
+            })
+
+    def test_hybrid_ingestion_rejects_foreign_chunk_before_upsert(self) -> None:
+        client = FakeHybridClient()
+        repository = QdrantChunkRepository(
+            client, collection="hermes_chunks_v1", embed=lambda text: [1.0, 0.0],
+            embed_hybrid=lambda text: ([1.0, 0.0], {"12": 0.75}),
+        )
+        chunks = chunk_document(self.document, max_tokens=4, overlap_tokens=0)
+        forged = replace(chunks[-1], tenant_id="beta")
+        with self.assertRaisesRegex(ValueError, "chunk"):
+            repository.replace_document(self.document, [*chunks[:-1], forged])
+        self.assertEqual(client.upserted, [])
+        self.assertEqual(client.deleted, [])
+
+    def test_dense_ingestion_also_rejects_foreign_chunk_before_upsert(self) -> None:
+        client = FakeQdrantClient()
+        repository = QdrantChunkRepository(
+            client, collection="hermes_chunks_v1", embed=lambda text: [1.0, 0.0],
+        )
+        chunks = chunk_document(self.document, max_tokens=4, overlap_tokens=0)
+        forged = replace(chunks[0], visibility="public", allowed_groups=("all",))
+        with self.assertRaisesRegex(ValueError, "chunk"):
+            repository.replace_document(self.document, [forged, *chunks[1:]])
+        self.assertEqual(client.upserted, [])
+        self.assertEqual(client.deleted, [])
+
+    def test_ingestion_rejects_text_absent_from_the_declared_offsets(self) -> None:
+        client = FakeQdrantClient()
+        repository = QdrantChunkRepository(
+            client, collection="hermes_chunks_v1", embed=lambda text: [1.0, 0.0],
+        )
+        chunks = chunk_document(self.document, max_tokens=4, overlap_tokens=0)
+        # Same document, same source_sha, same ACL: only the stored passage
+        # text is forged, which a hash over the document cannot detect.
+        forged = replace(chunks[0], text="classified payload")
+        with self.assertRaisesRegex(ValueError, "chunk"):
+            repository.replace_document(self.document, [forged, *chunks[1:]])
+        self.assertEqual(client.upserted, [])
+        self.assertEqual(client.deleted, [])
+
+    def test_ingestion_rejects_chunk_offsets_outside_the_document(self) -> None:
+        client = FakeQdrantClient()
+        repository = QdrantChunkRepository(
+            client, collection="hermes_chunks_v1", embed=lambda text: [1.0, 0.0],
+        )
+        chunks = chunk_document(self.document, max_tokens=4, overlap_tokens=0)
+        content = self.document.content
+        for start, end, text in (
+            (-len(content), len(content), content),
+            (0, len(content) + 50, content),
+            (5, 5, ""),
+            (True, len(content), content[1:]),
+        ):
+            with self.subTest(start=start, end=end):
+                forged = replace(
+                    chunks[0], text=text, start_offset=start, end_offset=end
+                )
+                with self.assertRaisesRegex(ValueError, "chunk"):
+                    repository.replace_document(
+                        self.document, [forged, *chunks[1:]]
+                    )
+        self.assertEqual(client.upserted, [])
+        self.assertEqual(client.deleted, [])
 
     def test_replace_document_upserts_new_chunks_before_deleting_stale_points(self) -> None:
         chunks = chunk_document(self.document, max_tokens=4, overlap_tokens=0)
