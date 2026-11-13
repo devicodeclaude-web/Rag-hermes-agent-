@@ -1,3 +1,4 @@
+from dataclasses import replace
 import importlib
 import unittest
 
@@ -110,11 +111,41 @@ class QdrantStoreTests(unittest.TestCase):
             with self.subTest(weights=weights), self.assertRaises(ValueError):
                 lexical_weights_to_sparse_vector(weights)
 
+    def test_vector_must_be_a_nonempty_list_or_tuple(self):
+        class FakeArray(list):
+            def __bool__(self):
+                raise ValueError("truth value is ambiguous")
+
+        for vector in ([], FakeArray([1.0, 0.0]), "ab", {"dense": [1.0]}, None):
+            with self.subTest(vector=type(vector).__name__):
+                with self.assertRaisesRegex(ValueError, "nonempty list or tuple"):
+                    chunk_to_point(self.chunk, vector)
+
     def test_point_id_is_stable_uuid(self):
         first = chunk_to_point(self.chunk, [1.0, 0.0])
         second = chunk_to_point(self.chunk, [1.0, 0.0])
         self.assertEqual(first["id"], second["id"])
         self.assertRegex(first["id"], r"^[0-9a-f-]{36}$")
+
+    def test_point_id_is_bound_to_the_tenant_and_the_document(self):
+        reference = chunk_to_point(self.chunk, [1.0, 0.0])["id"]
+        # chunk_id is a hash of document_id/doc_version/index/source_sha only,
+        # so without the tenant and document in the key two tenants ingesting
+        # the same document at the same version derive the same point ID and
+        # the second upsert silently erases the first tenant's passages.
+        for field, value in (
+            ("tenant_id", "beta"),
+            ("document_id", "autre"),
+            ("chunk_id", "0" * 24),
+            ("source_sha", "1" * 64),
+            ("doc_version", self.chunk.doc_version + 1),
+        ):
+            with self.subTest(field=field):
+                other = chunk_to_point(
+                    replace(self.chunk, **{field: value}), [1.0, 0.0]
+                )
+                self.assertNotEqual(other["id"], reference)
+
 
     def test_deterministic_vector_is_normalized_and_reproducible(self):
         first = deterministic_test_vector("ambre zephyr", dimensions=8)

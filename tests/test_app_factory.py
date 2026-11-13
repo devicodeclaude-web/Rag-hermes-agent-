@@ -6,6 +6,14 @@ from unittest.mock import patch
 from rag_hermes.app_factory import build_service
 from rag_hermes.qdrant_preflight import QdrantPreflightError
 
+_VERIFIED_SCHEMA = {
+    "collection": "hermes_chunks_v1",
+    "vector_name": "dense",
+    "vector_size": 1024,
+    "tenant_index": True,
+    "verified_indexes": ["tenant_id"],
+}
+
 
 class BuildServiceTests(unittest.TestCase):
     def test_without_qdrant_env_uses_in_memory_backend(self) -> None:
@@ -90,6 +98,7 @@ class BuildServiceTests(unittest.TestCase):
     def test_with_qdrant_url_and_embedder_builds_repository_backed_service(
         self, verify
     ) -> None:
+        verify.return_value = _VERIFIED_SCHEMA
         service = build_service(
             env={
                 "RAG_QDRANT_URL": "http://127.0.0.1:6333",
@@ -99,6 +108,9 @@ class BuildServiceTests(unittest.TestCase):
         )
         self.assertIsNotNone(service._repository)
         verify.assert_called_once()
+        # The verified dense size is handed to the repository: the dense-only
+        # path cannot read collection metadata by itself.
+        self.assertEqual(service._repository._vector_size, 1024)
 
     @patch("rag_hermes.app_factory.verify_collection_ready")
     def test_misconfigured_qdrant_collection_refuses_startup(self, verify) -> None:
@@ -117,6 +129,7 @@ class BuildServiceTests(unittest.TestCase):
     ) -> None:
         # RAG_EMBED_LOCK is an explicit operator opt-in; no model is loaded at
         # build time (lazy), so this stays offline-safe.
+        verify.return_value = _VERIFIED_SCHEMA
         service = build_service(
             env={
                 "RAG_QDRANT_URL": "http://127.0.0.1:6333",

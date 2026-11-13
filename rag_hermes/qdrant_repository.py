@@ -10,7 +10,7 @@ from .acl import AuthorizationContext, Chunk, filter_authorized
 from .ingestion import Document
 from .qdrant_filter import build_qdrant_filter
 from .qdrant_preflight import verify_collection_ready
-from .qdrant_store import chunk_to_point
+from .qdrant_store import chunk_to_point, stable_point_id
 from .retrieval import SearchResult
 
 
@@ -139,9 +139,12 @@ class QdrantChunkRepository:
         collection: str,
         embed: Callable[[str], list[float]],
         embed_hybrid: Callable[[str], tuple[list[float], object]] | None = None,
+        vector_size: int | None = None,
     ) -> None:
         if not collection.strip():
             raise ValueError("collection is required")
+        if not callable(embed):
+            raise ValueError("embed must be callable")
         if embed_hybrid is not None and not callable(embed_hybrid):
             raise ValueError("embed_hybrid must be callable")
         self._client = client
@@ -150,22 +153,34 @@ class QdrantChunkRepository:
         self._collection = collection.strip()
         self._embed = embed
         self._embed_hybrid = embed_hybrid
-        self._vector_size: int | None = None
+        if vector_size is not None and (
+            type(vector_size) is not int or vector_size < 1
+        ):
+            raise ValueError("vector_size must be a positive integer")
+        # The dense-only path cannot read collection metadata (its clients are
+        # not required to expose it), so a caller that already ran the
+        # preflight passes the verified size in.
+        self._vector_size: int | None = vector_size
         if embed_hybrid is not None:
             schema = verify_collection_ready(
                 client, self._collection, require_sparse=True
             )
+            if vector_size is not None and vector_size != schema["vector_size"]:
+                raise ValueError("vector_size does not match the collection")
             self._vector_size = schema["vector_size"]
 
-    def _assert_document_owner(self, document: Document) -> None:
+    def _assert_document_owner(self, snapshot: _DocumentSnapshot) -> None:
+        # Takes the snapshot, never the live object: reading owner_id here and
+        # again when the payload is built would let a caller-controlled object
+        # pass the ownership check on one value and write another.
         existing = self._client.scroll(
             self._collection,
             query_filter={
                 "must": [
-                    {"key": "tenant_id", "match": {"value": document.tenant_id}},
+                    {"key": "tenant_id", "match": {"value": snapshot.tenant_id}},
                     {
                         "key": "document_id",
-                        "match": {"value": document.document_id},
+                        "match": {"value": snapshot.document_id},
                     },
                 ],
             },
@@ -178,10 +193,10 @@ class QdrantChunkRepository:
             if not isinstance(payload, dict):
                 raise PermissionError("document owner payload is invalid")
             if (
-                payload.get("tenant_id") != document.tenant_id
-                or payload.get("document_id") != document.document_id
+                payload.get("tenant_id") != snapshot.tenant_id
+                or payload.get("document_id") != snapshot.document_id
                 or not isinstance(payload.get("owner_id"), str)
-                or payload["owner_id"] != document.owner_id
+                or payload["owner_id"] != snapshot.owner_id
             ):
                 raise PermissionError("only the existing document owner can replace it")
 
@@ -239,7 +254,7 @@ class QdrantChunkRepository:
         self,
         snapshot: _DocumentSnapshot,
         point: dict[str, Any],
-    ) -> None:
+    ) -> dict[str, Any]:
         """Validate the point actually about to be written, not the Chunk.
 
         The payload and the point ID are built after the encoder callback runs,
@@ -290,7 +305,18 @@ class QdrantChunkRepository:
             or snapshot.content[start:end] != payload["text"]
         ):
             raise ValueError("point text does not match its source document")
+        # The ID decides which stored point this write replaces, so it must be
+        # derived from the identity just verified and from nothing else.
+        if decoded["id"] != stable_point_id(
+            tenant_id=snapshot.tenant_id,
+            document_id=snapshot.document_id,
+            chunk_id=payload["chunk_id"],
+            source_sha=snapshot.source_sha,
+            doc_version=snapshot.doc_version,
+        ):
+            raise ValueError("point id is not derived from the verified identity")
         self._assert_point_vector(decoded["vector"])
+        return decoded
 
     def _assert_point_vector(self, vector: object) -> None:
         expected_names = {"dense", "sparse"} if self._embed_hybrid else {"dense"}
@@ -308,7 +334,7 @@ class QdrantChunkRepository:
             raise ValueError("dense vector must be a nonempty list of finite numbers")
         if self._vector_size is not None and len(dense) != self._vector_size:
             raise ValueError("dense vector size does not match the collection")
-        if "sparse" not in vector:
+        if "sparse" not in expected_names:
             return
         sparse = vector["sparse"]
         if type(sparse) is not dict or set(sparse) != {"indices", "values"}:
@@ -338,26 +364,31 @@ class QdrantChunkRepository:
         document: Document,
         chunks: Iterable[Chunk],
     ) -> QdrantReplaceResult:
-        self._assert_document_owner(document)
-        # Snapshot first: the ACL containers belong to the caller, so values
-        # read after the encoder callback could differ from those verified.
+        if type(document) is not Document:
+            raise ValueError("document must be a Document instance")
+        # Snapshot first, and verify ownership against the snapshot: the ACL
+        # containers belong to the caller, so a value read before the encoder
+        # callback could differ from the one that ends up in the payload.
         snapshot = _snapshot_document(document)
+        self._assert_document_owner(snapshot)
         materialized = list(chunks)
-        points: list[dict[str, Any]] = []
+        built: list[dict[str, Any]] = []
         for chunk in materialized:
             self._assert_chunk_matches_document(snapshot, chunk)
             if self._embed_hybrid is None:
-                points.append(chunk_to_point(chunk, self._embed(chunk.text)))
+                built.append(chunk_to_point(chunk, self._embed(chunk.text)))
             else:
                 encoded = self._embed_hybrid(chunk.text)
-                if type(encoded) is not tuple or len(encoded) != 2:
+                if not isinstance(encoded, (tuple, list)) or len(encoded) != 2:
                     raise ValueError("embed_hybrid must return a (dense, sparse) pair")
                 dense, sparse = encoded
                 if sparse is None:
                     raise ValueError("embed_hybrid must return sparse weights")
-                points.append(chunk_to_point(chunk, dense, sparse_weights=sparse))
-        for point in points:
-            self._assert_point_matches_document(snapshot, point)
+                built.append(chunk_to_point(chunk, dense, sparse_weights=sparse))
+        # Write the validated projection, so what was checked is what is sent.
+        points = [
+            self._assert_point_matches_document(snapshot, point) for point in built
+        ]
         new_point_ids = [point["id"] for point in points]
         if len(set(new_point_ids)) != len(new_point_ids):
             # Two chunks sharing a point ID would overwrite each other: the

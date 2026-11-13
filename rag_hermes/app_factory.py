@@ -121,8 +121,13 @@ def build_service(
         raise ValueError("RAG_QDRANT_COLLECTION must not be empty")
 
     client = QdrantRestClient(qdrant_url)
-    verify_collection_ready(client, collection)
-    repository = QdrantChunkRepository(client, collection=collection, embed=embed)
+    schema = verify_collection_ready(client, collection)
+    repository = QdrantChunkRepository(
+        client,
+        collection=collection,
+        embed=embed,
+        vector_size=schema["vector_size"],
+    )
     return RagService(
         repository=repository,
         generator=generator,
