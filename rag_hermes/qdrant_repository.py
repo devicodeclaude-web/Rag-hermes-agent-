@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import hashlib
 import json
 import math
+import unicodedata
 from typing import Any, Callable, Iterable
 
 from .acl import AuthorizationContext, Chunk, filter_authorized
@@ -60,7 +61,7 @@ def _assert_no_control_characters(value: str, field: str) -> None:
     into a collision. The key is injective on its own, this is the second
     lock.
     """
-    if any(ord(character) < 0x20 or ord(character) == 0x7F for character in value):
+    if any(unicodedata.category(character) == "Cc" for character in value):
         raise ValueError(f"{field} must not contain control characters")
 
 
@@ -387,6 +388,8 @@ class QdrantChunkRepository:
         snapshot = _snapshot_document(document)
         self._assert_document_owner(snapshot)
         materialized = list(chunks)
+        if not materialized:
+            raise ValueError("a replacement must carry at least one passage")
         built: list[dict[str, Any]] = []
         for chunk in materialized:
             self._assert_chunk_matches_document(snapshot, chunk)

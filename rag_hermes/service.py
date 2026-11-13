@@ -96,6 +96,8 @@ class RagService:
         if existing_owner is not None and existing_owner != context.user_id:
             raise PermissionError("only the existing document owner can replace it")
         chunks = chunk_document(document)
+        if not chunks:
+            raise ValueError("an import must carry at least one passage")
         if self._repository is not None:
             result = self._repository.replace_document(document, chunks)
             self._document_owners[document_key] = document.owner_id

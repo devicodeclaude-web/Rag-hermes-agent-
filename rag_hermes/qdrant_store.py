@@ -80,7 +80,8 @@ def stable_point_id(
     # the read-side barriers), hence str() rather than a type check here; the
     # repository type-checks the identity before it ever writes.
     parts = (tenant_id, document_id, chunk_id, source_sha, doc_version)
-    stable_key = "".join(f"{len(str(part))}\x1f{part}\x1f" for part in parts)
+    strings = (str(part) for part in parts)
+    stable_key = "".join(f"{len(value)}\x1f{value}\x1f" for value in strings)
     return str(uuid.uuid5(_POINT_NAMESPACE, stable_key))
 
 

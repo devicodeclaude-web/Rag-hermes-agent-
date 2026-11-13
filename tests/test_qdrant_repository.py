@@ -405,14 +405,27 @@ class QdrantChunkRepositoryTests(unittest.TestCase):
         )
         document = replace(self.document, document_id="rapport\x1f2024")
         chunks = chunk_document(document, max_tokens=4, overlap_tokens=0)
-        with self.assertRaisesRegex(ValueError, "control characters"):
+        with self.assertRaisesRegex(
+            ValueError, "^document document_id must not contain control characters$"
+        ):
             repository.replace_document(document, chunks)
         clean = chunk_document(self.document, max_tokens=4, overlap_tokens=0)
         forged = replace(clean[0], chunk_id="2024\x1fCHUNKV")
-        with self.assertRaisesRegex(ValueError, "control characters"):
+        with self.assertRaisesRegex(
+            ValueError, "^chunk_id must not contain control characters$"
+        ):
             repository.replace_document(self.document, [forged, *clean[1:]])
         self.assertEqual(client.upserted, [])
         self.assertEqual(client.deleted, [])
+
+    def test_c1_control_character_is_rejected_in_identity(self) -> None:
+        document = replace(self.document, document_id="rapport\u0085annexe")
+        with self.assertRaisesRegex(
+            ValueError, "^document document_id must not contain control characters$"
+        ):
+            self.repository.replace_document(document, chunk_document(document))
+        self.assertEqual(self.client.upserted, [])
+        self.assertEqual(self.client.deleted, [])
 
     def test_dense_only_checks_the_vector_size_when_the_caller_verified_it(self) -> None:
         client = FakeQdrantClient()
@@ -466,6 +479,17 @@ class QdrantChunkRepositoryTests(unittest.TestCase):
         result = repository.replace_document(self.document, chunks)
         self.assertEqual(result.chunk_count, len(chunks))
         self.assertEqual(len(client.upserted), 1)
+
+    def test_empty_replacement_cannot_erase_an_indexed_document(self) -> None:
+        existing = chunk_to_point(chunk_document(self.document)[0], [1.0, 0.0])
+        self.client.scroll_results = [existing]
+        blank = replace(self.document, content=" \n\t ", doc_version=2)
+        self.assertEqual(chunk_document(blank), [])
+        with self.assertRaisesRegex(ValueError, "replacement.*passage"):
+            self.repository.replace_document(blank, iter(()))
+        self.assertEqual(self.client.upserted, [])
+        self.assertEqual(self.client.deleted, [])
+        self.assertEqual(self.client.scroll_results, [existing])
 
     def test_replace_document_upserts_new_chunks_before_deleting_stale_points(self) -> None:
         chunks = chunk_document(self.document, max_tokens=4, overlap_tokens=0)

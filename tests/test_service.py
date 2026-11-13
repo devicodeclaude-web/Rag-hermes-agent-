@@ -66,6 +66,18 @@ class RagServiceTests(unittest.TestCase):
             trace.cited_chunks[0].chunk_id,
         )
 
+    def test_empty_import_does_not_erase_in_memory_document(self) -> None:
+        service = RagService()
+        service.import_document(self.document, context=self.context)
+        prior = list(service._chunks)
+        blank = replace(self.document, content=" \n\t ", doc_version=2)
+        with self.assertRaisesRegex(ValueError, "import.*passage"):
+            service.import_document(blank, context=self.context)
+        self.assertEqual(service._chunks, prior)
+        self.assertEqual(
+            service._document_owners[("alpha", "guide-installation")], "alice"
+        )
+
     def test_import_then_question_returns_grounded_answer_and_citation(self) -> None:
         service = RagService()
 

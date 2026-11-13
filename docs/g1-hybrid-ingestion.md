@@ -87,7 +87,8 @@ simple séparateur déplacerait la frontière entre deux champs dès qu'un champ
 le contient lui-même (`document_id` vient du client), ce qui ramène
 exactement l'écrasement silencieux ci-dessous. En défense en profondeur,
 `document_id`, `tenant_id`, `owner_id` et `chunk_id` sont refusés s'ils
-contiennent un caractère de contrôle. Avant, la clé n'était que `chunk_id:source_sha:doc_version` — et
+contiennent un caractère de contrôle Unicode (catégorie `Cc`, C0, DEL et C1).
+Avant, la clé n'était que `chunk_id:source_sha:doc_version` — et
 `chunk_id` est lui-même un hash de `document_id`/`doc_version`/index/`source_sha` :
 **deux tenants qui ingéraient le même document à la même version dérivaient le
 même identifiant de point**, et le second upsert effaçait silencieusement les
@@ -119,9 +120,21 @@ lancé le prévol passe la taille vérifiée via `vector_size=` (c'est ce que fa
 
 `replace_document` exige le type exact `Document` (une sous-classe pourrait
 redéfinir l'accès aux attributs et réouvrir le décalage ci-dessus) ; une
-extension doit composer, pas hériter. `chunk_document_tokens` échoue
-explicitement si aucune fenêtre n'a de largeur (sinon une révision vide
-remplacerait un document indexé en annonçant un succès).
+extension doit composer, pas hériter. La liste de chunks doit contenir au
+moins un passage : les deux chunkers peuvent rendre `[]` sur un document vide
+ou blanc, et cette liste n'est **jamais** interprétée comme une suppression.
+`RagService.import_document` refuse également une importation sans passage,
+y compris sur son dépôt en mémoire. `chunk_document_tokens` lève aussi si une
+entrée tokenisée ne produit aucune fenêtre de largeur positive, mais cette
+garde seule ne ferme pas les sorties `return []` en amont. Il n'existe pas
+encore d'API de suppression explicite dans ce dépôt. La contre-revue a
+reproduit deux dangers qui empêchent de l'exposer : le contrôle du propriétaire
+ne prouve pas la complétude au-delà de la première page du `scroll` Qdrant,
+et un autre processus peut écrire entre ce contrôle et `delete_points`.
+Ces limites touchent aussi le remplacement existant et **ne sont pas corrigées
+par ce garde-fou sur les révisions vides**. La suppression exige donc une
+conception séparée (pagination vérifiée et exclusion des écritures
+concurrentes) ; ne pas la simuler par une révision vide.
 
 Un encodeur qui renvoie un `numpy.ndarray` est refusé (`vector must be a
 nonempty list or tuple of numbers`) : le point doit être sérialisable en JSON,
@@ -131,8 +144,8 @@ La barrière vérifie la cohérence chunk↔document **fourni** : elle ne prouve
 pas que ce document corresponde à la source documentaire d'origine. Les champs
 que le document ne permet pas de recalculer restent **attestés par le chunker,
 non vérifiés** : `chunk_id` (seules sa non-vacuité, l'absence de caractère de
-contrôle et l'unicité du point dérivé sont contrôlées), `section`, `token_count`, `tokenizer_name`,
-`tokenizer_revision`. Un `chunk_id` forgé mais unique produit donc un point
-dont l'identité n'est pas reproductible par le chunker ; il reste rattrapé par
-le balayage de suppression des points périmés de la même paire (tenant,
-document), mais la valeur elle-même n'est pas prouvée.
+contrôle et l'unicité du point dérivé sont contrôlées), `section`,
+`token_count`, `tokenizer_name`, `tokenizer_revision`. Un `chunk_id` forgé mais
+unique produit donc un point dont l'identité n'est pas reproductible par le
+chunker ; il reste rattrapé par le balayage de suppression des points périmés
+de la même paire (tenant, document), mais la valeur elle-même n'est pas prouvée.
