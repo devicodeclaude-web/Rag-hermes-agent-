@@ -81,8 +81,13 @@ Pourquoi ces règles, et pas de simples comparaisons `!=` :
 ## Identité de point liée au tenant (changement incompatible)
 
 `stable_point_id` dérive désormais l'identifiant de
-`tenant_id | document_id | chunk_id | source_sha | doc_version` (séparateur
-`\x1f`). Avant, la clé n'était que `chunk_id:source_sha:doc_version` — et
+`tenant_id | document_id | chunk_id | source_sha | doc_version`, chaque partie
+étant **préfixée par sa longueur** pour que l'encodage soit injectif : un
+simple séparateur déplacerait la frontière entre deux champs dès qu'un champ
+le contient lui-même (`document_id` vient du client), ce qui ramène
+exactement l'écrasement silencieux ci-dessous. En défense en profondeur,
+`document_id`, `tenant_id`, `owner_id` et `chunk_id` sont refusés s'ils
+contiennent un caractère de contrôle. Avant, la clé n'était que `chunk_id:source_sha:doc_version` — et
 `chunk_id` est lui-même un hash de `document_id`/`doc_version`/index/`source_sha` :
 **deux tenants qui ingéraient le même document à la même version dérivaient le
 même identifiant de point**, et le second upsert effaçait silencieusement les
@@ -112,6 +117,12 @@ clients ne sont pas tenus d'exposer `get_collection` : l'appelant qui a déjà
 lancé le prévol passe la taille vérifiée via `vector_size=` (c'est ce que fait
 `build_service`). Sans cet argument, aucune dimension n'est confrontée.
 
+`replace_document` exige le type exact `Document` (une sous-classe pourrait
+redéfinir l'accès aux attributs et réouvrir le décalage ci-dessus) ; une
+extension doit composer, pas hériter. `chunk_document_tokens` échoue
+explicitement si aucune fenêtre n'a de largeur (sinon une révision vide
+remplacerait un document indexé en annonçant un succès).
+
 Un encodeur qui renvoie un `numpy.ndarray` est refusé (`vector must be a
 nonempty list or tuple of numbers`) : le point doit être sérialisable en JSON,
 et la conversion est à la charge de l'appelant (`.tolist()`).
@@ -119,8 +130,8 @@ et la conversion est à la charge de l'appelant (`.tolist()`).
 La barrière vérifie la cohérence chunk↔document **fourni** : elle ne prouve
 pas que ce document corresponde à la source documentaire d'origine. Les champs
 que le document ne permet pas de recalculer restent **attestés par le chunker,
-non vérifiés** : `chunk_id` (seules sa non-vacuité et l'unicité du point
-dérivé sont contrôlées), `section`, `token_count`, `tokenizer_name`,
+non vérifiés** : `chunk_id` (seules sa non-vacuité, l'absence de caractère de
+contrôle et l'unicité du point dérivé sont contrôlées), `section`, `token_count`, `tokenizer_name`,
 `tokenizer_revision`. Un `chunk_id` forgé mais unique produit donc un point
 dont l'identité n'est pas reproductible par le chunker ; il reste rattrapé par
 le balayage de suppression des points périmés de la même paire (tenant,

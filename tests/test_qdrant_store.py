@@ -121,6 +121,28 @@ class QdrantStoreTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "nonempty list or tuple"):
                     chunk_to_point(self.chunk, vector)
 
+    def test_point_id_key_is_injective_across_field_boundaries(self):
+        from rag_hermes.qdrant_store import stable_point_id
+
+        # A plain separator moves the boundary between two fields as soon as a
+        # field contains it, and document_id comes from the client.
+        for first, second in (
+            (
+                dict(tenant_id="t", document_id="rapport\x1f2024", chunk_id="CHUNKV"),
+                dict(tenant_id="t", document_id="rapport", chunk_id="2024\x1fCHUNKV"),
+            ),
+            (
+                dict(tenant_id="t\x1fx", document_id="doc", chunk_id="c"),
+                dict(tenant_id="t", document_id="x\x1fdoc", chunk_id="c"),
+            ),
+        ):
+            with self.subTest(first=first):
+                common = {"source_sha": "a" * 64, "doc_version": 1}
+                self.assertNotEqual(
+                    stable_point_id(**first, **common),
+                    stable_point_id(**second, **common),
+                )
+
     def test_point_id_is_stable_uuid(self):
         first = chunk_to_point(self.chunk, [1.0, 0.0])
         second = chunk_to_point(self.chunk, [1.0, 0.0])

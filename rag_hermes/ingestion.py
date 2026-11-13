@@ -154,4 +154,9 @@ def chunk_document_tokens(
         )
         if token_end >= len(input_ids):
             break
+    if not chunks:
+        # Every window was zero-width. Returning no chunk would let
+        # replace_document delete the previous revision and report success on
+        # an emptied document.
+        raise ValueError("tokenizer produced no indexable passage")
     return chunks

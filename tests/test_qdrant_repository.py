@@ -398,6 +398,22 @@ class QdrantChunkRepositoryTests(unittest.TestCase):
                 FakeQdrantClient(), collection="hermes_chunks_v1", embed=[1.0, 0.0],
             )
 
+    def test_ingestion_rejects_control_characters_in_identity_fields(self) -> None:
+        client = FakeQdrantClient()
+        repository = QdrantChunkRepository(
+            client, collection="hermes_chunks_v1", embed=lambda text: [1.0, 0.0],
+        )
+        document = replace(self.document, document_id="rapport\x1f2024")
+        chunks = chunk_document(document, max_tokens=4, overlap_tokens=0)
+        with self.assertRaisesRegex(ValueError, "control characters"):
+            repository.replace_document(document, chunks)
+        clean = chunk_document(self.document, max_tokens=4, overlap_tokens=0)
+        forged = replace(clean[0], chunk_id="2024\x1fCHUNKV")
+        with self.assertRaisesRegex(ValueError, "control characters"):
+            repository.replace_document(self.document, [forged, *clean[1:]])
+        self.assertEqual(client.upserted, [])
+        self.assertEqual(client.deleted, [])
+
     def test_dense_only_checks_the_vector_size_when_the_caller_verified_it(self) -> None:
         client = FakeQdrantClient()
         repository = QdrantChunkRepository(

@@ -107,6 +107,20 @@ class TokenChunkingTests(unittest.TestCase):
                 chunk.text, document.content[chunk.start_offset:chunk.end_offset]
             )
 
+    def test_all_zero_width_windows_fail_loudly_instead_of_emptying_the_document(self):
+        class DegenerateTokenizer:
+            def __call__(self, text, **kwargs):
+                return {"input_ids": [1, 2], "offset_mapping": [(0, 0), (0, 0)]}
+
+        # Returning zero chunk would let replace_document delete the previous
+        # revision and report success on an emptied document.
+        with self.assertRaisesRegex(ValueError, "no indexable passage"):
+            chunk_document_tokens(
+                self.document, DegenerateTokenizer(), max_passage_tokens=2,
+                overlap_tokens=0, tokenizer_name="degenerate",
+                tokenizer_revision="test",
+            )
+
     def test_invalid_token_overlap_is_rejected(self):
         with self.assertRaises(ValueError):
             chunk_document_tokens(

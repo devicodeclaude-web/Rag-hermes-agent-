@@ -69,18 +69,18 @@ def stable_point_id(
     The tenant and the document belong in the key: without them two tenants
     ingesting the same document_id at the same version derive the SAME point ID
     (chunk_id is itself a hash of document_id/doc_version/index/source_sha), so
-    the second upsert silently erases the first tenant's passages. The unit
-    separator is used rather than ":" so the key stays unambiguous whatever a
-    field contains (today Chunk also validates the digest format, so ":" is
-    not forgeable, but the key must not depend on that).
+    the second upsert silently erases the first tenant's passages.
+
+    Each part is length-prefixed, so the encoding is injective: a plain
+    separator would move the boundary between two fields as soon as a field
+    contained the separator itself (document_id comes from the client), which
+    brings the silent overwrite straight back.
     """
     # Stay a total serializer (callers pass odd types on purpose to exercise
     # the read-side barriers), hence str() rather than a type check here; the
     # repository type-checks the identity before it ever writes.
-    stable_key = "\x1f".join(
-        str(part)
-        for part in (tenant_id, document_id, chunk_id, source_sha, doc_version)
-    )
+    parts = (tenant_id, document_id, chunk_id, source_sha, doc_version)
+    stable_key = "".join(f"{len(str(part))}\x1f{part}\x1f" for part in parts)
     return str(uuid.uuid5(_POINT_NAMESPACE, stable_key))
 
 

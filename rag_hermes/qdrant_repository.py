@@ -52,6 +52,18 @@ _CHUNK_STR_FIELDS = _PAYLOAD_STR_FIELDS
 _CHUNK_INT_FIELDS = _PAYLOAD_INT_FIELDS
 
 
+def _assert_no_control_characters(value: str, field: str) -> None:
+    """Identity fields must stay free of control characters.
+
+    They are concatenated into the point identity key; a client-supplied
+    document_id carrying U+001F is the kind of input that turns an encoding
+    into a collision. The key is injective on its own, this is the second
+    lock.
+    """
+    if any(ord(character) < 0x20 or ord(character) == 0x7F for character in value):
+        raise ValueError(f"{field} must not contain control characters")
+
+
 def _canonical_identifiers(value: object, field: str) -> tuple[str, ...]:
     """Snapshot an ACL identifier list as plain, immutable strings.
 
@@ -99,6 +111,8 @@ def _snapshot_document(document: Document) -> _DocumentSnapshot:
     for field in ("classification", "doc_version", "acl_version"):
         if type(getattr(document, field)) is not int:
             raise ValueError(f"document field {field!r} must be a plain integer")
+    for field in ("document_id", "tenant_id", "owner_id"):
+        _assert_no_control_characters(getattr(document, field), f"document {field}")
     try:
         source_sha = hashlib.sha256(document.content.encode("utf-8")).hexdigest()
     except UnicodeEncodeError as exc:
@@ -222,6 +236,7 @@ class QdrantChunkRepository:
                 raise ValueError(f"chunk field {field!r} must be a plain integer")
         if not chunk.chunk_id:
             raise ValueError("chunk_id is required")
+        _assert_no_control_characters(chunk.chunk_id, "chunk_id")
         if (
             chunk.document_id != snapshot.document_id
             or chunk.tenant_id != snapshot.tenant_id
