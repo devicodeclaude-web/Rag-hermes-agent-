@@ -7,6 +7,10 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
+from .acl import AuthorizationContext
+from .qdrant_filter import build_qdrant_filter
+from .qdrant_store import lexical_weights_to_sparse_vector
+
 
 class QdrantRestClient:
     def __init__(self, base_url: str, *, timeout: float = 30.0):
@@ -128,6 +132,37 @@ class QdrantRestClient:
         query_filter: dict[str, Any] | None,
         limit: int = 10,
     ) -> list[dict[str, Any]]:
+        return self._query_named(collection, vector, using="dense",
+                                 query_filter=query_filter, limit=limit)
+
+    def query_sparse(
+        self,
+        collection: str,
+        lexical_weights: object,
+        *,
+        context: AuthorizationContext,
+        limit: int = 10,
+    ) -> list[dict[str, Any]]:
+        if (type(context) is not AuthorizationContext
+            or type(context.tenant_id) is not str or not context.tenant_id
+            or type(context.user_id) is not str or not context.user_id
+            or type(context.groups) is not tuple
+            or any(type(group) is not str or not group for group in context.groups)
+            or type(context.clearance) is not int or context.clearance < 0):
+            raise ValueError("valid authorization context is required")
+        sparse = lexical_weights_to_sparse_vector(lexical_weights)
+        return self._query_named(collection, sparse, using="sparse",
+                                 query_filter=build_qdrant_filter(context), limit=limit)
+
+    def _query_named(
+        self,
+        collection: str,
+        vector: Any,
+        *,
+        using: str,
+        query_filter: dict[str, Any] | None,
+        limit: int,
+    ) -> list[dict[str, Any]]:
         if not query_filter:
             raise ValueError("query_filter is mandatory")
         if limit < 1:
@@ -138,7 +173,7 @@ class QdrantRestClient:
             f"/collections/{name}/points/query",
             {
                 "query": vector,
-                "using": "dense",
+                "using": using,
                 "filter": query_filter,
                 "limit": limit,
                 "with_payload": True,

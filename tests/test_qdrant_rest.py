@@ -4,6 +4,8 @@ import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
+from rag_hermes.acl import AuthorizationContext
+from rag_hermes.qdrant_filter import build_qdrant_filter
 from rag_hermes.qdrant_rest import QdrantAuditRestClient, QdrantRestClient
 
 
@@ -106,6 +108,48 @@ class QdrantRestClientTests(unittest.TestCase):
         self.assertEqual(path, "/collections/chunks/points/query")
         self.assertEqual(body["filter"], expected_filter)
         self.assertEqual(body["using"], "dense")
+
+    def test_sparse_query_uses_named_vector_and_canonical_acl_prefilter(self):
+        context = AuthorizationContext("alpha", "alice", ("admins",), 2)
+        expected_filter = build_qdrant_filter(context)
+        self.client.query_sparse("chunks", {"8": 0.5, "3": 0.25},
+                                 context=context, limit=40)
+        method, path, body = RecordingHandler.requests[-1]
+        self.assertEqual((method, path), ("POST", "/collections/chunks/points/query"))
+        self.assertEqual(body, {
+            "query": {"indices": [3, 8], "values": [0.25, 0.5]},
+            "using": "sparse", "filter": expected_filter,
+            "limit": 40, "with_payload": True,
+        })
+
+    def test_sparse_query_rejects_malformed_response_or_missing_context(self):
+        context = AuthorizationContext("alpha", "alice", (), 1)
+        original = self.client._request
+        self.client._request = lambda *_args, **_kwargs: {"status": "error", "result": {"points": []}}
+        try:
+            with self.assertRaisesRegex(RuntimeError, "query status"):
+                self.client.query_sparse("chunks", {"3": 0.2}, context=context)
+        finally:
+            self.client._request = original
+        with self.assertRaisesRegex(ValueError, "context"):
+            self.client.query_sparse("chunks", {"3": 0.2}, context=None)
+        self.assertEqual(RecordingHandler.requests, [])
+
+    def test_sparse_query_refuses_forged_or_malformed_context(self):
+        bad_groups = AuthorizationContext("alpha", "alice", ("admins",), 2)
+        object.__setattr__(bad_groups, "groups", ("admins", 1))
+        bad = (None, {"must": []}, AuthorizationContext("", "alice", (), 1),
+               AuthorizationContext("alpha", "alice", (), True), bad_groups)
+        for context in bad:
+            with self.subTest(context=context), self.assertRaisesRegex(ValueError, "context"):
+                self.client.query_sparse("chunks", {"3": 0.2}, context=context)
+        self.assertEqual(RecordingHandler.requests, [])
+
+    def test_sparse_query_rejects_invalid_weights_before_network(self):
+        with self.assertRaises(ValueError):
+            self.client.query_sparse("chunks", {"3": float("nan")},
+                                     context=AuthorizationContext("alpha", "alice", (), 1))
+        self.assertEqual(RecordingHandler.requests, [])
 
     def test_query_rejects_missing_or_malformed_points_instead_of_abstaining(self):
         original = self.client._request

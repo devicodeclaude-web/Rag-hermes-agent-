@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import math
+import struct
 import uuid
+from collections.abc import Mapping
+from numbers import Real
 from typing import Any
 
 from .acl import Chunk
@@ -23,14 +26,49 @@ def deterministic_test_vector(text: str, *, dimensions: int = 8) -> list[float]:
     return [value / norm for value in values]
 
 
-def chunk_to_point(chunk: Chunk, vector: list[float]) -> dict[str, Any]:
+def lexical_weights_to_sparse_vector(weights: object) -> dict[str, list[int] | list[float]]:
+    """Convert BGE-M3 decimal token-id weights into a nonempty sparse vector."""
+    if not isinstance(weights, Mapping) or not weights:
+        raise ValueError("sparse weights must be a nonempty mapping")
+    pairs: list[tuple[int, float]] = []
+    seen: set[int] = set()
+    for key, value in weights.items():
+        if (type(key) is not str or not key.isascii() or not key.isdecimal()
+            or str(int(key)) != key or int(key) >= 2**32):
+            raise ValueError("sparse token id must be a canonical uint32 decimal string")
+        token_id = int(key)
+        if token_id in seen:
+            raise ValueError("sparse token id is duplicated")
+        seen.add(token_id)
+        if isinstance(value, bool) or not isinstance(value, Real):
+            raise ValueError("sparse weight must be a positive real number")
+        try:
+            weight = float(value)
+            rounded = struct.unpack("f", struct.pack("f", weight))[0]
+        except (OverflowError, ValueError) as exc:
+            raise ValueError("sparse weight is outside float32 range") from exc
+        if not math.isfinite(weight) or rounded <= 0.0 or not math.isfinite(rounded):
+            raise ValueError("sparse weight must be finite and positive in float32")
+        pairs.append((token_id, weight))
+    if not pairs:
+        raise ValueError("sparse weights must contain at least one entry")
+    pairs.sort()
+    return {"indices": [key for key, _ in pairs], "values": [value for _, value in pairs]}
+
+
+def chunk_to_point(
+    chunk: Chunk, vector: list[float], *, sparse_weights: object | None = None
+) -> dict[str, Any]:
     if not vector:
         raise ValueError("vector cannot be empty")
+    vectors: dict[str, Any] = {"dense": vector}
+    if sparse_weights is not None:
+        vectors["sparse"] = lexical_weights_to_sparse_vector(sparse_weights)
     stable_key = f"{chunk.chunk_id}:{chunk.source_sha}:{chunk.doc_version}"
     point_id = str(uuid.uuid5(_POINT_NAMESPACE, stable_key))
     return {
         "id": point_id,
-        "vector": {"dense": vector},
+        "vector": vectors,
         "payload": {
             "chunk_id": chunk.chunk_id,
             "document_id": chunk.document_id,
