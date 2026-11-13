@@ -121,6 +121,29 @@ class QdrantStoreTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "nonempty list or tuple"):
                     chunk_to_point(self.chunk, vector)
 
+    def test_point_id_uses_the_same_string_for_length_and_body(self):
+        from rag_hermes.qdrant_store import stable_point_id
+
+        class OddIdentifier:
+            def __str__(self):
+                return "AB"
+
+            def __format__(self, spec):
+                return "xy"
+
+        shared = dict(
+            document_id="guide", chunk_id="passage", source_sha="a" * 64,
+            doc_version=1,
+        )
+        self.assertEqual(
+            stable_point_id(tenant_id=OddIdentifier(), **shared),
+            stable_point_id(tenant_id="AB", **shared),
+        )
+        self.assertNotEqual(
+            stable_point_id(tenant_id=OddIdentifier(), **shared),
+            stable_point_id(tenant_id="xy", **shared),
+        )
+
     def test_point_id_key_is_injective_across_field_boundaries(self):
         from rag_hermes.qdrant_store import stable_point_id
 
