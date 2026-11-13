@@ -5,7 +5,7 @@ import hashlib
 import json
 import math
 import unicodedata
-from typing import Any, Callable, Iterable
+from typing import Any, Callable, Iterable, cast
 
 from .acl import AuthorizationContext, Chunk, filter_authorized
 from .ingestion import Document
@@ -15,7 +15,8 @@ from .qdrant_store import chunk_to_point, stable_point_id
 from .retrieval import SearchResult
 
 
-_OWNER_SCAN_LIMIT = 10_000
+_OWNER_SCAN_PAGE_SIZE = 10_000
+_OWNER_SCAN_BUDGET = 100_000
 
 _MAX_SPARSE_TOKEN_ID = 2**32
 
@@ -185,35 +186,66 @@ class QdrantChunkRepository:
             self._vector_size = schema["vector_size"]
 
     def _assert_document_owner(self, snapshot: _DocumentSnapshot) -> None:
-        # Takes the snapshot, never the live object: reading owner_id here and
-        # again when the payload is built would let a caller-controlled object
-        # pass the ownership check on one value and write another.
-        existing = self._client.scroll(
-            self._collection,
-            query_filter={
-                "must": [
-                    {"key": "tenant_id", "match": {"value": snapshot.tenant_id}},
-                    {
-                        "key": "document_id",
-                        "match": {"value": snapshot.document_id},
-                    },
-                ],
-            },
-            limit=_OWNER_SCAN_LIMIT,
-        )
-        if len(existing) >= _OWNER_SCAN_LIMIT:
-            raise PermissionError("document owner cannot be verified safely")
-        for point in existing:
-            payload = point.get("payload") if isinstance(point, dict) else None
-            if not isinstance(payload, dict):
-                raise PermissionError("document owner payload is invalid")
+        # A short page is not proof of completion: only Qdrant's terminal
+        # cursor is. Repeated/malformed cursors or a budget overrun fail closed.
+        query_filter = {
+            "must": [
+                {"key": "tenant_id", "match": {"value": snapshot.tenant_id}},
+                {"key": "document_id", "match": {"value": snapshot.document_id}},
+            ],
+        }
+        offset: str | int | None = None
+        scroll_page = cast(Any, getattr(self._client, "scroll_filtered_page", None))
+        if not callable(scroll_page):
+            raise RuntimeError(
+                "Qdrant client must implement scroll_filtered_page with a terminal cursor"
+            )
+        seen_offsets: set[str | int] = set()
+        seen_ids: set[str | int] = set()
+        scanned = 0
+        while True:
+            page, next_offset = scroll_page(
+                self._collection, query_filter=query_filter,
+                limit=_OWNER_SCAN_PAGE_SIZE, offset=offset,
+            )
+            if type(page) is not list or len(page) > _OWNER_SCAN_PAGE_SIZE:
+                raise PermissionError("document owner scan is incomplete")
+            scanned += len(page)
+            if scanned > _OWNER_SCAN_BUDGET:
+                raise PermissionError("document owner scan exceeds budget")
+            for point in page:
+                payload = point.get("payload") if type(point) is dict else None
+                point_id = point.get("id") if type(point) is dict else None
+                if (
+                    type(payload) is not dict
+                    or type(point_id) not in (str, int)
+                    or isinstance(point_id, str) and not point_id
+                    or isinstance(point_id, int) and point_id < 0
+                    or point_id in seen_ids
+                ):
+                    raise PermissionError("document owner payload is invalid")
+                seen_ids.add(cast(str | int, point_id))
+                if (
+                    type(payload.get("tenant_id")) is not str
+                    or payload["tenant_id"] != snapshot.tenant_id
+                    or type(payload.get("document_id")) is not str
+                    or payload["document_id"] != snapshot.document_id
+                    or type(payload.get("owner_id")) is not str
+                    or payload["owner_id"] != snapshot.owner_id
+                ):
+                    raise PermissionError("only the existing document owner can replace it")
+            if next_offset is None:
+                return
             if (
-                payload.get("tenant_id") != snapshot.tenant_id
-                or payload.get("document_id") != snapshot.document_id
-                or not isinstance(payload.get("owner_id"), str)
-                or payload["owner_id"] != snapshot.owner_id
+                type(next_offset) not in (str, int)
+                or isinstance(next_offset, str) and not next_offset
+                or isinstance(next_offset, int) and next_offset < 0
+                or not page
+                or next_offset in seen_offsets
             ):
-                raise PermissionError("only the existing document owner can replace it")
+                raise PermissionError("document owner scan cursor is invalid")
+            seen_offsets.add(next_offset)
+            offset = next_offset
 
     def _assert_chunk_matches_document(
         self,
@@ -422,6 +454,7 @@ class QdrantChunkRepository:
             "must": [
                 {"key": "tenant_id", "match": {"value": snapshot.tenant_id}},
                 {"key": "document_id", "match": {"value": snapshot.document_id}},
+                {"key": "owner_id", "match": {"value": snapshot.owner_id}},
             ]
         }
         if new_point_ids:

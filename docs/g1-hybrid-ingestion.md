@@ -129,12 +129,27 @@ entrée tokenisée ne produit aucune fenêtre de largeur positive, mais cette
 garde seule ne ferme pas les sorties `return []` en amont. Il n'existe pas
 encore d'API de suppression explicite dans ce dépôt. La contre-revue a
 reproduit deux dangers qui empêchent de l'exposer : le contrôle du propriétaire
-ne prouve pas la complétude au-delà de la première page du `scroll` Qdrant,
-et un autre processus peut écrire entre ce contrôle et `delete_points`.
-Ces limites touchent aussi le remplacement existant et **ne sont pas corrigées
-par ce garde-fou sur les révisions vides**. La suppression exige donc une
-conception séparée (pagination vérifiée et exclusion des écritures
-concurrentes) ; ne pas la simuler par une révision vide.
+ne prouvait pas la complétude au-delà de la première page du `scroll` Qdrant
+(défaut corrigé par cette tranche : le contrôle suit désormais le
+`next_page_offset` jusqu'à `null`, dans une limite de 100 000 points et refuse
+les réponses/cursors incohérents). Les clients Qdrant injectés par les
+appelants doivent désormais implémenter
+`scroll_filtered_page(collection, *, query_filter, limit, offset)` et renvoyer
+`(points, next_page_offset)` ; l'ancien `scroll(...)` qui ne renvoie que des
+points n'est plus accepté pour un remplacement, car il ne prouve pas la
+complétude. Les anciens adaptateurs doivent migrer ou échouer explicitement
+avant toute écriture. Un autre processus peut toutefois écrire
+entre ce contrôle et `delete_points`, voire réutiliser un même ID de point : le
+scan paginé n'est PAS un instantané transactionnel. Le filtre de suppression
+contient maintenant `owner_id` en défense supplémentaire, mais Qdrant traite
+un tableau `owner_id` contenant l'appelant comme une correspondance ; ce
+filtre ne remplace pas une sérialisation de toutes les écritures et une
+validation de l'état canonique. Le contrôle de propriétaire et le filtre ne
+suffisent donc toujours pas à garantir une mutation sûre en présence d'écritures
+concurrentes inter-processus ou de payloads corrompus insérés après le scan.
+Ne pas exposer de suppression explicite ni considérer l'issue #71 résolue
+avant une barrière d'écriture commune à tous les processus et une intégration
+Qdrant réelle sur le chemin de remplacement.
 
 Un encodeur qui renvoie un `numpy.ndarray` est refusé (`vector must be a
 nonempty list or tuple of numbers`) : le point doit être sérialisable en JSON,
