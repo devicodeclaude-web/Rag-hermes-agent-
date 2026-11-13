@@ -110,6 +110,72 @@ class QdrantRestClientTests(unittest.TestCase):
         self.assertEqual(path, "/collections/chunks/index?wait=true")
         self.assertEqual(body["field_schema"]["is_tenant"], True)
 
+    def test_filtered_page_preserves_cursor_and_requires_terminal_marker(self):
+        expected_filter = {"must": [{"key": "tenant_id", "match": {"value": "a"}}]}
+        original = self.client._request
+        responses = iter([
+            {"status": "ok", "result": {"points": [{"id": "a", "payload": {}}], "next_page_offset": "b"}},
+            {"status": "ok", "result": {"points": [], "next_page_offset": None}},
+        ])
+        self.client._request = lambda method, path, body: (
+            RecordingHandler.requests.append((method, path, body)) or next(responses)
+        )
+        try:
+            first, cursor = self.client.scroll_filtered_page(
+                "chunks", query_filter=expected_filter, limit=2
+            )
+            last, end = self.client.scroll_filtered_page(
+                "chunks", query_filter=expected_filter, limit=2, offset=cursor
+            )
+        finally:
+            self.client._request = original
+        self.assertEqual(first, [{"id": "a", "payload": {}}])
+        self.assertEqual((cursor, last, end), ("b", [], None))
+        self.assertEqual(RecordingHandler.requests[-2:], [
+            ("POST", "/collections/chunks/points/scroll", {
+                "filter": expected_filter, "limit": 2, "with_payload": True,
+                "with_vector": False,
+            }),
+            ("POST", "/collections/chunks/points/scroll", {
+                "filter": expected_filter, "limit": 2, "with_payload": True,
+                "with_vector": False,
+                "offset": "b",
+            }),
+        ])
+
+    def test_filtered_page_refuses_missing_or_invalid_completion_cursor(self):
+        original = self.client._request
+        filt = {"must": [{"key": "tenant_id", "match": {"value": "a"}}]}
+        for result in (
+            {"points": []},
+            {"points": [], "next_page_offset": False},
+            {"points": [], "next_page_offset": {}},
+            {"points": [], "next_page_offset": ""},
+            {"points": [{}, {}], "next_page_offset": None},
+        ):
+            with self.subTest(result=result):
+                self.client._request = lambda method, path, body: {"status": "ok", "result": result}
+                with self.assertRaisesRegex(RuntimeError, "scroll"):
+                    self.client.scroll_filtered_page(
+                        "chunks", query_filter=filt, limit=1
+                    )
+        self.client._request = original
+
+    def test_filtered_page_refuses_error_status_even_with_points(self):
+        original = self.client._request
+        self.client._request = lambda method, path, body: {
+            "status": "error", "result": {"points": [], "next_page_offset": None},
+        }
+        try:
+            with self.assertRaisesRegex(RuntimeError, "status"):
+                self.client.scroll_filtered_page(
+                    "chunks", query_filter={"must": [
+                        {"key": "tenant_id", "match": {"value": "a"}},
+                    ]},
+                )
+        finally:
+            self.client._request = original
+
     def test_query_sends_filter_and_does_not_default_to_unfiltered(self):
         expected_filter = {"must": [{"key": "tenant_id", "match": {"value": "a"}}]}
         self.client.query("chunks", [1.0, 0.0, 0.0, 0.0], query_filter=expected_filter, limit=5)

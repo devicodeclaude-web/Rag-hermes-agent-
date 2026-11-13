@@ -106,6 +106,54 @@ class QdrantRestClient:
             raise RuntimeError("Qdrant returned malformed scroll result")
         return list(result["points"])
 
+    def scroll_filtered_page(
+        self,
+        collection: str,
+        *,
+        query_filter: dict[str, Any] | None,
+        limit: int = 1,
+        offset: int | str | None = None,
+    ) -> tuple[list[dict[str, Any]], int | str | None]:
+        """Read one filtered page, retaining Qdrant's completion cursor."""
+        if not query_filter:
+            raise ValueError("query_filter is mandatory")
+        if type(limit) is not int or limit < 1:
+            raise ValueError("limit must be positive")
+        if offset is not None and (
+            type(offset) not in (int, str)
+            or isinstance(offset, int) and offset < 0
+            or isinstance(offset, str) and not offset
+        ):
+            raise ValueError("offset must be a point identifier")
+        name = quote(collection, safe="")
+        body: dict[str, Any] = {
+            "filter": query_filter, "limit": limit, "with_payload": True,
+            "with_vector": False,
+        }
+        if offset is not None:
+            body["offset"] = offset
+        response = self._request("POST", f"/collections/{name}/points/scroll", body)
+        if response.get("status") != "ok":
+            raise RuntimeError("Qdrant returned invalid scroll status")
+        result = response.get("result")
+        if (
+            type(result) is not dict
+            or type(result.get("points")) is not list
+            or "next_page_offset" not in result
+        ):
+            raise RuntimeError("Qdrant returned malformed scroll result")
+        points = result["points"]
+        cursor = result["next_page_offset"]
+        if len(points) > limit or (
+            cursor is not None and (
+                type(cursor) not in (int, str)
+                or isinstance(cursor, int) and cursor < 0
+                or isinstance(cursor, str) and not cursor
+            )
+        ):
+            raise RuntimeError("Qdrant returned malformed scroll page")
+        return points, cursor
+
     def upsert(
         self, collection: str, points: list[dict[str, Any]]
     ) -> dict[str, Any]:

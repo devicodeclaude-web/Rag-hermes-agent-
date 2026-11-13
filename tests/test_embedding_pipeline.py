@@ -21,16 +21,19 @@ class FakeQdrantClient:
         self.points: dict[str, dict] = {}
 
     def delete_points(self, collection, query_filter):
-        must = query_filter["must"]
-        tenant = must[0]["match"]["value"]
-        document_id = must[1]["match"]["value"]
-        keep = set()
-        for clause in query_filter.get("must_not", []):
-            keep.update(clause.get("has_id", []))
-        for pid in list(self.points):
-            p = self.points[pid]["payload"]
-            if p["tenant_id"] == tenant and p["document_id"] == document_id and pid not in keep:
-                del self.points[pid]
+        for point_id in list(self.points):
+            payload = self.points[point_id]["payload"]
+            def matches(condition):
+                if "has_id" in condition:
+                    return point_id in condition["has_id"]
+                value = payload.get(condition["key"])
+                expected = condition["match"]["value"]
+                return expected in value if isinstance(value, list) else value == expected
+
+            if all(matches(c) for c in query_filter["must"]) and not any(
+                matches(c) for c in query_filter.get("must_not", [])
+            ):
+                del self.points[point_id]
         return {"status": "ok"}
 
     def upsert(self, collection, points):
@@ -58,8 +61,34 @@ class FakeQdrantClient:
             matches.append(point)
         return matches[:limit]
 
+    def scroll_filtered_page(self, collection, *, query_filter, limit=1, offset=None):
+        points = sorted(
+            self.scroll(collection, query_filter=query_filter, limit=len(self.points)),
+            key=lambda point: point["id"],
+        )
+        if offset is not None:
+            points = [point for point in points if point["id"] >= offset]
+        cursor = points[limit]["id"] if len(points) > limit else None
+        return points[:limit], cursor
+
 
 class LockedEmbedderPipelineTests(unittest.TestCase):
+    def test_fake_delete_honors_owner_filter(self) -> None:
+        client = FakeQdrantClient()
+        for owner in ("alice", "bob"):
+            client.points[owner] = {
+                "id": owner, "payload": {
+                    "tenant_id": "alpha", "document_id": "guide",
+                    "owner_id": owner,
+                },
+            }
+        client.delete_points("hermes_chunks_v1", {"must": [
+            {"key": "tenant_id", "match": {"value": "alpha"}},
+            {"key": "document_id", "match": {"value": "guide"}},
+            {"key": "owner_id", "match": {"value": "alice"}},
+        ]})
+        self.assertEqual(set(client.points), {"bob"})
+
     def test_locked_embedder_feeds_repository_and_answer_returns_1024_dim_backed_result(self) -> None:
         embedder = LockedBgeM3Embedder(
             lock_path="manifests/locks/bge-m3.lock.json",

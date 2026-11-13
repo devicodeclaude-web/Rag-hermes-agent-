@@ -48,6 +48,29 @@ class FakeQdrantClient:
         self.scrolls.append((collection, query_filter, limit))
         return self.scroll_results
 
+    def scroll_filtered_page(
+        self, collection: str, *, query_filter: dict, limit: int = 1,
+        offset: str | int | None = None,
+    ) -> tuple[list[dict], str | int | None]:
+        self.scrolls.append((collection, query_filter, limit))
+        def matches(point: dict) -> bool:
+            payload = point.get("payload", {})
+            return all(
+                condition["match"]["value"] in payload.get(condition["key"], [])
+                if isinstance(payload.get(condition["key"]), list)
+                else payload.get(condition["key"]) == condition["match"]["value"]
+                for condition in query_filter["must"]
+            )
+
+        points = sorted(
+            (point for point in self.scroll_results if matches(point)),
+            key=lambda point: point["id"],
+        )
+        if offset is not None:
+            points = [point for point in points if point["id"] >= offset]
+        cursor = points[limit]["id"] if len(points) > limit else None
+        return points[:limit], cursor
+
 
 class FakeHybridClient(FakeQdrantClient):
     def __init__(self) -> None:
@@ -109,6 +132,51 @@ class QdrantChunkRepositoryTests(unittest.TestCase):
             collection="hermes_chunks_v1",
             embed=lambda text: [float(len(text)), 1.0],
         )
+
+    def test_legacy_client_without_cursor_support_fails_explicitly(self) -> None:
+        class LegacyClient:
+            def __init__(self):
+                self.upserted = []
+                self.deleted = []
+
+            def scroll(self, collection, *, query_filter, limit=1):
+                return []
+
+            def upsert(self, collection, points):
+                self.upserted.append(points)
+
+            def delete_points(self, collection, query_filter):
+                self.deleted.append(query_filter)
+
+        client = LegacyClient()
+        repository = QdrantChunkRepository(
+            client, collection="hermes_chunks_v1", embed=lambda text: [1.0, 0.0],
+        )
+        with self.assertRaisesRegex(RuntimeError, "scroll_filtered_page"):
+            repository.replace_document(self.document, chunk_document(self.document))
+        self.assertEqual(client.upserted, [])
+        self.assertEqual(client.deleted, [])
+
+    def test_fake_filtered_scroll_keeps_cursor_after_full_page(self) -> None:
+        self.client.scroll_results = [
+            {"id": index, "payload": {
+                "tenant_id": "alpha", "document_id": "guide", "owner_id": "alice",
+            }} for index in range(10_001)
+        ]
+        first, cursor = self.client.scroll_filtered_page(
+            "hermes_chunks_v1", query_filter={"must": [
+                {"key": "tenant_id", "match": {"value": "alpha"}},
+            ]}, limit=10_000,
+        )
+        self.assertEqual(len(first), 10_000)
+        self.assertEqual(cursor, 10_000)
+        last, terminal = self.client.scroll_filtered_page(
+            "hermes_chunks_v1", query_filter={"must": [
+                {"key": "tenant_id", "match": {"value": "alpha"}},
+            ]}, limit=10_000, offset=cursor,
+        )
+        self.assertEqual([point["id"] for point in last], [10_000])
+        self.assertIsNone(terminal)
 
     def test_hybrid_ingestion_writes_both_vectors_without_changing_id_or_payload(self) -> None:
         client = FakeHybridClient()
@@ -513,6 +581,7 @@ class QdrantChunkRepositoryTests(unittest.TestCase):
                         "must": [
                             {"key": "tenant_id", "match": {"value": "alpha"}},
                             {"key": "document_id", "match": {"value": "guide"}},
+                            {"key": "owner_id", "match": {"value": "alice"}},
                         ],
                         "must_not": [{"has_id": new_ids}],
                     },
@@ -659,6 +728,119 @@ class QdrantChunkRepositoryTests(unittest.TestCase):
             repository.replace_document(hijacked, chunk_document(hijacked))
 
         self.assertEqual(embed_calls, [])
+        self.assertEqual(client.upserted, [])
+        self.assertEqual(client.deleted, [])
+    def test_replace_refuses_foreign_owner_hidden_after_short_first_page(self) -> None:
+        class TwoPageClient(FakeQdrantClient):
+            def __init__(self):
+                super().__init__()
+                self.offsets = []
+
+            def scroll_filtered_page(self, collection, *, query_filter, limit=1, offset=None):
+                self.offsets.append(offset)
+                owner = "alice" if offset is None else "bob"
+                return ([{"id": owner, "payload": {
+                    "tenant_id": "alpha", "document_id": "guide", "owner_id": owner,
+                }}], "bob" if offset is None else None)
+
+        client = TwoPageClient()
+        repository = QdrantChunkRepository(
+            client, collection="hermes_chunks_v1", embed=lambda text: [1.0, 0.0],
+        )
+        with self.assertRaisesRegex(PermissionError, "owner"):
+            repository.replace_document(self.document, chunk_document(self.document))
+        self.assertEqual(client.offsets, [None, "bob"])
+        self.assertEqual(client.upserted, [])
+        self.assertEqual(client.deleted, [])
+
+    def test_owner_scan_refuses_foreign_owner_after_full_page(self) -> None:
+        self.client.scroll_results = [
+            {"id": index, "payload": {
+                "tenant_id": "alpha", "document_id": "guide", "owner_id": "alice",
+            }} for index in range(10_000)
+        ] + [{"id": 10_000, "payload": {
+            "tenant_id": "alpha", "document_id": "guide", "owner_id": "bob",
+        }}]
+        with self.assertRaisesRegex(PermissionError, "owner"):
+            self.repository.replace_document(
+                self.document, chunk_document(self.document)
+            )
+        self.assertEqual(len(self.client.scrolls), 2)
+        self.assertEqual(self.client.upserted, [])
+        self.assertEqual(self.client.deleted, [])
+
+    def test_owner_scan_accepts_more_than_one_full_page(self) -> None:
+        class LargeDocumentClient(FakeQdrantClient):
+            def __init__(self):
+                super().__init__()
+                self.offsets = []
+
+            def scroll_filtered_page(self, collection, *, query_filter, limit=1, offset=None):
+                self.offsets.append(offset)
+                start = 0 if offset is None else int(offset)
+                end = limit if offset is None else limit + 1
+                return ([{"id": i, "payload": {
+                    "tenant_id": "alpha", "document_id": "guide", "owner_id": "alice",
+                }} for i in range(start, end)], limit if offset is None else None)
+
+        client = LargeDocumentClient()
+        repository = QdrantChunkRepository(
+            client, collection="hermes_chunks_v1", embed=lambda text: [1.0, 0.0],
+        )
+        repository.replace_document(self.document, chunk_document(self.document))
+        self.assertEqual(client.offsets, [None, 10_000])
+        self.assertEqual(len(client.upserted), 1)
+
+    def test_owner_scan_accepts_full_page_with_terminal_cursor(self) -> None:
+        class FullPageClient(FakeQdrantClient):
+            def scroll_filtered_page(self, collection, *, query_filter, limit=1, offset=None):
+                return ([{"id": i, "payload": {
+                    "tenant_id": "alpha", "document_id": "guide", "owner_id": "alice",
+                }} for i in range(limit)], None)
+
+        client = FullPageClient()
+        repository = QdrantChunkRepository(
+            client, collection="hermes_chunks_v1", embed=lambda text: [1.0, 0.0],
+        )
+        repository.replace_document(self.document, chunk_document(self.document))
+        self.assertEqual(len(client.upserted), 1)
+
+    def test_owner_scan_budget_refuses_before_writing(self) -> None:
+        class EndlessClient(FakeQdrantClient):
+            def scroll_filtered_page(self, collection, *, query_filter, limit=1, offset=None):
+                start = 0 if offset is None else int(offset)
+                return ([{"id": i, "payload": {
+                    "tenant_id": "alpha", "document_id": "guide", "owner_id": "alice",
+                }} for i in range(start, start + limit)], start + limit)
+
+        client = EndlessClient()
+        repository = QdrantChunkRepository(
+            client, collection="hermes_chunks_v1", embed=lambda text: [1.0, 0.0],
+        )
+        with self.assertRaisesRegex(PermissionError, "budget"):
+            repository.replace_document(self.document, chunk_document(self.document))
+        self.assertEqual(client.upserted, [])
+        self.assertEqual(client.deleted, [])
+
+    def test_owner_scan_rejects_repeated_cursor_without_mutation(self) -> None:
+        class RepeatedCursorClient(FakeQdrantClient):
+            def __init__(self):
+                super().__init__()
+                self.calls = 0
+
+            def scroll_filtered_page(self, collection, *, query_filter, limit=1, offset=None):
+                self.calls += 1
+                return ([{"id": self.calls, "payload": {
+                    "tenant_id": "alpha", "document_id": "guide", "owner_id": "alice",
+                }}], "loop")
+
+        client = RepeatedCursorClient()
+        repository = QdrantChunkRepository(
+            client, collection="hermes_chunks_v1", embed=lambda text: [1.0, 0.0],
+        )
+        with self.assertRaisesRegex(PermissionError, "cursor"):
+            repository.replace_document(self.document, chunk_document(self.document))
+        self.assertEqual(client.calls, 2)
         self.assertEqual(client.upserted, [])
         self.assertEqual(client.deleted, [])
 
