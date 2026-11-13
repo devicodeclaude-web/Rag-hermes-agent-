@@ -5,37 +5,74 @@
 
 - le constructeur exige un appelable et lance `verify_collection_ready(...,
   require_sparse=True)` : une collection sans vecteur sparse nommé fait échouer
-  l'instanciation plutôt que la première écriture ;
+  l'instanciation plutôt que la première écriture. Le nom de collection est
+  normalisé (`strip`) une seule fois, pour que la collection vérifiée soit
+  exactement celle où l'on écrit ;
 - `replace_document` encode chaque passage une seule fois
   (`dense, sparse = embed_hybrid(chunk.text)`) et écrit les deux vecteurs via
   `chunk_to_point(..., sparse_weights=...)`. L'identifiant de point et le
   payload restent **identiques** à ceux du chemin dense : seul le champ
   `vector` gagne l'entrée `sparse`. L'ordre des écritures ne change pas (upsert
-  de la nouvelle révision, puis suppression des points périmés).
+  de la nouvelle révision, puis suppression des points périmés) ;
+- un rappel qui ne renvoie pas un couple `(dense, sparse)`, ou qui renvoie
+  `sparse=None`, est refusé : en mode hybride, un point dense-seul serait une
+  écriture silencieusement incomplète dans une collection provisionnée pour
+  les deux vecteurs.
 
 Sans `embed_hybrid`, le chemin dense historique et ses appelants sont
-inchangés.
+inchangés (aucune lecture de métadonnées de collection).
 
 ## Barrière de provenance (les deux chemins)
 
 Les chunks sont fournis par l'appelant d'ingestion, pas calculés par le dépôt.
-Avant toute écriture, `replace_document` refuse (`ValueError`) tout chunk dont :
+`replace_document` fige d'abord un instantané des faits du document
+(`_DocumentSnapshot`), puis contrôle **deux fois** :
+
+1. **avant l'encodage**, chaque chunk — pour qu'un passage étranger ne soit
+   même pas envoyé à l'encodeur ;
+2. **avant l'upsert**, le point sérialisé lui-même (aller-retour
+   `json.dumps`/`json.loads`, `allow_nan=False`) — c'est-à-dire exactement ce
+   que Qdrant stockera, payload et vecteurs compris.
+
+Un chunk ou un point est refusé (`ValueError`) si :
 
 - le type n'est pas exactement `Chunk` ;
+- un champ textuel n'est pas exactement `str`, ou un champ entier exactement
+  `int` (ni `bool`, ni sous-classe) ;
 - un champ d'ACL/provenance (`document_id`, `tenant_id`, `owner_id`,
   `visibility`, `allowed_groups`, `allowed_users`, `classification`,
-  `doc_version`, `acl_version`, `source_uri`) diffère du document — en valeur
-  **et** en type, pour qu'un substitut vrai-ish (`1` vs `True`, liste vs
-  tuple) ne passe pas ;
-- `source_sha` ne vaut pas le SHA-256 du contenu du document ;
-- les bornes `start_offset`/`end_offset` ne sont pas des entiers vrais avec
+  `doc_version`, `acl_version`, `source_uri`) diffère de l'instantané ;
+- `source_sha` ne vaut pas le SHA-256 du contenu du document, ou
+  `content_hash` n'est ni vide ni ce même SHA-256 (c'est la règle que la
+  barrière ACL canonique applique déjà à la lecture : accepter autre chose à
+  l'écriture empoisonnerait l'index) ;
+- les bornes `start_offset`/`end_offset` ne vérifient pas
   `0 <= start < end <= len(content)` ;
-- `content[start_offset:end_offset]` ne reproduit pas exactement `text`.
+- `content[start_offset:end_offset]` ne reproduit pas exactement `text` ;
+- deux chunks produisent le **même identifiant de point** (ils s'écraseraient
+  l'un l'autre alors que `chunk_count` annoncerait les deux) ;
+- le vecteur dense n'est pas une liste non vide de nombres finis, ou sa
+  dimension ne correspond pas à celle de la collection vérifiée (mode
+  hybride) ; le vecteur sparse doit porter des indices uint32 uniques et des
+  poids finis strictement positifs, en nombre égal aux indices.
 
-Les deux dernières règles sont nécessaires : un hash qui porte sur le document
-entier ne détecte PAS un texte de passage forgé, et des bornes négatives ou
-inversées découperaient silencieusement autre chose (ou rien). Un chunk refusé
-l'est **avant** l'upsert ; aucun appel `upsert`/`delete_points` n'est émis.
+Pourquoi ces règles, et pas de simples comparaisons `!=` :
+
+- un hash qui porte sur le document entier ne détecte **pas** un texte de
+  passage forgé, et des bornes négatives ou inversées découperaient
+  silencieusement autre chose (ou rien) ;
+- une sous-classe de `str` qui surcharge `__eq__`/`__ne__` se compare égale au
+  document tout en sérialisant un autre identifiant d'ACL : d'où le contrôle
+  de type exact, y compris **sur les éléments** des listes d'ACL ;
+- le payload est construit **après** le rappel d'encodage, à partir de
+  conteneurs qui appartiennent encore à l'appelant : un rappel qui élargit la
+  liste ACL partagée en cours de route produirait un point plus permissif que
+  celui validé. L'instantané pris avant l'encodage et la revalidation du point
+  sérialisé ferment ce décalage.
+
+Un refus intervient **avant** l'upsert : aucun appel `upsert`/`delete_points`
+n'est émis (la vérification du propriétaire du document, elle, a déjà lu
+l'index via `scroll`).
 
 ## Limites
 
@@ -43,5 +80,13 @@ Les tests utilisent un faux client Qdrant et un faux encodeur : aucun Qdrant
 réel, aucun BGE-M3, aucun GPU n'est exercé ici. Cette tranche ne démontre pas
 le retrieval hybride, la fusion RRF, le reranking, ni une quelconque qualité
 G1 ; le service G1 ne branche pas encore `embed_hybrid` sur un vrai encodeur.
-La barrière de provenance vérifie la cohérence chunk↔document fourni : elle ne
-prouve pas que ce document correspond à la source documentaire d'origine.
+
+La barrière vérifie la cohérence chunk↔document **fourni** : elle ne prouve
+pas que ce document corresponde à la source documentaire d'origine. Les champs
+que le document ne permet pas de recalculer restent **attestés par le chunker,
+non vérifiés** : `chunk_id` (seules sa non-vacuité et l'unicité du point
+dérivé sont contrôlées), `section`, `token_count`, `tokenizer_name`,
+`tokenizer_revision`. Un `chunk_id` forgé mais unique produit donc un point
+dont l'identité n'est pas reproductible par le chunker ; il reste rattrapé par
+le balayage de suppression des points périmés de la même paire (tenant,
+document), mais la valeur elle-même n'est pas prouvée.
