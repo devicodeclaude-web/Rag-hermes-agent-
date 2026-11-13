@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import multiprocessing
 import os
 from pathlib import Path
+import tempfile
 import unittest
 import uuid
 from unittest.mock import patch
@@ -20,6 +22,36 @@ INDEX_SPEC = Path("qdrant/payload-indexes.json")
 def _fixed_vector(_text: str) -> list[float]:
     # Identical vector for every chunk: proves the ACL prefilter, not ranking.
     return [1.0, 0.0, 0.0, 0.0]
+
+
+def _blocked_replace_worker(url, collection, directory, document, entered, release, results) -> None:
+    client = QdrantRestClient(url)
+    def embed(text):
+        entered.set()
+        if not release.wait(15):
+            raise TimeoutError("test worker release not received")
+        return _fixed_vector(text)
+
+    try:
+        repo = QdrantChunkRepository(
+            client, collection=collection, embed=embed, lock_dir=directory,
+        )
+        repo.replace_document(document, chunk_document(document))
+        results.put("completed")
+    except Exception as exc:
+        results.put(type(exc).__name__ + ": " + str(exc))
+
+
+def _contending_replace_worker(url, collection, directory, document, results) -> None:
+    try:
+        repo = QdrantChunkRepository(
+            QdrantRestClient(url), collection=collection, embed=_fixed_vector,
+            lock_dir=directory, lock_timeout=0.2,
+        )
+        repo.replace_document(document, chunk_document(document))
+        results.put("unexpectedly completed")
+    except Exception as exc:
+        results.put(type(exc).__name__ + ": " + str(exc))
 
 
 @unittest.skipUnless(
@@ -81,6 +113,61 @@ class QdrantRepositoryIntegrationTests(unittest.TestCase):
         texts = {result.chunk.text for result in results}
         self.assertIn("Nouvelle version du guide.", texts)
         self.assertNotIn("Ancienne version du guide.", texts)
+
+    def test_two_processes_serialize_replacement_on_real_qdrant(self) -> None:
+        ctx = multiprocessing.get_context("spawn")
+        first = self._document("flock", "alpha", "alice", "Révision initiale.")
+        held = self._document("flock", "alpha", "alice", "Révision en cours.")
+        second = self._document("flock", "alpha", "alice", "Révision suivante.")
+        self.repository.replace_document(first, chunk_document(first))
+        with tempfile.TemporaryDirectory() as directory:
+            entered, release = ctx.Event(), ctx.Event()
+            results = ctx.Queue()
+            url = os.environ["QDRANT_INTEGRATION_URL"]
+            worker = ctx.Process(
+                target=_blocked_replace_worker,
+                args=(url, self.collection, directory, held, entered, release, results),
+            )
+            contender = ctx.Process(
+                target=_contending_replace_worker,
+                args=(url, self.collection, directory, second, results),
+            )
+            worker.start()
+            try:
+                self.assertTrue(entered.wait(15), "first writer did not reach encoder")
+                contender.start()
+                contender.join(15)
+                self.assertEqual(contender.exitcode, 0)
+                self.assertTrue(results.get(timeout=5).startswith("TimeoutError: document write lock"))
+                # The held writer has not changed Qdrant, and the contender
+                # must not even scan while it waits for this lock.
+                points = self.client.scroll(self.collection, query_filter={"must": [
+                    {"key": "tenant_id", "match": {"value": "alpha"}},
+                    {"key": "document_id", "match": {"value": "flock"}},
+                ]}, limit=10)
+                self.assertEqual({point["payload"]["text"] for point in points}, {first.content})
+                release.set()
+                worker.join(15)
+                self.assertEqual(worker.exitcode, 0)
+                self.assertEqual(results.get(timeout=5), "completed")
+                following = QdrantChunkRepository(
+                    self.client, collection=self.collection, embed=_fixed_vector,
+                    lock_dir=directory,
+                )
+                following.replace_document(second, chunk_document(second))
+                points = self.client.scroll(self.collection, query_filter={"must": [
+                    {"key": "tenant_id", "match": {"value": "alpha"}},
+                    {"key": "document_id", "match": {"value": "flock"}},
+                ]}, limit=10)
+                self.assertEqual({point["payload"]["text"] for point in points}, {second.content})
+            finally:
+                release.set()
+                for process in (worker, contender):
+                    if process.pid is not None:
+                        process.join(2)
+                        if process.is_alive():
+                            process.terminate()
+                            process.join(5)
 
     def test_filtered_scroll_pages_round_trip_with_real_qdrant(self) -> None:
         for index in range(3):

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import namedtuple
 from dataclasses import replace
+import tempfile
 import unittest
 
 from rag_hermes.acl import AuthorizationContext
@@ -9,6 +10,7 @@ from rag_hermes.ingestion import Document, chunk_document
 from rag_hermes.qdrant_filter import build_qdrant_filter
 from rag_hermes.qdrant_preflight import QdrantPreflightError
 from rag_hermes.qdrant_repository import QdrantChunkRepository
+from rag_hermes.qdrant_write_lock import document_write_lock
 from rag_hermes.qdrant_store import chunk_to_point
 from tests.test_qdrant_preflight import _collection
 
@@ -773,6 +775,43 @@ class QdrantChunkRepositoryTests(unittest.TestCase):
                 )
             ],
         )
+
+    def test_replacement_refuses_contended_lock_before_scan_or_mutation(self) -> None:
+        chunks = chunk_document(self.document)
+        with tempfile.TemporaryDirectory() as directory:
+            repository = QdrantChunkRepository(
+                self.client, collection="hermes_chunks_v1",
+                embed=lambda text: [1.0, 0.0],
+                lock_dir=directory, lock_timeout=0.1,
+            )
+            with document_write_lock(directory, "hermes_chunks_v1", "alpha", "guide"):
+                with self.assertRaisesRegex(TimeoutError, "lock"):
+                    repository.replace_document(self.document, chunks)
+            self.assertEqual(self.client.scrolls, [])
+            self.assertEqual(self.client.upserted, [])
+            self.assertEqual(self.client.deleted, [])
+
+    def test_replacement_holds_lock_through_embedding_and_releases_it(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            entered_embed = []
+
+            def embed(text):
+                with self.assertRaisesRegex(TimeoutError, "lock"):
+                    with document_write_lock(
+                        directory, "hermes_chunks_v1", "alpha", "guide", timeout=0.1
+                    ):
+                        self.fail("lock released while embedding")
+                entered_embed.append(text)
+                return [1.0, 0.0]
+
+            repository = QdrantChunkRepository(
+                self.client, collection="hermes_chunks_v1", embed=embed,
+                lock_dir=directory, lock_timeout=0.1,
+            )
+            repository.replace_document(self.document, chunk_document(self.document))
+            self.assertTrue(entered_embed)
+            with document_write_lock(directory, "hermes_chunks_v1", "alpha", "guide", timeout=0.1):
+                pass
 
     def test_search_prefilters_in_qdrant_and_postfilters_returned_candidates(self) -> None:
         alpha_chunk = chunk_document(self.document)[0]
