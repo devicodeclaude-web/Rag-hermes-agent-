@@ -299,6 +299,19 @@ class QdrantChunkRepositoryTests(unittest.TestCase):
         self.repository._dense_distance = "Cosine"
         self.assertTrue(self.repository._readback_vector_matches(expected, actual))
 
+    def test_dense_float16_collection_fails_before_any_mutation(self) -> None:
+        class Float16Client(FakeQdrantClient):
+            def get_collection(self, collection):
+                return {"config": {"params": {"vectors": {"dense": {
+                    "distance": "Cosine", "datatype": "float16",
+                }}}}}
+        client = Float16Client()
+        repo = QdrantChunkRepository(client, collection="hermes_chunks_v1", embed=lambda _: [3.0, 4.0])
+        with self.assertRaisesRegex(RuntimeError, "float16|datatype"):
+            repo.replace_document(self.document, chunk_document(self.document))
+        self.assertEqual(client.upserted, [])
+        self.assertEqual(client.deleted, [])
+
     def test_dot_collection_rejects_stale_unit_vector_even_when_payload_matches(self) -> None:
         class DotClient(FakeQdrantClient):
             def get_collection(self, collection):

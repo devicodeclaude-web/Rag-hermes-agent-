@@ -475,11 +475,15 @@ class QdrantChunkRepository:
             if callable(get_collection):
                 metadata = get_collection(self._collection)
                 try:
-                    distance = metadata["config"]["params"]["vectors"]["dense"]["distance"]
-                except (KeyError, TypeError) as exc:
+                    dense_config = metadata["config"]["params"]["vectors"]["dense"]
+                    distance = dense_config["distance"]
+                    datatype = dense_config.get("datatype")
+                except (KeyError, TypeError, AttributeError) as exc:
                     raise RuntimeError("Qdrant dense distance metadata is invalid") from exc
                 if type(distance) is not str or distance not in {"Cosine", "Dot", "Euclid", "Manhattan"}:
                     raise RuntimeError("Qdrant dense distance metadata is invalid")
+                if datatype not in (None, "float32"):
+                    raise RuntimeError("Qdrant dense datatype must be float32 for readback verification")
                 self._dense_distance = distance
             else:
                 self._dense_distance = None  # injected clients without metadata: strict exact comparison

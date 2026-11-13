@@ -157,6 +157,25 @@ class QdrantRepositoryIntegrationTests(unittest.TestCase):
         self.assertEqual([point["payload"]["owner_id"] for point in points],
                          ["alice", "alice", "bob"])
 
+    def test_float16_collection_refused_before_writing_real_qdrant(self) -> None:
+        collection = "hermes_fp16_" + uuid.uuid4().hex[:12]
+        self.client._request("PUT", f"/collections/{collection}", {
+            "vectors": {"dense": {"size": 4, "distance": "Cosine", "datatype": "float16"}},
+        })
+        try:
+            repository = QdrantChunkRepository(
+                self.client, collection=collection, embed=_fixed_vector,
+            )
+            document = self._document("fp16", "alpha", "alice", "Texte intègre.")
+            with self.assertRaisesRegex(RuntimeError, "datatype"):
+                repository.replace_document(document, chunk_document(document))
+            points = self.client.scroll(collection, query_filter={"must": [
+                {"key": "tenant_id", "match": {"value": "alpha"}},
+            ]}, limit=10)
+            self.assertEqual(points, [])
+        finally:
+            self.client.delete_collection(collection)
+
     def test_hybrid_replace_reads_back_normalized_dense_and_sparse_vectors(self) -> None:
         # Hybrid preflight needs a sparse vector and the full ACL payload indexes.
         collection = "hermes_hybrid_" + uuid.uuid4().hex[:12]

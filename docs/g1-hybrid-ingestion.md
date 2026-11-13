@@ -157,13 +157,16 @@ l'upsert avec `with_payload: true` et `with_vector: true`, et refuse un ID,
 payload ou vecteur manquant, étranger ou incohérent **avant toute suppression**.
 Le vecteur dense est comparé aux valeurs attendues ; leur normalisation
 Cosine (float32 toléré, tolérance relative seulement) n'est admise que si la
-distance `Cosine` est prouvée par le prévol hybride ou lue dans les métadonnées
-de la collection avant le remplacement. Sans `get_collection` sur un client
-dense injecté, seule l'égalité numérique sans normalisation est admise : une
-collection Cosine derrière cet adaptateur doit exposer les métadonnées pour
-que le remplacement réussisse. Le sparse est comparé par indice
-indépendamment de l'ordre. Le client
-injecté doit implémenter cette relecture et accepter `update_filter=` sur
+distance `Cosine` et le stockage `float32` (ou l'absence de `datatype`, valeur
+par défaut) sont vérifiés dans les métadonnées avant le remplacement ; le
+prévol hybride impose déjà ces paramètres. Une collection dense `float16` ou
+`uint8` est refusée **avant tout upsert**, plutôt que d'écrire puis d'échouer
+sur la quantification non représentable à cette tolérance. Sans
+`get_collection` sur un client dense injecté, seule l'égalité numérique sans
+normalisation est admise : une collection Cosine derrière cet adaptateur doit
+exposer les métadonnées pour que le remplacement réussisse. Le sparse est
+comparé par indice indépendamment de l'ordre. Le client injecté doit
+implémenter cette relecture et accepter `update_filter=` sur
 `upsert(...)` ; adapter les anciens clients (pas de repli non conditionnel).
 
 La suppression utilise un filtre contenant **uniquement les IDs périmés vus
