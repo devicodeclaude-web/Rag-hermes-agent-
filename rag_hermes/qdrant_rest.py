@@ -51,16 +51,20 @@ class QdrantRestClient:
         return result
 
     def create_collection(
-        self, collection: str, *, vector_size: int, distance: str = "Cosine"
+        self, collection: str, *, vector_size: int, distance: str = "Cosine",
+        sparse: bool = False,
     ) -> dict[str, Any]:
         if vector_size < 1:
             raise ValueError("vector_size must be positive")
+        if type(sparse) is not bool:
+            raise ValueError("sparse must be a boolean")
         name = quote(collection, safe="")
-        return self._request(
-            "PUT",
-            f"/collections/{name}",
-            {"vectors": {"dense": {"size": vector_size, "distance": distance}}},
-        )
+        body: dict[str, Any] = {
+            "vectors": {"dense": {"size": vector_size, "distance": distance}}
+        }
+        if sparse:
+            body["sparse_vectors"] = {"sparse": {}}
+        return self._request("PUT", f"/collections/{name}", body)
 
     def delete_collection(self, collection: str) -> dict[str, Any]:
         name = quote(collection, safe="")

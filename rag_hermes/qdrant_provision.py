@@ -13,7 +13,8 @@ class ProvisioningClient(Protocol):
     def collection_exists(self, collection: str) -> bool: ...
 
     def create_collection(
-        self, collection: str, *, vector_size: int, distance: str = "Cosine"
+        self, collection: str, *, vector_size: int, distance: str = "Cosine",
+        sparse: bool = False,
     ) -> dict[str, Any]: ...
 
     def create_payload_index(
@@ -108,6 +109,7 @@ def provision_collection(
     collection: str,
     vector_size: int,
     specification: dict[str, Any],
+    sparse: bool = False,
 ) -> dict[str, Any]:
     """Create an absent Qdrant collection and its declared payload indexes."""
     collection = collection.strip()
@@ -115,12 +117,17 @@ def provision_collection(
         raise ValueError("collection must not be empty")
     if not isinstance(vector_size, int) or isinstance(vector_size, bool) or vector_size < 1:
         raise ValueError("vector_size must be a positive integer")
+    if type(sparse) is not bool:
+        raise ValueError("sparse must be a boolean")
 
     indexes = _validated_indexes(specification)
 
     created_collection = not client.collection_exists(collection)
     if created_collection:
-        client.create_collection(collection, vector_size=vector_size)
+        if sparse:
+            client.create_collection(collection, vector_size=vector_size, sparse=True)
+        else:
+            client.create_collection(collection, vector_size=vector_size)
         existing_schema: dict[str, Any] = {}
     else:
         metadata = client.get_collection(collection)
@@ -142,6 +149,28 @@ def provision_collection(
                 f"existing collection {collection!r} has dense distance "
                 f"{actual_distance!r}; required 'Cosine'"
             )
+        if sparse and dense.get("datatype") not in (None, "float32"):
+            raise QdrantProvisionError(
+                f"existing collection {collection!r} has incompatible dense datatype"
+            )
+        if sparse:
+            sparse_config = metadata.get("config", {}).get("params", {}).get("sparse_vectors")
+            if not isinstance(sparse_config, dict) or not isinstance(sparse_config.get("sparse"), dict):
+                raise QdrantProvisionError(
+                    f"existing collection {collection!r} has no named sparse vector"
+                )
+            if sparse_config["sparse"].get("modifier") not in (None, "none"):
+                raise QdrantProvisionError(
+                    f"existing collection {collection!r} has incompatible sparse modifier"
+                )
+            sparse_index = sparse_config["sparse"].get("index")
+            if sparse_index is not None and (
+                not isinstance(sparse_index, dict)
+                or sparse_index.get("datatype") not in (None, "float32")
+            ):
+                raise QdrantProvisionError(
+                    f"existing collection {collection!r} has incompatible sparse index datatype"
+                )
         schema = metadata.get("payload_schema")
         if not isinstance(schema, dict):
             raise QdrantProvisionError(
@@ -185,7 +214,7 @@ def provision_collection(
         client.create_payload_index(collection, field_name, index["field_schema"])
         created_indexes.append(field_name)
 
-    verify_collection_ready(client, collection)
+    verify_collection_ready(client, collection, require_sparse=sparse)
     return {
         "collection": collection,
         "collection_created": created_collection,

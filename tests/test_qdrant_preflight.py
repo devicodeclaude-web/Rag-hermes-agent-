@@ -105,6 +105,63 @@ class VerifyCollectionReadyTests(unittest.TestCase):
             sorted(REQUIRED_PAYLOAD_INDEXES),
         )
 
+    def test_hybrid_preflight_rejects_missing_sparse_vector(self) -> None:
+        client = FakeClient(_collection())
+        with self.assertRaisesRegex(QdrantPreflightError, "sparse"):
+            verify_collection_ready(client, "hybrid", require_sparse=True)
+
+    def test_hybrid_preflight_accepts_named_sparse_vector(self) -> None:
+        metadata = _collection()
+        metadata["config"]["params"]["sparse_vectors"] = {"sparse": {"index": {"on_disk": False}}}
+        client = FakeClient(metadata)
+        report = verify_collection_ready(client, "hybrid", require_sparse=True)
+        self.assertEqual(report["vector_name"], "dense")
+        self.assertEqual(client.calls, ["hybrid"])
+
+    def test_hybrid_preflight_rejects_malformed_sparse_vector(self) -> None:
+        for malformed in (None, [], {}, {"other": {}}, {"sparse": None}, {"sparse": []}):
+            with self.subTest(malformed=malformed):
+                metadata = _collection()
+                metadata["config"]["params"]["sparse_vectors"] = malformed
+                with self.assertRaisesRegex(QdrantPreflightError, "sparse"):
+                    verify_collection_ready(FakeClient(metadata), "hybrid", require_sparse=True)
+
+    def test_hybrid_preflight_rejects_idf_modifier(self) -> None:
+        metadata = _collection()
+        metadata["config"]["params"]["sparse_vectors"] = {"sparse": {"modifier": "idf"}}
+        with self.assertRaisesRegex(QdrantPreflightError, "modifier"):
+            verify_collection_ready(FakeClient(metadata), "hybrid", require_sparse=True)
+
+    def test_hybrid_preflight_accepts_explicit_none_modifier(self) -> None:
+        metadata = _collection()
+        metadata["config"]["params"]["sparse_vectors"] = {"sparse": {"modifier": "none"}}
+        self.assertEqual(
+            verify_collection_ready(FakeClient(metadata), "hybrid", require_sparse=True)["vector_name"],
+            "dense",
+        )
+
+    def test_hybrid_preflight_rejects_non_float32_sparse_index(self) -> None:
+        for datatype in ("uint8", "float16", "unknown"):
+            with self.subTest(datatype=datatype):
+                metadata = _collection()
+                metadata["config"]["params"]["sparse_vectors"] = {
+                    "sparse": {"index": {"datatype": datatype}}
+                }
+                with self.assertRaisesRegex(QdrantPreflightError, "datatype"):
+                    verify_collection_ready(FakeClient(metadata), "hybrid", require_sparse=True)
+
+    def test_hybrid_preflight_refuses_dense_dot_distance(self) -> None:
+        metadata = _collection(vectors={"dense": {"size": 1024, "distance": "Dot"}})
+        metadata["config"]["params"]["sparse_vectors"] = {"sparse": {}}
+        with self.assertRaisesRegex(QdrantPreflightError, "Cosine"):
+            verify_collection_ready(FakeClient(metadata), "hybrid", require_sparse=True)
+
+    def test_hybrid_preflight_refuses_quantized_dense_vector(self) -> None:
+        metadata = _collection(vectors={"dense": {"size": 1024, "distance": "Cosine", "datatype": "uint8"}})
+        metadata["config"]["params"]["sparse_vectors"] = {"sparse": {}}
+        with self.assertRaisesRegex(QdrantPreflightError, "dense.*datatype"):
+            verify_collection_ready(FakeClient(metadata), "hybrid", require_sparse=True)
+
     def test_missing_collection_is_refused_with_actionable_message(self) -> None:
         client = FakeClient(
             RuntimeError("Qdrant HTTP 404: Collection `x` doesn't exist!")
