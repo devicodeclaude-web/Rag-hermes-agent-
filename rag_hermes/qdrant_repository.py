@@ -177,6 +177,9 @@ class QdrantChunkRepository:
         # not required to expose it), so a caller that already ran the
         # preflight passes the verified size in.
         self._vector_size: int | None = vector_size
+        # Unknown distance accepts only exact readback; a real REST client
+        # exposes metadata so Cosine normalization can be verified explicitly.
+        self._dense_distance: str | None = None
         if embed_hybrid is not None:
             schema = verify_collection_ready(
                 client, self._collection, require_sparse=True
@@ -184,8 +187,9 @@ class QdrantChunkRepository:
             if vector_size is not None and vector_size != schema["vector_size"]:
                 raise ValueError("vector_size does not match the collection")
             self._vector_size = schema["vector_size"]
+            self._dense_distance = "Cosine"  # verified by hybrid preflight
 
-    def _assert_document_owner(self, snapshot: _DocumentSnapshot) -> None:
+    def _assert_document_owner(self, snapshot: _DocumentSnapshot) -> set[str | int]:
         # A short page is not proof of completion: only Qdrant's terminal
         # cursor is. Repeated/malformed cursors or a budget overrun fail closed.
         query_filter = {
@@ -235,7 +239,7 @@ class QdrantChunkRepository:
                 ):
                     raise PermissionError("only the existing document owner can replace it")
             if next_offset is None:
-                return
+                return seen_ids
             if (
                 type(next_offset) not in (str, int)
                 or isinstance(next_offset, str) and not next_offset
@@ -407,6 +411,54 @@ class QdrantChunkRepository:
         ):
             raise ValueError("sparse vector is invalid")
 
+    def _readback_vector_matches(self, expected: dict[str, Any], actual: object) -> bool:
+        """Compare Qdrant's float32 vectors against its configured distance.
+
+        A skipped upsert can leave the expected payload/ID with an old vector.
+        Dense vectors may be stored unit-normalized only for Cosine distance;
+        sparse indices may be reordered on retrieval.
+        """
+        if type(actual) is not dict or set(actual) != set(expected):
+            return False
+        dense = actual["dense"]
+        wanted = expected["dense"]
+        if type(dense) is not list or len(dense) != len(wanted) or any(
+            type(value) not in (int, float) or not math.isfinite(value)
+            for value in dense
+        ):
+            return False
+        norm = math.hypot(*wanted)
+        normalized = [value / norm for value in wanted] if norm else wanted
+        if not (
+            all(math.isclose(value, original, rel_tol=1e-5, abs_tol=0.0)
+                for value, original in zip(dense, wanted))
+            or (self._dense_distance == "Cosine" and all(
+                math.isclose(value, unit, rel_tol=1e-5, abs_tol=0.0)
+                for value, unit in zip(dense, normalized)
+            ))
+        ):
+            return False
+        if "sparse" not in expected:
+            return True
+        sparse = actual["sparse"]
+        if type(sparse) is not dict or set(sparse) != {"indices", "values"}:
+            return False
+        indices, values = sparse["indices"], sparse["values"]
+        if (
+            type(indices) is not list or type(values) is not list
+            or len(indices) != len(values)
+            or any(type(i) is not int for i in indices)
+            or len(set(indices)) != len(indices)
+            or any(type(v) not in (int, float) or not math.isfinite(v) for v in values)
+        ):
+            return False
+        wanted_sparse = expected["sparse"]
+        wanted_values = dict(zip(wanted_sparse["indices"], wanted_sparse["values"]))
+        return set(indices) == set(wanted_values) and all(
+            math.isclose(value, wanted_values[index], rel_tol=1e-5, abs_tol=0.0)
+            for index, value in zip(indices, values)
+        )
+
     def replace_document(
         self,
         document: Document,
@@ -418,7 +470,27 @@ class QdrantChunkRepository:
         # containers belong to the caller, so a value read before the encoder
         # callback could differ from the one that ends up in the payload.
         snapshot = _snapshot_document(document)
-        self._assert_document_owner(snapshot)
+        if self._embed_hybrid is None:
+            get_collection = getattr(self._client, "get_collection", None)
+            if callable(get_collection):
+                metadata = get_collection(self._collection)
+                try:
+                    dense_config = metadata["config"]["params"]["vectors"]["dense"]
+                    distance = dense_config["distance"]
+                    datatype = dense_config.get("datatype")
+                except (KeyError, TypeError, AttributeError) as exc:
+                    raise RuntimeError("Qdrant dense distance metadata is invalid") from exc
+                if type(distance) is not str or distance not in {"Cosine", "Dot", "Euclid", "Manhattan"}:
+                    raise RuntimeError("Qdrant dense distance metadata is invalid")
+                if datatype not in (None, "float32"):
+                    raise RuntimeError("Qdrant dense datatype must be float32 for readback verification")
+                self._dense_distance = distance
+            else:
+                self._dense_distance = None  # injected clients without metadata: strict exact comparison
+        old_ids = self._assert_document_owner(snapshot)
+        readback = getattr(self._client, "retrieve_points", None)
+        if not callable(readback):
+            raise RuntimeError("Qdrant client must implement retrieve_points for conditional upsert verification")
         materialized = list(chunks)
         if not materialized:
             raise ValueError("a replacement must carry at least one passage")
@@ -444,22 +516,62 @@ class QdrantChunkRepository:
             # Two chunks sharing a point ID would overwrite each other: the
             # write would silently store fewer passages than reported.
             raise ValueError("chunks produce duplicate point identifiers")
-        if points:
-            # Upsert the new revision first so a failure never leaves the
-            # document deleted (compensating write, not a silent gap).
-            self._client.upsert(self._collection, points)
-        # Delete every stale point of this (tenant, document) that is not part
-        # of the revision we just wrote.
+        # The server checks the OLD payload at the moment of the upsert.
+        # New IDs are inserted even if update_filter would not match: read back
+        # every requested ID before a delete, since a skipped update is silent.
+        guard = {"must": [
+            {"key": "tenant_id", "match": {"value": snapshot.tenant_id}},
+            {"key": "document_id", "match": {"value": snapshot.document_id}},
+            {"key": "owner_id", "match": {"value": snapshot.owner_id}},
+        ], "must_not": [
+            {"key": "tenant_id", "match": {"except": [snapshot.tenant_id]}},
+            {"key": "document_id", "match": {"except": [snapshot.document_id]}},
+            {"key": "owner_id", "match": {"except": [snapshot.owner_id]}},
+        ]}
+        response = self._client.upsert(self._collection, points, update_filter=guard)
+        if (
+            type(response) is not dict or response.get("status") != "ok"
+            or type(response.get("result")) is not dict
+            or response["result"].get("status") != "completed"
+        ):
+            raise RuntimeError("Qdrant conditional upsert did not complete")
+        persisted = readback(self._collection, new_point_ids)
+        if type(persisted) is not list or len(persisted) != len(new_point_ids):
+            raise PermissionError("conditional upsert did not persist every point")
+        expected = {point["id"]: point for point in points}
+        seen: set[str] = set()
+        for point in persisted:
+            point_id = point.get("id") if type(point) is dict else None
+            if (
+                type(point_id) is not str or point_id not in expected
+                or point_id in seen or type(point.get("payload")) is not dict
+                or point["payload"] != expected[point_id]["payload"]
+                or not self._readback_vector_matches(
+                    expected[point_id]["vector"], point.get("vector")
+                )
+            ):
+                raise PermissionError("conditional upsert verification failed")
+            seen.add(point_id)
+        # Delete only IDs actually seen in a completed owner scan. Keep the
+        # tenant/document/owner predicates as defense against a later scalar
+        # owner change; this is NOT a lock against ID reuse or array payloads.
+        stale_ids = old_ids.difference(new_point_ids)
+        if not stale_ids:
+            return QdrantReplaceResult(snapshot.document_id, len(materialized))
         query_filter: dict[str, Any] = {
             "must": [
-                {"key": "tenant_id", "match": {"value": snapshot.tenant_id}},
-                {"key": "document_id", "match": {"value": snapshot.document_id}},
-                {"key": "owner_id", "match": {"value": snapshot.owner_id}},
-            ]
+                *guard["must"],
+                {"has_id": sorted(stale_ids, key=str)},
+            ],
+            "must_not": guard["must_not"],
         }
-        if new_point_ids:
-            query_filter["must_not"] = [{"has_id": new_point_ids}]
-        self._client.delete_points(self._collection, query_filter)
+        delete_response = self._client.delete_points(self._collection, query_filter)
+        if (
+            type(delete_response) is not dict or delete_response.get("status") != "ok"
+            or type(delete_response.get("result")) is not dict
+            or delete_response["result"].get("status") != "completed"
+        ):
+            raise RuntimeError("Qdrant delete did not complete")
         return QdrantReplaceResult(snapshot.document_id, len(materialized))
 
 

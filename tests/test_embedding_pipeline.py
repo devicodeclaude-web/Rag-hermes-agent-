@@ -20,26 +20,38 @@ class FakeQdrantClient:
     def __init__(self) -> None:
         self.points: dict[str, dict] = {}
 
+    @staticmethod
+    def _matches(point: dict, condition: dict) -> bool:
+        if "has_id" in condition:
+            return point["id"] in condition["has_id"]
+        value = point["payload"].get(condition["key"])
+        match = condition["match"]
+        if "except" in match:
+            return any(item not in match["except"] for item in value) if isinstance(value, list) else value not in match["except"]
+        return match["value"] in value if isinstance(value, list) else value == match["value"]
+
     def delete_points(self, collection, query_filter):
         for point_id in list(self.points):
-            payload = self.points[point_id]["payload"]
-            def matches(condition):
-                if "has_id" in condition:
-                    return point_id in condition["has_id"]
-                value = payload.get(condition["key"])
-                expected = condition["match"]["value"]
-                return expected in value if isinstance(value, list) else value == expected
-
-            if all(matches(c) for c in query_filter["must"]) and not any(
-                matches(c) for c in query_filter.get("must_not", [])
+            point = self.points[point_id]
+            if all(self._matches(point, c) for c in query_filter["must"]) and not any(
+                self._matches(point, c) for c in query_filter.get("must_not", [])
             ):
                 del self.points[point_id]
-        return {"status": "ok"}
+        return {"status": "ok", "result": {"status": "completed"}}
 
-    def upsert(self, collection, points):
+    def upsert(self, collection, points, *, update_filter=None):
         for point in points:
+            existing = self.points.get(point["id"])
+            if existing is not None and update_filter is not None:
+                if not all(self._matches(existing, c) for c in update_filter["must"]) or any(
+                    self._matches(existing, c) for c in update_filter.get("must_not", [])
+                ):
+                    continue
             self.points[point["id"]] = point
-        return {"status": "ok"}
+        return {"status": "ok", "result": {"status": "completed"}}
+
+    def retrieve_points(self, collection, ids):
+        return [self.points[point_id] for point_id in ids if point_id in self.points]
 
     def query(self, collection, vector, *, query_filter, limit):
         return [dict(p, score=1.0) for p in self.points.values()][:limit]
@@ -88,6 +100,25 @@ class LockedEmbedderPipelineTests(unittest.TestCase):
             {"key": "owner_id", "match": {"value": "alice"}},
         ]})
         self.assertEqual(set(client.points), {"bob"})
+
+    def test_fake_delete_confirms_completion(self) -> None:
+        client = FakeQdrantClient()
+        client.points["p"] = {"id": "p", "payload": {"owner_id": "alice"}}
+        result = client.delete_points("chunks", {"must": [
+            {"key": "owner_id", "match": {"value": "alice"}},
+        ]})
+        self.assertEqual(result["result"]["status"], "completed")
+        self.assertEqual(client.points, {})
+
+    def test_fake_upsert_refuses_foreign_existing_point(self) -> None:
+        client = FakeQdrantClient()
+        client.points["p"] = {"id": "p", "payload": {"owner_id": "bob"}}
+        attempted = {"id": "p", "payload": {"owner_id": "alice"}}
+        client.upsert("chunks", [attempted], update_filter={"must": [
+            {"key": "owner_id", "match": {"value": "alice"}},
+        ]})
+        self.assertEqual(client.points["p"]["payload"]["owner_id"], "bob")
+        self.assertEqual(client.retrieve_points("chunks", ["p"]), [client.points["p"]])
 
     def test_locked_embedder_feeds_repository_and_answer_returns_1024_dim_backed_result(self) -> None:
         embedder = LockedBgeM3Embedder(
