@@ -70,6 +70,57 @@ class TokenChunkingTests(unittest.TestCase):
         self.assertEqual(first.tokenizer_revision, "953dc6f")
         self.assertEqual(first.content_hash, first.source_sha)
 
+    def test_zero_width_window_is_skipped_instead_of_poisoning_the_document(self):
+        class DroppingTokenizer:
+            """Emits a trailing window whose tokens have zero-width offsets."""
+
+            def __call__(self, text, **kwargs):
+                return {
+                    "input_ids": [1, 2, 3, 4],
+                    "offset_mapping": [(0, 4), (5, 9), (9, 9), (9, 9)],
+                }
+
+        document = Document(
+            document_id="doc-z",
+            content="tok0 tok1",
+            tenant_id="alpha",
+            visibility="private",
+            owner_id="alice",
+            allowed_groups=(),
+            allowed_users=(),
+            classification=1,
+            doc_version=1,
+            source_uri="synthetic://alpha/doc-z",
+        )
+        chunks = chunk_document_tokens(
+            document, DroppingTokenizer(), max_passage_tokens=2, overlap_tokens=0,
+            tokenizer_name="dropping", tokenizer_revision="test",
+        )
+        # The empty window carries no document bytes: emitting it would make
+        # the whole document unindexable (no provenance check can accept it).
+        self.assertEqual(
+            [(chunk.start_offset, chunk.end_offset) for chunk in chunks],
+            [(0, 9)],
+        )
+        for chunk in chunks:
+            self.assertEqual(
+                chunk.text, document.content[chunk.start_offset:chunk.end_offset]
+            )
+
+    def test_all_zero_width_windows_fail_loudly_instead_of_emptying_the_document(self):
+        class DegenerateTokenizer:
+            def __call__(self, text, **kwargs):
+                return {"input_ids": [1, 2], "offset_mapping": [(0, 0), (0, 0)]}
+
+        # Returning zero chunk would let replace_document delete the previous
+        # revision and report success on an emptied document.
+        with self.assertRaisesRegex(ValueError, "no indexable passage"):
+            chunk_document_tokens(
+                self.document, DegenerateTokenizer(), max_passage_tokens=2,
+                overlap_tokens=0, tokenizer_name="degenerate",
+                tokenizer_revision="test",
+            )
+
     def test_invalid_token_overlap_is_rejected(self):
         with self.assertRaises(ValueError):
             chunk_document_tokens(

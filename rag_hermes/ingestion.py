@@ -112,6 +112,15 @@ def chunk_document_tokens(
         token_end = min(token_start + max_passage_tokens, len(input_ids))
         start_offset = int(offsets[token_start][0])
         end_offset = int(offsets[token_end - 1][1])
+        if end_offset <= start_offset:
+            # Normalizers that drop characters can yield a window whose tokens
+            # all have zero-width offsets. Such a passage carries no document
+            # bytes: skip it instead of emitting a chunk that no provenance
+            # check can accept (which would make the whole document
+            # unindexable).
+            if token_end >= len(input_ids):
+                break
+            continue
         text = document.content[start_offset:end_offset]
         chunk_id_material = (
             f"{document.document_id}:{document.doc_version}:{index}:"
@@ -145,4 +154,9 @@ def chunk_document_tokens(
         )
         if token_end >= len(input_ids):
             break
+    if not chunks:
+        # Every window was zero-width. Returning no chunk would let
+        # replace_document delete the previous revision and report success on
+        # an emptied document.
+        raise ValueError("tokenizer produced no indexable passage")
     return chunks

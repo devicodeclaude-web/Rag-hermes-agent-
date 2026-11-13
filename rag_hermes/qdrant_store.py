@@ -56,16 +56,51 @@ def lexical_weights_to_sparse_vector(weights: object) -> dict[str, list[int] | l
     return {"indices": [key for key, _ in pairs], "values": [value for _, value in pairs]}
 
 
+def stable_point_id(
+    *,
+    tenant_id: str,
+    document_id: str,
+    chunk_id: str,
+    source_sha: str,
+    doc_version: int,
+) -> str:
+    """Derive the point ID from the full chunk identity.
+
+    The tenant and the document belong in the key: without them two tenants
+    ingesting the same document_id at the same version derive the SAME point ID
+    (chunk_id is itself a hash of document_id/doc_version/index/source_sha), so
+    the second upsert silently erases the first tenant's passages.
+
+    Each part is length-prefixed, so the encoding is injective: a plain
+    separator would move the boundary between two fields as soon as a field
+    contained the separator itself (document_id comes from the client), which
+    brings the silent overwrite straight back.
+    """
+    # Stay a total serializer (callers pass odd types on purpose to exercise
+    # the read-side barriers), hence str() rather than a type check here; the
+    # repository type-checks the identity before it ever writes.
+    parts = (tenant_id, document_id, chunk_id, source_sha, doc_version)
+    stable_key = "".join(f"{len(str(part))}\x1f{part}\x1f" for part in parts)
+    return str(uuid.uuid5(_POINT_NAMESPACE, stable_key))
+
+
 def chunk_to_point(
     chunk: Chunk, vector: list[float], *, sparse_weights: object | None = None
 ) -> dict[str, Any]:
-    if not vector:
-        raise ValueError("vector cannot be empty")
+    if type(vector) not in (list, tuple) or not vector:
+        # Be explicit: an ndarray reaches `not vector` as an ambiguous truth
+        # test, which surfaced as an unreadable error instead of a refusal.
+        raise ValueError("vector must be a nonempty list or tuple of numbers")
     vectors: dict[str, Any] = {"dense": vector}
     if sparse_weights is not None:
         vectors["sparse"] = lexical_weights_to_sparse_vector(sparse_weights)
-    stable_key = f"{chunk.chunk_id}:{chunk.source_sha}:{chunk.doc_version}"
-    point_id = str(uuid.uuid5(_POINT_NAMESPACE, stable_key))
+    point_id = stable_point_id(
+        tenant_id=chunk.tenant_id,
+        document_id=chunk.document_id,
+        chunk_id=chunk.chunk_id,
+        source_sha=chunk.source_sha,
+        doc_version=chunk.doc_version,
+    )
     return {
         "id": point_id,
         "vector": vectors,
