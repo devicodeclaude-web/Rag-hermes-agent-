@@ -12,6 +12,7 @@ from rag_hermes.ingestion import Document, chunk_document
 import rag_hermes.qdrant_repository as repository_module
 from rag_hermes.qdrant_repository import QdrantChunkRepository
 from rag_hermes.qdrant_rest import QdrantRestClient
+from rag_hermes.qdrant_store import chunk_to_point
 
 INDEX_SPEC = Path("qdrant/payload-indexes.json")
 
@@ -155,6 +156,93 @@ class QdrantRepositoryIntegrationTests(unittest.TestCase):
         self.assertEqual(len(points), 3)
         self.assertEqual([point["payload"]["owner_id"] for point in points],
                          ["alice", "alice", "bob"])
+
+    def test_hybrid_replace_reads_back_normalized_dense_and_sparse_vectors(self) -> None:
+        # Hybrid preflight needs a sparse vector and the full ACL payload indexes.
+        collection = "hermes_hybrid_" + uuid.uuid4().hex[:12]
+        self.client.create_collection(collection, vector_size=4, sparse=True)
+        try:
+            specification = json.loads(INDEX_SPEC.read_text())
+            for index in specification["payload_indexes"]:
+                self.client.create_payload_index(
+                    collection, index["field_name"], index["field_schema"]
+                )
+            repository = QdrantChunkRepository(
+                self.client, collection=collection, embed=_fixed_vector,
+                embed_hybrid=lambda _text: ([3.0, 4.0, 0.0, 0.0], {"12": 0.75, "42": 1e-7}),
+            )
+            first = self._document("hybrid", "alpha", "alice", "Version hybride initiale.")
+            second = self._document("hybrid", "alpha", "alice", "Version hybride changée.")
+            repository.replace_document(first, chunk_document(first))
+            result = repository.replace_document(second, chunk_document(second))
+            self.assertEqual(result.chunk_count, len(chunk_document(second)))
+            points = self.client.scroll(collection, query_filter={"must": [
+                {"key": "tenant_id", "match": {"value": "alpha"}},
+                {"key": "document_id", "match": {"value": "hybrid"}},
+            ]}, limit=10)
+            self.assertEqual(len(points), result.chunk_count)
+        finally:
+            self.client.delete_collection(collection)
+
+    def test_conditional_upsert_refuses_foreign_point_inserted_after_owner_scan(self) -> None:
+        attempted = self._document("guide", "alpha", "alice", "Révision cible.")
+        chunks = chunk_document(attempted)
+
+        colliding = chunk_to_point(chunks[0], _fixed_vector(""))
+        foreign = {**colliding, "payload": {**colliding["payload"], "owner_id": "bob"}}
+
+        def embed_with_concurrent_insert(_text: str) -> list[float]:
+            self.client.upsert(self.collection, [foreign])
+            return _fixed_vector("")
+
+        repository = QdrantChunkRepository(
+            self.client, collection=self.collection, embed=embed_with_concurrent_insert,
+        )
+        with self.assertRaisesRegex(PermissionError, "conditional upsert"):
+            repository.replace_document(attempted, chunks)
+        persisted = self.client.retrieve_points(self.collection, [colliding["id"]])
+        self.assertEqual(len(persisted), 1)
+        self.assertEqual(persisted[0]["payload"]["owner_id"], "bob")
+
+    def test_conditional_upsert_refuses_mixed_owner_array_at_target_id(self) -> None:
+        attempted = self._document("guide", "alpha", "alice", "Révision cible.")
+        chunks = chunk_document(attempted)
+        colliding = chunk_to_point(chunks[0], _fixed_vector(""))
+        foreign = {**colliding, "payload": {**colliding["payload"],
+                                           "owner_id": ["alice", "bob"]}}
+        def embed_with_concurrent_insert(_text: str) -> list[float]:
+            self.client.upsert(self.collection, [foreign])
+            return _fixed_vector("")
+        repository = QdrantChunkRepository(
+            self.client, collection=self.collection, embed=embed_with_concurrent_insert,
+        )
+        with self.assertRaisesRegex(PermissionError, "conditional upsert"):
+            repository.replace_document(attempted, chunks)
+        persisted = self.client.retrieve_points(self.collection, [colliding["id"]])
+        self.assertEqual(persisted[0]["payload"]["owner_id"], ["alice", "bob"])
+
+    def test_replacement_keeps_array_owner_inserted_after_scan_at_unseen_id(self) -> None:
+        attempted = self._document("guide", "alpha", "alice", "Révision cible.")
+        old_id = str(uuid.uuid4())
+        self.client.upsert(self.collection, [{
+            "id": old_id, "vector": {"dense": _fixed_vector("")},
+            "payload": {"tenant_id": "alpha", "document_id": "guide", "owner_id": "alice"},
+        }])
+        foreign_id = str(uuid.uuid4())
+        foreign = {"id": foreign_id, "vector": {"dense": _fixed_vector("")},
+                   "payload": {"tenant_id": "alpha", "document_id": "guide",
+                               "owner_id": ["alice", "bob"]}}
+        def embed_with_concurrent_insert(_text: str) -> list[float]:
+            self.client.upsert(self.collection, [foreign])
+            return _fixed_vector("")
+        repository = QdrantChunkRepository(
+            self.client, collection=self.collection, embed=embed_with_concurrent_insert,
+        )
+        repository.replace_document(attempted, chunk_document(attempted))
+        persisted = self.client.retrieve_points(self.collection, [foreign_id, old_id])
+        self.assertEqual(len(persisted), 1)  # actual stale-ID delete ran
+        self.assertEqual(persisted[0]["id"], foreign_id)
+        self.assertEqual(persisted[0]["payload"]["owner_id"], ["alice", "bob"])
 
     def test_corrupt_array_owner_is_refused_before_any_mutation(self) -> None:
         self.client.upsert(

@@ -23,6 +23,7 @@ class RecordingHandler(BaseHTTPRequestHandler):
         result = (
             {"exists": self.__class__.exists_result}
             if self.path.endswith("/exists")
+            else [] if self.path.endswith("/points") and self.command == "POST"
             else {"points": []}
         )
         response = {"result": result, "status": "ok", "time": 0.0}
@@ -173,6 +174,46 @@ class QdrantRestClientTests(unittest.TestCase):
                         {"key": "tenant_id", "match": {"value": "a"}},
                     ]},
                 )
+        finally:
+            self.client._request = original
+
+    def test_upsert_transmits_the_conditional_update_filter(self):
+        guard = {"must": [{"key": "owner_id", "match": {"value": "alice"}}]}
+        point = {"id": "p1", "vector": {"dense": [1.0]}, "payload": {}}
+        self.client.upsert("chunks", [point], update_filter=guard)
+        method, path, body = RecordingHandler.requests[-1]
+        self.assertEqual((method, path), ("PUT", "/collections/chunks/points?wait=true"))
+        self.assertEqual(body, {"points": [point], "update_filter": guard})
+
+    def test_upsert_omits_the_filter_key_when_unconditional(self):
+        point = {"id": "p1", "vector": {"dense": [1.0]}, "payload": {}}
+        self.client.upsert("chunks", [point])
+        _, _, body = RecordingHandler.requests[-1]
+        self.assertEqual(body, {"points": [point]})
+
+    def test_upsert_rejects_an_empty_conditional_filter(self):
+        point = {"id": "p1", "vector": {"dense": [1.0]}, "payload": {}}
+        for invalid in ({}, [], "owner_id", 0):
+            with self.subTest(invalid=invalid):
+                with self.assertRaisesRegex(ValueError, "update_filter"):
+                    self.client.upsert("chunks", [point], update_filter=invalid)
+
+    def test_retrieve_points_reads_ids_with_payload_and_vectors(self):
+        points = self.client.retrieve_points("chunks", ["p1", "p2"])
+        method, path, body = RecordingHandler.requests[-1]
+        self.assertEqual((method, path), ("POST", "/collections/chunks/points"))
+        self.assertEqual(body, {"ids": ["p1", "p2"], "with_payload": True, "with_vector": True})
+        self.assertEqual(points, [])
+
+    def test_retrieve_points_rejects_invalid_ids_and_malformed_response(self):
+        for ids in ([], [""], [True], ["p1", "p1"]):
+            with self.subTest(ids=ids), self.assertRaises(ValueError):
+                self.client.retrieve_points("chunks", ids)
+        original = self.client._request
+        self.client._request = lambda *_a, **_k: {"status": "ok", "result": {"points": []}}
+        try:
+            with self.assertRaisesRegex(RuntimeError, "retrieve"):
+                self.client.retrieve_points("chunks", ["p1"])
         finally:
             self.client._request = original
 

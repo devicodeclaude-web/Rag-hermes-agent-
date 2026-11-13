@@ -155,14 +155,48 @@ class QdrantRestClient:
         return points, cursor
 
     def upsert(
-        self, collection: str, points: list[dict[str, Any]]
+        self, collection: str, points: list[dict[str, Any]], *,
+        update_filter: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if not points:
             raise ValueError("at least one point is required")
+        if update_filter is not None and (type(update_filter) is not dict or not update_filter):
+            raise ValueError("update_filter must be a nonempty filter")
         name = quote(collection, safe="")
-        return self._request(
-            "PUT", f"/collections/{name}/points?wait=true", {"points": points}
+        body: dict[str, Any] = {"points": points}
+        if update_filter is not None:
+            body["update_filter"] = update_filter
+        return self._request("PUT", f"/collections/{name}/points?wait=true", body)
+
+    def retrieve_points(
+        self, collection: str, ids: list[str | int]
+    ) -> list[dict[str, Any]]:
+        if (
+            type(ids) is not list or not ids
+            or any(
+                type(point_id) not in (str, int)
+                or isinstance(point_id, str) and not point_id
+                or isinstance(point_id, int) and point_id < 0
+                for point_id in ids
+            )
+            or len(set(ids)) != len(ids)
+        ):
+            raise ValueError("retrieve ids must be unique point identifiers")
+        name = quote(collection, safe="")
+        response = self._request(
+            "POST", f"/collections/{name}/points",
+            {"ids": ids, "with_payload": True, "with_vector": True},
         )
+        result = response.get("result")
+        if response.get("status") != "ok" or type(result) is not list or len(result) > len(ids):
+            raise RuntimeError("Qdrant returned malformed retrieve result")
+        seen: set[str | int] = set()
+        for point in result:
+            point_id = point.get("id") if type(point) is dict else None
+            if type(point_id) not in (str, int) or point_id not in ids or point_id in seen:
+                raise RuntimeError("Qdrant returned malformed retrieve point")
+            seen.add(point_id)
+        return result
 
     def delete_points(
         self, collection: str, query_filter: dict[str, Any] | None

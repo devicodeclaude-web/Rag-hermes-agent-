@@ -12,8 +12,9 @@
   (`dense, sparse = embed_hybrid(chunk.text)`) et écrit les deux vecteurs via
   `chunk_to_point(..., sparse_weights=...)`. L'identifiant de point et le
   payload restent **identiques** à ceux du chemin dense : seul le champ
-  `vector` gagne l'entrée `sparse`. L'ordre des écritures ne change pas (upsert
-  de la nouvelle révision, puis suppression des points périmés) ;
+  `vector` gagne l'entrée `sparse`. L'ordre des écritures est : upsert
+  conditionnel de la nouvelle révision, relecture des IDs écrits, puis
+  suppression des seuls anciens IDs réellement vus lors du scan complet ;
 - un rappel qui ne renvoie pas un couple `(dense, sparse)` (tuple, liste ou
   `NamedTuple` de longueur 2), ou qui renvoie `sparse=None`, est refusé : en
   mode hybride, un point dense-seul serait une écriture silencieusement
@@ -98,8 +99,9 @@ filtré sur le tenant de l'appelant).
 
 Conséquence opérationnelle : **les identifiants de point changent**. Un index
 Qdrant existant doit être réingéré ; sinon les anciens points ne seront plus
-reconnus comme la révision courante (ils seront supprimés par le balayage des
-points périmés à la prochaine écriture du document).
+reconnus comme la révision courante (ils seront supprimés s'ils sont présents
+parmi les anciens IDs lus jusqu'au curseur terminal lors de la prochaine
+écriture du document).
 
 Un refus intervient **avant** l'upsert : aucun appel `upsert`/`delete_points`
 n'est émis (la vérification du propriétaire du document, elle, a déjà lu
@@ -138,18 +140,51 @@ appelants doivent désormais implémenter
 `(points, next_page_offset)` ; l'ancien `scroll(...)` qui ne renvoie que des
 points n'est plus accepté pour un remplacement, car il ne prouve pas la
 complétude. Les anciens adaptateurs doivent migrer ou échouer explicitement
-avant toute écriture. Un autre processus peut toutefois écrire
-entre ce contrôle et `delete_points`, voire réutiliser un même ID de point : le
-scan paginé n'est PAS un instantané transactionnel. Le filtre de suppression
-contient maintenant `owner_id` en défense supplémentaire, mais Qdrant traite
-un tableau `owner_id` contenant l'appelant comme une correspondance ; ce
-filtre ne remplace pas une sérialisation de toutes les écritures et une
-validation de l'état canonique. Le contrôle de propriétaire et le filtre ne
-suffisent donc toujours pas à garantir une mutation sûre en présence d'écritures
-concurrentes inter-processus ou de payloads corrompus insérés après le scan.
-Ne pas exposer de suppression explicite ni considérer l'issue #71 résolue
-avant une barrière d'écriture commune à tous les processus et une intégration
-Qdrant réelle sur le chemin de remplacement.
+avant toute écriture. Avec Qdrant **1.19.0** (version fixée en CI), le client
+REST transmet `update_filter` sur l'upsert : les points déjà présents qui ne
+correspondent pas à `(tenant_id, document_id, owner_id)` sont laissés intacts.
+Chaque champ est aussi exclu s'il contient une **autre** valeur (`must_not` +
+`match.except`) : Qdrant fait correspondre `match.value` à un élément de tableau,
+mais un tableau `owner_id: ["alice", "bob"]` correspond aussi à `match.except:
+["alice"]`, donc ne peut plus être écrasé par Alice. Ce contrôle est appliqué
+également au filtre de suppression des anciens IDs ; les tableaux ne contenant
+que la valeur attendue restent possibles et ne constituent pas une preuve de
+type scalaire. Qdrant ne signale pas les points ignorés ; `replace_document`
+exige d'abord `result.status: completed` (un `wait_timeout` n'autorise jamais
+une suppression),
+puis relit les IDs demandés par `retrieve_points(collection, ids)` après
+l'upsert avec `with_payload: true` et `with_vector: true`, et refuse un ID,
+payload ou vecteur manquant, étranger ou incohérent **avant toute suppression**.
+Le vecteur dense est comparé aux valeurs attendues ; leur normalisation
+Cosine (float32 toléré, tolérance relative seulement) n'est admise que si la
+distance `Cosine` est prouvée par le prévol hybride ou lue dans les métadonnées
+de la collection avant le remplacement. Sans `get_collection` sur un client
+dense injecté, seule l'égalité numérique sans normalisation est admise : une
+collection Cosine derrière cet adaptateur doit exposer les métadonnées pour
+que le remplacement réussisse. Le sparse est comparé par indice
+indépendamment de l'ordre. Le client
+injecté doit implémenter cette relecture et accepter `update_filter=` sur
+`upsert(...)` ; adapter les anciens clients (pas de repli non conditionnel).
+
+La suppression utilise un filtre contenant **uniquement les IDs périmés vus
+pendant le scan complet** (`has_id`), conjointement aux prédicats tenant,
+document et propriétaire. Quand il n'y a aucun ancien ID périmé, aucune
+suppression n'est émise ; sinon `result.status: completed` est exigé avant de
+retourner un succès. Ainsi un point apparu avec un *nouvel* ID après le
+scan, même avec un `owner_id` en tableau, n'entre plus dans la suppression.
+
+**Tranche partielle de #71, PAS une barrière inter-processus.** `update_filter`
+permet une mise à jour conditionnelle par point, pas une transaction entre le
+scan, les insertions de nouveaux IDs, la relecture et la suppression. Un ID
+périmé peut être réutilisé entre le scan et le delete, y compris avec la même
+identité propriétaire ou un payload dont les champs contiennent uniquement les
+valeurs attendues en tableau. Deux révisions légitimes concurrentes du même
+propriétaire peuvent s'entrelacer. La relecture n'est pas une preuve de
+conservation durable ou d'ordre face à de futurs écrivains. Une réponse de
+réussite n'implique donc **pas** une révision atomique. Ne pas exposer de
+suppression explicite ni fermer #71 avant un verrou d'écriture `flock` partagé
+par tous les processus du même hôte sur `(tenant_id, document_id)` et des tests
+de concurrence dédiés ; ce verrou ne couvrira pas plusieurs hôtes/conteneurs.
 
 Un encodeur qui renvoie un `numpy.ndarray` est refusé (`vector must be a
 nonempty list or tuple of numbers`) : le point doit être sérialisable en JSON,

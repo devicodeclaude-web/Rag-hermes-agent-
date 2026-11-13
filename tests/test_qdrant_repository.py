@@ -21,17 +21,46 @@ class FakeQdrantClient:
         self.query_results: list[dict] = []
         self.scrolls: list[tuple[str, dict, int]] = []
         self.scroll_results: list[dict] = []
+        self.stored_points: dict[str | int, dict] = {}
+        self.upsert_filters: list[dict] = []
         self.fail_upsert = False
+
+    @staticmethod
+    def _matches_condition(point: dict, condition: dict) -> bool:
+        if "has_id" in condition:
+            return point["id"] in condition["has_id"]
+        actual = point["payload"].get(condition["key"])
+        if "except" in condition["match"]:
+            excluded = condition["match"]["except"]
+            return any(value not in excluded for value in actual) if isinstance(actual, list) else actual not in excluded
+        expected = condition["match"]["value"]
+        return expected in actual if isinstance(actual, list) else actual == expected
 
     def delete_points(self, collection: str, query_filter: dict) -> dict:
         self.deleted.append((collection, query_filter))
-        return {"status": "ok"}
+        for point_id, point in list(self.stored_points.items()):
+            if all(self._matches_condition(point, cond) for cond in query_filter["must"]) and not any(
+                self._matches_condition(point, cond) for cond in query_filter.get("must_not", [])
+            ):
+                del self.stored_points[point_id]
+        return {"status": "ok", "result": {"status": "completed"}}
 
-    def upsert(self, collection: str, points: list[dict]) -> dict:
+    def upsert(self, collection: str, points: list[dict], *, update_filter: dict) -> dict:
         if self.fail_upsert:
             raise RuntimeError("simulated Qdrant upsert failure")
         self.upserted.append((collection, points))
-        return {"status": "ok"}
+        self.upsert_filters.append(update_filter)
+        for point in points:
+            existing = self.stored_points.get(point["id"])
+            if existing is None or (
+                all(self._matches_condition(existing, cond) for cond in update_filter["must"])
+                and not any(self._matches_condition(existing, cond) for cond in update_filter.get("must_not", []))
+            ):
+                self.stored_points[point["id"]] = point
+        return {"status": "ok", "result": {"status": "completed"}}
+
+    def retrieve_points(self, collection: str, ids: list[str | int]) -> list[dict]:
+        return [self.stored_points[point_id] for point_id in ids if point_id in self.stored_points]
 
     def query(
         self,
@@ -157,6 +186,134 @@ class QdrantChunkRepositoryTests(unittest.TestCase):
         self.assertEqual(client.upserted, [])
         self.assertEqual(client.deleted, [])
 
+    def test_conditional_upsert_refuses_mixed_array_owner_collision(self) -> None:
+        chunk = chunk_document(self.document)[0]
+        point = chunk_to_point(chunk, [1.0, 0.0])
+        foreign = {**point, "payload": {**point["payload"], "owner_id": ["alice", "bob"]}}
+        self.client.stored_points[point["id"]] = foreign
+        with self.assertRaisesRegex(PermissionError, "conditional upsert"):
+            self.repository.replace_document(self.document, [chunk])
+        self.assertEqual(self.client.stored_points[point["id"]]["payload"]["owner_id"], ["alice", "bob"])
+        self.assertEqual(self.client.deleted, [])
+
+    def test_replacement_uses_server_side_guard_and_refuses_silent_skip(self) -> None:
+        chunks = chunk_document(self.document)
+        point = chunk_to_point(chunks[0], [1.0, 0.0])
+        foreign = {**point, "payload": {**point["payload"], "owner_id": "bob"}}
+        self.client.scroll_results = []  # a concurrent writer inserts after scan
+        self.client.stored_points = {point["id"]: foreign}
+        with self.assertRaisesRegex(PermissionError, "conditional upsert"):
+            self.repository.replace_document(self.document, chunks)
+        self.assertEqual(self.client.stored_points[point["id"]]["payload"]["owner_id"], "bob")
+        self.assertEqual(self.client.deleted, [])
+
+    def test_replacement_deletes_only_ids_seen_in_completed_scan(self) -> None:
+        old = chunk_to_point(chunk_document(self.document)[0], [1.0, 0.0])
+        self.client.scroll_results = [old]
+        self.client.stored_points = {old["id"]: old}
+        new = replace(self.document, content="Une autre version de ce guide.", doc_version=2)
+        self.repository.replace_document(new, chunk_document(new))
+        _collection, deletion = self.client.deleted[-1]
+        self.assertIn({"has_id": [old["id"]]}, deletion["must"])
+        self.assertNotIn(old["id"], self.client.stored_points)
+        self.assertTrue(self.client.stored_points)
+
+    def test_replacement_does_not_delete_point_inserted_after_scan(self) -> None:
+        chunks = chunk_document(self.document)
+        def insert_after_scan(_text: str) -> list[float]:
+            self.client.stored_points["late"] = {"id": "late", "payload": {
+                "tenant_id": "alpha", "document_id": "guide", "owner_id": ["alice", "bob"],
+            }}
+            return [1.0, 0.0]
+        repo = QdrantChunkRepository(self.client, collection="hermes_chunks_v1", embed=insert_after_scan)
+        repo.replace_document(self.document, chunks)
+        self.assertIn("late", self.client.stored_points)
+
+    def test_replacement_refuses_client_without_conditional_or_readback_before_mutation(self) -> None:
+        class OldClient(FakeQdrantClient):
+            pass
+        client = OldClient()
+        setattr(client, "retrieve_points", None)
+        repository = QdrantChunkRepository(client, collection="hermes_chunks_v1", embed=lambda _: [1.0, 0.0])
+        with self.assertRaisesRegex(RuntimeError, "retrieve_points"):
+            repository.replace_document(self.document, chunk_document(self.document))
+        self.assertEqual(client.upserted, [])
+        self.assertEqual(client.deleted, [])
+
+    def test_replacement_refuses_upsert_wait_timeout_without_deleting(self) -> None:
+        class TimeoutClient(FakeQdrantClient):
+            def upsert(self, collection, points, *, update_filter):
+                super().upsert(collection, points, update_filter=update_filter)
+                return {"status": "ok", "result": {"status": "wait_timeout"}}
+        client = TimeoutClient()
+        old_doc = replace(self.document, content="Ancienne notice.")
+        old = chunk_to_point(chunk_document(old_doc)[0], [1.0, 0.0])
+        client.scroll_results = [old]
+        client.stored_points[old["id"]] = old
+        repo = QdrantChunkRepository(client, collection="hermes_chunks_v1", embed=lambda _: [1.0, 0.0])
+        with self.assertRaisesRegex(RuntimeError, "did not complete"):
+            repo.replace_document(self.document, chunk_document(self.document))
+        self.assertIn(old["id"], client.stored_points)
+        self.assertEqual(client.deleted, [])
+
+    def test_replacement_refuses_delete_wait_timeout(self) -> None:
+        class TimeoutDeleteClient(FakeQdrantClient):
+            def delete_points(self, collection, query_filter):
+                self.deleted.append((collection, query_filter))
+                return {"status": "ok", "result": {"status": "wait_timeout"}}
+        client = TimeoutDeleteClient()
+        old_doc = replace(self.document, content="Ancienne notice.")
+        old = chunk_to_point(chunk_document(old_doc)[0], [1.0, 0.0])
+        client.scroll_results = [old]
+        client.stored_points[old["id"]] = old
+        repo = QdrantChunkRepository(client, collection="hermes_chunks_v1", embed=lambda _: [1.0, 0.0])
+        with self.assertRaisesRegex(RuntimeError, "delete.*complete"):
+            repo.replace_document(self.document, chunk_document(self.document))
+        self.assertIn(old["id"], client.stored_points)
+
+    def test_replacement_refuses_stale_vector_at_same_payload_and_id(self) -> None:
+        class SkippingClient(FakeQdrantClient):
+            def upsert(self, collection, points, *, update_filter):
+                self.upserted.append((collection, points))
+                return {"status": "ok", "result": {"status": "completed"}}
+        client = SkippingClient()
+        chunk = chunk_document(self.document)[0]
+        expected = chunk_to_point(chunk, [1.0, 0.0])
+        client.stored_points[expected["id"]] = {
+            **expected, "vector": {"dense": [0.0, 1.0]},
+        }
+        repo = QdrantChunkRepository(client, collection="hermes_chunks_v1", embed=lambda _: [1.0, 0.0])
+        with self.assertRaisesRegex(PermissionError, "verification"):
+            repo.replace_document(self.document, [chunk])
+        self.assertEqual(client.deleted, [])
+
+    def test_readback_rejects_materially_changed_tiny_sparse_weight(self) -> None:
+        expected = {"dense": [1.0, 0.0], "sparse": {"indices": [17], "values": [1e-7]}}
+        actual = {"dense": [1.0, 0.0], "sparse": {"indices": [17], "values": [9e-7]}}
+        self.assertFalse(self.repository._readback_vector_matches(expected, actual))
+
+    def test_readback_accepts_unit_normalized_dense_vector_only_for_cosine(self) -> None:
+        expected = {"dense": [3.0, 4.0]}
+        actual = {"dense": [0.6, 0.8]}
+        self.assertFalse(self.repository._readback_vector_matches(expected, actual))
+        self.repository._dense_distance = "Cosine"
+        self.assertTrue(self.repository._readback_vector_matches(expected, actual))
+
+    def test_dot_collection_rejects_stale_unit_vector_even_when_payload_matches(self) -> None:
+        class DotClient(FakeQdrantClient):
+            def get_collection(self, collection):
+                return {"config": {"params": {"vectors": {"dense": {"distance": "Dot"}}}}}
+            def upsert(self, collection, points, *, update_filter):
+                return {"status": "ok", "result": {"status": "completed"}}
+        client = DotClient()
+        chunk = chunk_document(self.document)[0]
+        expected = chunk_to_point(chunk, [3.0, 4.0])
+        client.stored_points[expected["id"]] = {**expected, "vector": {"dense": [0.6, 0.8]}}
+        repo = QdrantChunkRepository(client, collection="hermes_chunks_v1", embed=lambda _: [3.0, 4.0])
+        with self.assertRaisesRegex(PermissionError, "verification"):
+            repo.replace_document(self.document, [chunk])
+        self.assertEqual(client.deleted, [])
+
     def test_fake_filtered_scroll_keeps_cursor_after_full_page(self) -> None:
         self.client.scroll_results = [
             {"id": index, "payload": {
@@ -191,7 +348,7 @@ class QdrantChunkRepositoryTests(unittest.TestCase):
         self.assertEqual(calls, [chunk.text for chunk in chunks])
         self.assertEqual(client.metadata_calls, ["hermes_chunks_v1"])
         self.assertEqual(len(client.upserted), 1)
-        self.assertEqual(len(client.deleted), 1)
+        self.assertEqual(client.deleted, [])  # no stale IDs on first ingestion
         for chunk, point in zip(chunks, client.upserted[0][1]):
             original = chunk_to_point(chunk, [1.0, 0.0])
             self.assertEqual((point["id"], point["payload"]),
@@ -333,9 +490,7 @@ class QdrantChunkRepositoryTests(unittest.TestCase):
         self.assertEqual(
             [collection for collection, _ in client.upserted], ["hermes_chunks_v1"]
         )
-        self.assertEqual(
-            [collection for collection, _ in client.deleted], ["hermes_chunks_v1"]
-        )
+        self.assertEqual(client.deleted, [])
 
     def test_ingestion_rejects_chunks_sharing_a_point_identifier(self) -> None:
         client = FakeQdrantClient()
@@ -413,11 +568,11 @@ class QdrantChunkRepositoryTests(unittest.TestCase):
                 super().__init__()
                 self.store: dict[str, dict] = {}
 
-            def upsert(self, collection: str, points: list[dict]) -> dict:
-                super().upsert(collection, points)
+            def upsert(self, collection: str, points: list[dict], *, update_filter: dict) -> dict:
+                super().upsert(collection, points, update_filter=update_filter)
                 for point in points:
                     self.store[point["id"]] = point
-                return {"status": "ok"}
+                return {"status": "ok", "result": {"status": "completed"}}
 
         client = OverwritingClient()
         alpha = self.document
@@ -561,17 +716,29 @@ class QdrantChunkRepositoryTests(unittest.TestCase):
 
     def test_replace_document_upserts_new_chunks_before_deleting_stale_points(self) -> None:
         chunks = chunk_document(self.document, max_tokens=4, overlap_tokens=0)
+        previous = replace(self.document, content="Ancienne notice.")
+        old = chunk_to_point(chunk_document(previous)[0], [1.0, 0.0])
+        self.client.scroll_results = [old]
+        self.client.stored_points[old["id"]] = old
 
         result = self.repository.replace_document(self.document, chunks)
 
         self.assertEqual(result.document_id, "guide")
         self.assertEqual(result.chunk_count, len(chunks))
-        # Upsert happens first (compensating order), then a scoped delete.
+        # Upsert then readback, then a scoped delete of scanned stale IDs.
         collection, points = self.client.upserted[0]
         self.assertEqual(collection, "hermes_chunks_v1")
         self.assertEqual(len(points), len(chunks))
         self.assertTrue(all(point["payload"]["owner_id"] == "alice" for point in points))
-        new_ids = [point["id"] for point in points]
+        self.assertEqual(self.client.upsert_filters[0], {"must": [
+            {"key": "tenant_id", "match": {"value": "alpha"}},
+            {"key": "document_id", "match": {"value": "guide"}},
+            {"key": "owner_id", "match": {"value": "alice"}},
+        ], "must_not": [
+            {"key": "tenant_id", "match": {"except": ["alpha"]}},
+            {"key": "document_id", "match": {"except": ["guide"]}},
+            {"key": "owner_id", "match": {"except": ["alice"]}},
+        ]})
         self.assertEqual(
             self.client.deleted,
             [
@@ -582,8 +749,13 @@ class QdrantChunkRepositoryTests(unittest.TestCase):
                             {"key": "tenant_id", "match": {"value": "alpha"}},
                             {"key": "document_id", "match": {"value": "guide"}},
                             {"key": "owner_id", "match": {"value": "alice"}},
+                            {"has_id": [old["id"]]},
                         ],
-                        "must_not": [{"has_id": new_ids}],
+                        "must_not": [
+                            {"key": "tenant_id", "match": {"except": ["alpha"]}},
+                            {"key": "document_id", "match": {"except": ["guide"]}},
+                            {"key": "owner_id", "match": {"except": ["alice"]}},
+                        ],
                     },
                 )
             ],
