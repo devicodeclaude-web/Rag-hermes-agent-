@@ -19,6 +19,7 @@ class StatefulFakeClient:
         self.exists = False
         self.vectors: dict[str, Any] | None = None
         self.payload_schema: dict[str, Any] = {}
+        self.sparse_vectors: dict[str, Any] | None = None
         self.calls: list[tuple[Any, ...]] = []
 
     def collection_exists(self, collection: str) -> bool:
@@ -26,11 +27,13 @@ class StatefulFakeClient:
         return self.exists
 
     def create_collection(
-        self, collection: str, *, vector_size: int, distance: str = "Cosine"
+        self, collection: str, *, vector_size: int, distance: str = "Cosine",
+        sparse: bool = False,
     ) -> dict[str, Any]:
-        self.calls.append(("create_collection", collection, vector_size, distance))
+        self.calls.append(("create_collection", collection, vector_size, distance, sparse))
         self.exists = True
         self.vectors = {"dense": {"size": vector_size, "distance": distance}}
+        self.sparse_vectors = {"sparse": {}} if sparse else None
         return {"result": True}
 
     def create_payload_index(
@@ -59,7 +62,7 @@ class StatefulFakeClient:
             raise RuntimeError("collection missing")
         return {
             "status": "green",
-            "config": {"params": {"vectors": self.vectors}},
+            "config": {"params": {"vectors": self.vectors, "sparse_vectors": self.sparse_vectors}},
             "payload_schema": (
                 dict(self.payload_schema)
                 if isinstance(self.payload_schema, dict)
@@ -94,6 +97,71 @@ class ProvisionCollectionTests(unittest.TestCase):
         self.assertTrue(report["collection_created"])
         self.assertEqual(report["indexes_created"], expected_indexes)
         self.assertTrue(report["ready"])
+
+    def test_hybrid_collection_created_and_verified(self) -> None:
+        client = StatefulFakeClient()
+        first = provision_collection(client, collection="hybrid", vector_size=4,
+                                     specification=SPECIFICATION, sparse=True)
+        second = provision_collection(client, collection="hybrid", vector_size=4,
+                                      specification=SPECIFICATION, sparse=True)
+        self.assertEqual(client.sparse_vectors, {"sparse": {}})
+        self.assertTrue(first["ready"])
+        self.assertFalse(second["collection_created"])
+        self.assertEqual(second["indexes_created"], [])
+        self.assertEqual([call for call in client.calls if call[0] == "create_collection"],
+                         [("create_collection", "hybrid", 4, "Cosine", True)])
+
+    def test_hybrid_refuses_existing_dense_collection_before_index_mutation(self) -> None:
+        client = StatefulFakeClient()
+        client.exists = True
+        client.vectors = {"dense": {"size": 4, "distance": "Cosine"}}
+        with self.assertRaisesRegex(QdrantProvisionError, "sparse"):
+            provision_collection(client, collection="hybrid", vector_size=4,
+                                 specification=SPECIFICATION, sparse=True)
+        self.assertFalse(any(call[0] in {"create_collection", "create_index"}
+                             for call in client.calls))
+
+    def test_hybrid_refuses_existing_idf_sparse_before_index_mutation(self) -> None:
+        client = StatefulFakeClient()
+        client.exists = True
+        client.vectors = {"dense": {"size": 4, "distance": "Cosine"}}
+        client.sparse_vectors = {"sparse": {"modifier": "idf"}}
+        with self.assertRaisesRegex(QdrantProvisionError, "modifier"):
+            provision_collection(client, collection="hybrid", vector_size=4,
+                                 specification=SPECIFICATION, sparse=True)
+        self.assertFalse(any(call[0] == "create_index" for call in client.calls))
+
+    def test_hybrid_accepts_explicit_none_modifier_without_mutation(self) -> None:
+        client = StatefulFakeClient()
+        client.exists = True
+        client.vectors = {"dense": {"size": 4, "distance": "Cosine"}}
+        client.sparse_vectors = {"sparse": {"modifier": "none"}}
+        result = provision_collection(client, collection="hybrid", vector_size=4,
+                                      specification=SPECIFICATION, sparse=True)
+        self.assertTrue(result["ready"])
+        self.assertFalse(any(call[0] == "create_collection" for call in client.calls))
+
+    def test_hybrid_refuses_quantized_sparse_before_index_mutation(self) -> None:
+        for datatype in ("uint8", "float16", "unknown"):
+            with self.subTest(datatype=datatype):
+                client = StatefulFakeClient()
+                client.exists = True
+                client.vectors = {"dense": {"size": 4, "distance": "Cosine"}}
+                client.sparse_vectors = {"sparse": {"index": {"datatype": datatype}}}
+                with self.assertRaisesRegex(QdrantProvisionError, "datatype"):
+                    provision_collection(client, collection="hybrid", vector_size=4,
+                                         specification=SPECIFICATION, sparse=True)
+                self.assertFalse(any(call[0] == "create_index" for call in client.calls))
+
+    def test_hybrid_refuses_quantized_dense_before_index_mutation(self) -> None:
+        client = StatefulFakeClient()
+        client.exists = True
+        client.vectors = {"dense": {"size": 4, "distance": "Cosine", "datatype": "uint8"}}
+        client.sparse_vectors = {"sparse": {}}
+        with self.assertRaisesRegex(QdrantProvisionError, "dense.*datatype"):
+            provision_collection(client, collection="hybrid", vector_size=4,
+                                 specification=SPECIFICATION, sparse=True)
+        self.assertFalse(any(call[0] == "create_index" for call in client.calls))
 
     def test_existing_wrong_vector_size_fails_before_any_index_mutation(self) -> None:
         client = StatefulFakeClient()

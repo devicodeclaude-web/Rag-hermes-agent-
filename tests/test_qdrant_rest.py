@@ -64,6 +64,15 @@ class QdrantRestClientTests(unittest.TestCase):
         self.assertEqual((method, path), ("PUT", "/collections/chunks"))
         self.assertEqual(body["vectors"], {"dense": {"size": 4, "distance": "Cosine"}})
 
+    def test_create_collection_can_declare_named_sparse_vector(self):
+        self.client.create_collection("hybrid", vector_size=4, sparse=True)
+        method, path, body = RecordingHandler.requests[-1]
+        self.assertEqual((method, path), ("PUT", "/collections/hybrid"))
+        self.assertEqual(body, {
+            "vectors": {"dense": {"size": 4, "distance": "Cosine"}},
+            "sparse_vectors": {"sparse": {}},
+        })
+
     def test_get_collection_reads_collection_metadata(self):
         result = self.client.get_collection("chunks with/slash")
         method, path, body = RecordingHandler.requests[-1]

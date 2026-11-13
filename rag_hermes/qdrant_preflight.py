@@ -47,6 +47,8 @@ def _fail(collection: str, detail: str) -> QdrantPreflightError:
 def verify_collection_ready(
     client: CollectionMetadataClient,
     collection: str,
+    *,
+    require_sparse: bool = False,
 ) -> dict[str, Any]:
     """Verify the Qdrant schema required by the ACL-safe repository.
 
@@ -83,6 +85,26 @@ def verify_collection_ready(
     vector_size = dense.get("size")
     if not isinstance(vector_size, int) or isinstance(vector_size, bool) or vector_size < 1:
         raise _fail(collection, 'named vector "dense" has an invalid size')
+
+    if type(require_sparse) is not bool:
+        raise ValueError("require_sparse must be a boolean")
+    if require_sparse:
+        if dense.get("distance") != "Cosine":
+            raise _fail(collection, 'named vector "dense" must use Cosine distance')
+        if dense.get("datatype") not in (None, "float32"):
+            raise _fail(collection, 'named vector "dense" has incompatible datatype')
+        sparse_vectors = params.get("sparse_vectors")
+        if not isinstance(sparse_vectors, dict) or not isinstance(sparse_vectors.get("sparse"), dict):
+            raise _fail(collection, 'missing or malformed named vector "sparse"')
+        sparse_config = sparse_vectors["sparse"]
+        if sparse_config.get("modifier") not in (None, "none"):
+            raise _fail(collection, 'named vector "sparse" has incompatible modifier')
+        sparse_index = sparse_config.get("index")
+        if sparse_index is not None and (
+            not isinstance(sparse_index, dict)
+            or sparse_index.get("datatype") not in (None, "float32")
+        ):
+            raise _fail(collection, 'named vector "sparse" has incompatible index datatype')
 
     payload_schema = metadata.get("payload_schema")
     if not isinstance(payload_schema, dict):
