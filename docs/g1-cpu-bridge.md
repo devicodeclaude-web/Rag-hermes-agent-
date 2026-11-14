@@ -82,9 +82,10 @@ session n'empêche aucune écriture — une mutation annulée avant `close()`, o
 touchant que les vecteurs, reste invisible.
 
 Ce n'est **pas encore G1 complet** : une source dense+sparse/RRF de candidats
-existe désormais, avec recontrôle canonique opt-in (`g1_hybrid_candidates.py`),
-mais elle n'est pas reliée à ce service ni à une règle d'abstention. Le
-reranking verrouillé, la liaison des requêtes à la collection auditée et le
+existe désormais, avec recontrôle canonique opt-in (`g1_hybrid_candidates.py`)
+et un étage de reranking verrouillé (`g1_reranking.py`, faux modèles en CPU),
+mais rien de cela n'est relié à ce service ni à une règle d'abstention. La
+liaison des requêtes à la collection auditée et le
 reçu de campagne restent à câbler et à tester. La traduction des erreurs par cas
 est désormais câblée dans `run_evaluation` (voir ci-dessous), sans présumer
 qu'une campagne réelle G1 a déjà été exécutée.
