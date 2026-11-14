@@ -9,6 +9,7 @@ from .acl import AuthorizationContext
 from .auth import AuthenticationError
 from .generator import GenerationError
 from .ingestion import Document
+from .qdrant_write_lock import DocumentWriteLockTimeout
 from .service import RagService
 from .web_ui import APP_JS, INDEX_HTML
 
@@ -229,6 +230,13 @@ def make_app(service: RagService, *, authenticator):
             question = _string(payload["question"], "question")
             result = service.answer(question, context=context)
             return _json_response(start_response, "200 OK", asdict(result))
+        except DocumentWriteLockTimeout:
+            return _json_response(
+                start_response,
+                "503 Service Unavailable",
+                {"error": "document_write_busy"},
+                extra_headers=(("Retry-After", "1"),),
+            )
         except GenerationError:
             return _json_response(
                 start_response,

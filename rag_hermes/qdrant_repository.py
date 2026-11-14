@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import hashlib
 import json
 import math
+from pathlib import Path
 import unicodedata
 from typing import Any, Callable, Iterable, cast
 
@@ -12,6 +13,7 @@ from .ingestion import Document
 from .qdrant_filter import build_qdrant_filter
 from .qdrant_preflight import verify_collection_ready
 from .qdrant_store import chunk_to_point, stable_point_id
+from .qdrant_write_lock import default_lock_directory, document_write_lock
 from .retrieval import SearchResult
 
 
@@ -156,6 +158,8 @@ class QdrantChunkRepository:
         embed: Callable[[str], list[float]],
         embed_hybrid: Callable[[str], tuple[list[float], object]] | None = None,
         vector_size: int | None = None,
+        lock_dir: str | Path | None = None,
+        lock_timeout: float = 30.0,
     ) -> None:
         if not collection.strip():
             raise ValueError("collection is required")
@@ -169,6 +173,12 @@ class QdrantChunkRepository:
         self._collection = collection.strip()
         self._embed = embed
         self._embed_hybrid = embed_hybrid
+        self._lock_dir = Path(lock_dir) if lock_dir is not None else default_lock_directory()
+        if not self._lock_dir.is_absolute():
+            raise ValueError("lock directory must be an absolute path")
+        if type(lock_timeout) not in (int, float) or not 0 <= lock_timeout <= 3600:
+            raise ValueError("document lock timeout must be between 0 and 3600 seconds")
+        self._lock_timeout = lock_timeout
         if vector_size is not None and (
             type(vector_size) is not int or vector_size < 1
         ):
@@ -470,6 +480,17 @@ class QdrantChunkRepository:
         # containers belong to the caller, so a value read before the encoder
         # callback could differ from the one that ends up in the payload.
         snapshot = _snapshot_document(document)
+        with document_write_lock(
+            self._lock_dir, self._collection, snapshot.tenant_id, snapshot.document_id,
+            timeout=self._lock_timeout,
+        ):
+            return self._replace_document_locked(snapshot, chunks)
+
+    def _replace_document_locked(
+        self, snapshot: _DocumentSnapshot, chunks: Iterable[Chunk]
+    ) -> QdrantReplaceResult:
+        # The lock must cover metadata, the full owner scan, encoding, write,
+        # readback and deletion. Splitting it would reopen the ID reuse race.
         if self._embed_hybrid is None:
             get_collection = getattr(self._client, "get_collection", None)
             if callable(get_collection):

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import unittest
+import tempfile
+from pathlib import Path
 from unittest.mock import patch
 
 from rag_hermes.app_factory import build_service
 from rag_hermes.qdrant_preflight import QdrantPreflightError
+from rag_hermes.qdrant_repository import QdrantChunkRepository
 
 _VERIFIED_SCHEMA = {
     "collection": "hermes_chunks_v1",
@@ -111,6 +114,25 @@ class BuildServiceTests(unittest.TestCase):
         # The verified dense size is handed to the repository: the dense-only
         # path cannot read collection metadata by itself.
         self.assertEqual(service._repository._vector_size, 1024)
+
+    @patch("rag_hermes.app_factory.verify_collection_ready")
+    def test_qdrant_lock_directory_must_be_absolute_and_is_forwarded(self, verify) -> None:
+        verify.return_value = _VERIFIED_SCHEMA
+        with self.assertRaisesRegex(ValueError, "lock directory"):
+            build_service(
+                env={"RAG_QDRANT_URL": "http://127.0.0.1:6333",
+                     "RAG_QDRANT_LOCK_DIR": "relative/locks"},
+                embed=lambda _text: [1.0, 0.0],
+            )
+        with tempfile.TemporaryDirectory() as directory:
+            service = build_service(
+                env={"RAG_QDRANT_URL": "http://127.0.0.1:6333",
+                     "RAG_QDRANT_LOCK_DIR": directory},
+                embed=lambda _text: [1.0, 0.0],
+            )
+            repository = service._repository
+            assert isinstance(repository, QdrantChunkRepository)
+            self.assertEqual(repository._lock_dir, Path(directory))
 
     @patch("rag_hermes.app_factory.verify_collection_ready")
     def test_misconfigured_qdrant_collection_refuses_startup(self, verify) -> None:

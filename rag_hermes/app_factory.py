@@ -127,6 +127,7 @@ def build_service(
         collection=collection,
         embed=embed,
         vector_size=schema["vector_size"],
+        lock_dir=env.get("RAG_QDRANT_LOCK_DIR"),
     )
     return RagService(
         repository=repository,

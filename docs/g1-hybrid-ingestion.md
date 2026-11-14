@@ -176,18 +176,44 @@ suppression n'est émise ; sinon `result.status: completed` est exigé avant de
 retourner un succès. Ainsi un point apparu avec un *nouvel* ID après le
 scan, même avec un `owner_id` en tableau, n'entre plus dans la suppression.
 
-**Tranche partielle de #71, PAS une barrière inter-processus.** `update_filter`
-permet une mise à jour conditionnelle par point, pas une transaction entre le
-scan, les insertions de nouveaux IDs, la relecture et la suppression. Un ID
-périmé peut être réutilisé entre le scan et le delete, y compris avec la même
-identité propriétaire ou un payload dont les champs contiennent uniquement les
-valeurs attendues en tableau. Deux révisions légitimes concurrentes du même
-propriétaire peuvent s'entrelacer. La relecture n'est pas une preuve de
-conservation durable ou d'ordre face à de futurs écrivains. Une réponse de
-réussite n'implique donc **pas** une révision atomique. Ne pas exposer de
-suppression explicite ni fermer #71 avant un verrou d'écriture `flock` partagé
-par tous les processus du même hôte sur `(tenant_id, document_id)` et des tests
-de concurrence dédiés ; ce verrou ne couvrira pas plusieurs hôtes/conteneurs.
+**Barrière mono-hôte entre écrivains coopérants, PAS une transaction Qdrant.**
+`replace_document` prend un `fcntl.flock` exclusif par `(collection, tenant_id,
+document_id)` avant le prévol de métadonnées et le scan, et le conserve pendant
+l'encodage, l'upsert conditionnel, la relecture et la suppression. Tous les
+processus doivent utiliser le **même répertoire sur un système de fichiers local**
+et le même UID : `RAG_QDRANT_LOCK_DIR=/chemin/absolu/prive` dans `build_service`
+(ou `lock_dir=` dans `QdrantChunkRepository`). Par défaut, c'est
+`~/.local/state/rag-hermes/qdrant-locks` pour ce compte utilisateur. Le
+répertoire doit être privé (pas d'accès groupe/autres), possédé par l'UID du
+processus et non symbolique ; les fichiers de verrou sont privés, réguliers et
+ne doivent **jamais être effacés ni remplacés** pendant que des écrivains
+fonctionnent. Un chemin relatif ou une configuration de permissions dangereuse
+échoue avant le scan/l'écriture. Après 30 secondes de contention (paramètre
+`lock_timeout=` pour les appelants directs), l'opération échoue **sans commencer
+le remplacement** ; le verrou est libéré aussi en cas d'exception. Pour
+`POST /api/documents`, une contention expirée renvoie `503 Service Unavailable`
+(`document_write_busy`, `Retry-After: 1`) sans exposer le chemin du verrou.
+
+Le chemin est ouvert composant par composant depuis `/` via des descripteurs de
+répertoire (`O_PATH|O_NOFOLLOW`) : aucun parent symbolique n'est accepté. Les parents
+doivent appartenir à l'UID courant ou à root, et ne pas être modifiables par un
+autre utilisateur, sauf répertoire à sticky bit possédé par root ou l'UID
+courant (par exemple `/tmp`). Un parent non fiable échoue avant la création du
+verrou ; le fichier est ouvert relativement au répertoire privé vérifié.
+La clé inclut le **nom de collection fourni** : tous les écrivains d'une même
+collection Qdrant doivent employer exactement le même nom, pas un mélange de
+nom canonique et d'alias pointant vers cette collection. Même sur le même hôte,
+un alias différent contourne la sérialisation.
+
+`update_filter` ne rend toujours pas atomiques le scan et les mutations : un
+écrivain qui parle directement à Qdrant, un autre UID/chemin, un autre hôte ou
+conteneur non raccordé au **même verrou local** peut réutiliser un ID périmé
+pendant le remplacement. Ce verrou consultatif ne protège que les processus
+coopérants du même hôte ; il ne constitue **pas** un verrou distribué ni une
+preuve de conservation durable face aux écrivains externes. La politique de
+tombstone/suppression explicite reste à définir et l'API de suppression n'est
+pas exposée. Garder #71 ouverte jusqu'à la revue indépendante et l'intégration
+Qdrant réelle de cette tranche.
 
 Un encodeur qui renvoie un `numpy.ndarray` est refusé (`vector must be a
 nonempty list or tuple of numbers`) : le point doit être sérialisable en JSON,

@@ -204,6 +204,21 @@ class HttpApiTests(unittest.TestCase):
         self.assertEqual(response["error"], "forbidden")
         self.assertNotIn("detail", response)
 
+    def test_document_lock_contention_returns_503_without_leaking_details(self) -> None:
+        from rag_hermes.qdrant_write_lock import DocumentWriteLockTimeout
+
+        class ContendedService(RagService):
+            def import_document(self, document, *, context):
+                raise DocumentWriteLockTimeout("secret lock path /private/locks")
+
+        app = make_app(ContendedService(), authenticator=SHARED_AUTHENTICATOR)
+        status, headers, response = request(
+            app, "POST", "/api/documents", {"document": _document()}
+        )
+        self.assertEqual(status, "503 Service Unavailable")
+        self.assertEqual(response, {"error": "document_write_busy"})
+        self.assertEqual(headers.get("Retry-After"), "1")
+
     def test_generator_failure_returns_bad_gateway_not_abstention(self) -> None:
         def fail_generator(question, evidence):
             raise GenerationError("provider unavailable")
