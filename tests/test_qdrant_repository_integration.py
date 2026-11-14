@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import hashlib
+from dataclasses import asdict
 import multiprocessing
 import os
 from pathlib import Path
@@ -10,10 +12,12 @@ import uuid
 from unittest.mock import patch
 
 from rag_hermes.acl import AuthorizationContext
+from rag_hermes.g1_audited_candidates import run_audited_g1_candidate_window
+from rag_hermes.index_integrity import AuditedIndexSessionError, verify_index_snapshot
 from rag_hermes.ingestion import Document, chunk_document
 import rag_hermes.qdrant_repository as repository_module
 from rag_hermes.qdrant_repository import QdrantChunkRepository
-from rag_hermes.qdrant_rest import QdrantRestClient
+from rag_hermes.qdrant_rest import QdrantAuditRestClient, QdrantRestClient
 from rag_hermes.qdrant_store import chunk_to_point
 
 INDEX_SPEC = Path("qdrant/payload-indexes.json")
@@ -143,6 +147,99 @@ class QdrantRepositoryIntegrationTests(unittest.TestCase):
                 ranked, (1 / 62 + 1 / 61, 1 / 63 + 1 / 62, 1 / 61)
             ):
                 self.assertAlmostEqual(candidate.rrf_score, expected)
+        finally:
+            self.client.delete_collection(collection)
+
+    def test_g1_candidate_window_real_qdrant_is_audited_before_and_after_query(self) -> None:
+        collection = "hermes_window_" + uuid.uuid4().hex[:12]
+        self.client.create_collection(collection, vector_size=4, sparse=True)
+        try:
+            specification = json.loads(INDEX_SPEC.read_text())
+            for index in specification["payload_indexes"]:
+                self.client.create_payload_index(
+                    collection, index["field_name"], index["field_schema"]
+                )
+            valid = self._document("guide", "alpha", "alice", "Installer Hermes.")
+            foreign = tuple(
+                self._document(f"foreign-{index:02d}", "beta", "bob", f"Privé beta {index:02d}.")
+                for index in range(40)
+            )
+            documents = (valid, *foreign)
+            def hybrid(text):
+                if text == valid.content:
+                    # Strictement moins pertinent que CHAQUE étranger sur les
+                    # deux voies. Sans l'un des préfiltres serveur, le top-40
+                    # de cette voie perd le point autorisé.
+                    return [0.1, 0.994987437, 0.0, 0.0], {"7": 0.1}
+                return [1.0, 0.0, 0.0, 0.0], {"7": 2.0}
+            chunks = [chunk for doc in documents for chunk in chunk_document(doc)]
+            points = [
+                chunk_to_point(chunk, hybrid(chunk.text)[0], sparse_weights=hybrid(chunk.text)[1])
+                for chunk in chunks
+            ]
+            inserted = self.client.upsert(collection, points)
+            self.assertEqual(inserted["result"]["status"], "completed")
+            self.assertEqual(len(self.client.scroll(collection, query_filter={"must": [
+                {"key": "tenant_id", "match": {"value": "beta"}},
+            ]}, limit=50)), 40)
+            manifest_sha = verify_index_snapshot(chunks, points).payload_sha256
+            with tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "source.jsonl"
+                path.write_text("".join(
+                    json.dumps(asdict(doc)) + "\n" for doc in documents
+                ), encoding="utf-8")
+                source_sha = hashlib.sha256(path.read_bytes()).hexdigest()
+                class Tokenizer:
+                    def __call__(self, query, passage, **kwargs):
+                        return {"input_ids": [1, 2]}
+                class Reranker:
+                    pairs = None
+                    def compute_score(self, pairs, **kwargs):
+                        self.pairs = pairs
+                        return [0.8 for _ in pairs]
+                model = Reranker()
+                window = run_audited_g1_candidate_window(
+                    base_url=os.environ["QDRANT_INTEGRATION_URL"],
+                    collection=collection, source_path=path,
+                    expected_source_sha256=source_sha,
+                    expected_manifest_sha256=manifest_sha,
+                    chunker=chunk_document, embed_hybrid=hybrid,
+                    reranker=model, tokenizer=Tokenizer(),
+                    question="Installer Hermes", context=AuthorizationContext(
+                        "alpha", "alice", (), 1
+                    ),
+                )
+                # Le deuxième scroll est réellement rejoué : simuler une
+                # divergence de payload dans SA réponse doit bloquer la sortie.
+                original_scroll = QdrantAuditRestClient.scroll_page
+                scroll_calls = []
+                def changed_at_close(client, name, *, limit, offset=None):
+                    page, cursor = original_scroll(client, name, limit=limit, offset=offset)
+                    scroll_calls.append(1)
+                    if len(scroll_calls) == 2:
+                        page = [{**point, "payload": {
+                            **point["payload"], "owner_id": "intrus",
+                        }} for point in page]
+                    return page, cursor
+                with patch.object(QdrantAuditRestClient, "scroll_page", new=changed_at_close):
+                    with self.assertRaisesRegex(AuditedIndexSessionError, "closing audit failed"):
+                        run_audited_g1_candidate_window(
+                            base_url=os.environ["QDRANT_INTEGRATION_URL"],
+                            collection=collection, source_path=path,
+                            expected_source_sha256=source_sha,
+                            expected_manifest_sha256=manifest_sha,
+                            chunker=chunk_document, embed_hybrid=hybrid,
+                            reranker=Reranker(), tokenizer=Tokenizer(),
+                            question="Installer Hermes", context=AuthorizationContext(
+                                "alpha", "alice", (), 1
+                            ),
+                        )
+                self.assertEqual(len(scroll_calls), 2)
+            self.assertEqual(window.opening.point_count, 41)
+            self.assertEqual(window.closing.point_count, 41)
+            self.assertEqual([item.chunk.document_id for item in window.candidates], ["guide"])
+            self.assertAlmostEqual(window.candidates[0].rrf_score, 2 / 61)
+            self.assertEqual(model.pairs, [["Installer Hermes", valid.content]])
         finally:
             self.client.delete_collection(collection)
 

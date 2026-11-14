@@ -83,9 +83,12 @@ touchant que les vecteurs, reste invisible.
 
 Ce n'est **pas encore G1 complet** : une source dense+sparse/RRF de candidats
 existe désormais, avec recontrôle canonique opt-in (`g1_hybrid_candidates.py`)
-et un étage de reranking verrouillé (`g1_reranking.py`, faux modèles en CPU),
-mais rien de cela n'est relié à ce service ni à une règle d'abstention. La
-liaison des requêtes à la collection auditée et le
+et un étage de reranking verrouillé (`g1_reranking.py`, faux modèles en CPU).
+`run_audited_g1_candidate_window` raccorde **pour une seule question** la source
+hybride, la barrière canonique et cet étage entre deux audits de payload sur la
+collection donnée ; ce chemin candidate-only ne produit aucune réponse. Rien de
+cela n'est relié à `RagService` ni à une règle d'abstention. La liaison
+vérifiable des requêtes à une collection figée et le
 reçu de campagne restent à câbler et à tester. La traduction des erreurs par cas
 est désormais câblée dans `run_evaluation` (voir ci-dessous), sans présumer
 qu'une campagne réelle G1 a déjà été exécutée.

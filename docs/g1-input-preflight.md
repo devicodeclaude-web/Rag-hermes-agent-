@@ -59,13 +59,15 @@ Le script affiche donc `missing_verified_g0_receipt` et sort avec le code 1.
 
 Après réception d'un vrai reçu G0, l'ordre de travail G1 reste :
 
-1. Câbler la source de candidats dense+sparse/RRF désormais opt-in, son recontrôle
-   canonique et l'étage de reranking (`g1_reranking.py`) avec modèles et
-   paramètres épinglés — l'étage existe en CPU avec de faux modèles, le
-   checkpoint réel reste porté par le manifeste ;
-   aujourd'hui `g1_wiring.py` assemble encore un dépôt Qdrant dense, et le runner
-   BGE-M3 calcule R3 en mémoire séparément. Ni le score RRF brut ni le score de
-   reranking ne peuvent servir de seuil d'abstention.
+1. La fenêtre candidate-only `run_audited_g1_candidate_window` assemble
+   désormais dense+sparse/RRF, recontrôle canonique et reranking entre deux
+   audits de payload pour une seule requête, **sans** lier la réponse, la
+   calibration ni les poids réels : le checkpoint réel reste seulement décrit
+   par le manifeste. `g1_wiring.py` assemble encore un dépôt Qdrant dense pour
+   `RagService`, et le runner BGE-M3 calcule R3 en mémoire séparément. Ni le
+   score RRF brut ni le score de reranking ne peuvent servir de seuil
+   d'abstention ; il reste à les raccorder au service une fois une règle
+   calibrée et vérifiée.
 2. Sur un index Qdrant contrôlé, lier le client de requête et la collection au
    manifeste audité, puis exécuter l'audit d'ouverture et de clôture autour du
    même service de réponse. La session existante vérifie les points et payloads,
