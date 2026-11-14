@@ -147,6 +147,7 @@ class HybridCandidate:
 
     chunk: Chunk
     rrf_score: float
+    authorized_by_index: bool = True
 
 
 @dataclass(frozen=True)
@@ -655,12 +656,20 @@ class QdrantChunkRepository:
 
     def hybrid_candidates(
         self, query: str, *, context: AuthorizationContext, output_limit: int = 40,
+        include_denied: bool = False,
     ) -> list[HybridCandidate]:
         """Fetch dense/sparse top-40 and fuse by RRF; NEVER use RRF as a quality gate.
 
         These candidates still need a trusted canonical ACL/provenance source,
         reranking and a calibrated abstention rule before any answer or citation.
+        `include_denied` also returns the hits the payload ACL rejected, flagged
+        `authorized_by_index=False`, so a caller holding a canonical authority
+        can tell an index that hides an authorized document from a genuinely
+        foreign hit. Those flagged candidates are NOT authorized evidence and
+        must never reach a generator, a citation or a user.
         """
+        if type(include_denied) is not bool:
+            raise ValueError("include_denied must be a boolean")
         if self._embed_hybrid is None:
             raise ValueError("hybrid candidates require a hybrid encoder")
         if type(output_limit) is not int or not 1 <= output_limit <= 80:
@@ -714,10 +723,16 @@ class QdrantChunkRepository:
         # The prefilter is only an optimization: recheck the decoded ACL before
         # the output cap, so a foreign top hit never hides an authorized hit.
         ordered = sorted(scores, key=lambda point_id: (-scores[point_id], point_id))
-        return [
-            HybridCandidate(chunks[point_id], scores[point_id])
-            for point_id in ordered if filter_authorized([chunks[point_id]], context)
-        ][:output_limit]
+        fused: list[HybridCandidate] = []
+        for point_id in ordered:
+            authorized = bool(filter_authorized([chunks[point_id]], context))
+            if authorized:
+                fused.append(HybridCandidate(chunks[point_id], scores[point_id]))
+            elif include_denied:
+                fused.append(HybridCandidate(
+                    chunks[point_id], scores[point_id], authorized_by_index=False,
+                ))
+        return fused[:output_limit]
 
     def search(
         self,

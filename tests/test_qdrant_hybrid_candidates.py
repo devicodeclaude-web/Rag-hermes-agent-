@@ -76,6 +76,24 @@ class HybridCandidateTests(unittest.TestCase):
         ranked = self.repo.hybrid_candidates("question", context=self.context, output_limit=1)
         self.assertEqual([item.chunk.document_id for item in ranked], ["valid"])
 
+    def test_denied_candidates_are_opt_in_and_flagged(self) -> None:
+        foreign, valid = self.point("foreign", tenant="beta"), self.point("valid")
+        self.client.dense_results = [{**foreign, "score": 0.9}, {**valid, "score": 0.8}]
+        default = self.repo.hybrid_candidates("question", context=self.context)
+        self.assertEqual([item.chunk.document_id for item in default], ["valid"])
+        self.assertEqual([item.authorized_by_index for item in default], [True])
+        with_denied = self.repo.hybrid_candidates(
+            "question", context=self.context, include_denied=True,
+        )
+        self.assertEqual(
+            [(item.chunk.document_id, item.authorized_by_index) for item in with_denied],
+            [("foreign", False), ("valid", True)],
+        )
+
+    def test_include_denied_must_be_boolean(self) -> None:
+        with self.assertRaisesRegex(ValueError, "include_denied"):
+            self.repo.hybrid_candidates("question", context=self.context, include_denied=1)
+
     def test_malformed_authorization_context_fails_before_encoding(self) -> None:
         invalid = AuthorizationContext("alpha", "alice", (), True)
         with self.assertRaisesRegex(ValueError, "authorization context"):

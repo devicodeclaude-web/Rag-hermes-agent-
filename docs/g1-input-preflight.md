@@ -59,9 +59,11 @@ Le script affiche donc `missing_verified_g0_receipt` et sort avec le code 1.
 
 Après réception d'un vrai reçu G0, l'ordre de travail G1 reste :
 
-1. Implémenter la source de candidats **R3 dense + sparse/RRF puis reranking**
-   avec modèles et paramètres épinglés ; aujourd'hui `g1_wiring.py` assemble
-   un dépôt Qdrant dense, et le runner BGE-M3 calcule R3 en mémoire séparément.
+1. Câbler la source de candidats dense+sparse/RRF désormais opt-in, son recontrôle
+   canonique, puis le reranking R3 avec modèles et paramètres épinglés ;
+   aujourd'hui `g1_wiring.py` assemble encore un dépôt Qdrant dense, et le runner
+   BGE-M3 calcule R3 en mémoire séparément. Le score RRF brut ne peut servir de
+   seuil d'abstention.
 2. Sur un index Qdrant contrôlé, lier le client de requête et la collection au
    manifeste audité, puis exécuter l'audit d'ouverture et de clôture autour du
    même service de réponse. La session existante vérifie les points et payloads,
