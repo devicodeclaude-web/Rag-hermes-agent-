@@ -81,8 +81,10 @@ dérivent du même manifeste, donc leur égalité n'est pas une preuve indépend
 session n'empêche aucune écriture — une mutation annulée avant `close()`, ou ne
 touchant que les vecteurs, reste invisible.
 
-Ce n'est **pas encore G1 complet** : la source de candidats R3 dense+sparse,
-le reranking verrouillé, la liaison des requêtes à la collection auditée et le
+Ce n'est **pas encore G1 complet** : une source dense+sparse/RRF de candidats
+existe désormais, avec recontrôle canonique opt-in (`g1_hybrid_candidates.py`),
+mais elle n'est pas reliée à ce service ni à une règle d'abstention. Le
+reranking verrouillé, la liaison des requêtes à la collection auditée et le
 reçu de campagne restent à câbler et à tester. La traduction des erreurs par cas
 est désormais câblée dans `run_evaluation` (voir ci-dessous), sans présumer
 qu'une campagne réelle G1 a déjà été exécutée.
@@ -123,7 +125,8 @@ une panne compte donc comme un échec de récupération au lieu de disparaître 
 rappel — même direction anti-gonflement que les dénominateurs d'abstention. Les
 compteurs d'erreurs étant publiés à part, un lecteur peut recalculer l'autre
 convention. Tant que la campagne tourne sur un service réel, ce n'est toujours
-pas un reçu G1 : la source de candidats R3 dense+sparse, le reranking verrouillé,
+pas un reçu G1 : la source candidate-only dense+sparse/RRF (et son recontrôle
+canonique optionnel) n'est pas câblée à ce parcours, le reranking verrouillé,
 la liaison vérifiable entre les requêtes et la collection auditée, et le reçu de
 campagne restent à câbler. La réconciliation des IDs de chunks avec le manifeste
 s'applique au parcours audité, pas à `run_evaluation` direct.
