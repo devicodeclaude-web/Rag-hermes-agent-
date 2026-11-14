@@ -667,11 +667,13 @@ class QdrantChunkRepository:
 
         These candidates still need a trusted canonical ACL/provenance source,
         reranking and a calibrated abstention rule before any answer or citation.
-        `include_denied` also returns the hits the payload ACL rejected, flagged
-        `authorized_by_index=False`, so a caller holding a canonical authority
-        can tell an index that hides an authorized document from a genuinely
-        foreign hit. Those flagged candidates are NOT authorized evidence and
-        must never reach a generator, a citation or a user.
+        `include_denied` additionally returns hits rejected by the local
+        payload ACL when the injected client did not already prefilter them,
+        flagged `authorized_by_index=False`. With the real Qdrant server the
+        ACL prefilter removes such points BEFORE either query response, so
+        this flag CANNOT generally detect an index that is more restrictive
+        than the canonical source. Flagged hits are diagnostics for internal
+        callers only; never pass them to generation, citations or users.
         """
         if type(include_denied) is not bool:
             raise ValueError("include_denied must be a boolean")

@@ -8,11 +8,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
+from collections.abc import Callable
 from itertools import islice
 from numbers import Real
 from typing import Any
 
 from rag_hermes.acl import AuthorizationContext, Chunk
+from rag_hermes.qdrant_repository import HybridCandidate
 from rag_hermes.g1_hybrid_candidates import CanonicalHybridCandidates
 from rag_hermes.reranker_budget import assert_pair_fits
 
@@ -31,6 +33,10 @@ class RerankedCandidateSource:
 
     This class checks pair lengths, not the identity of the injected tokenizer
     or model. Checkpoint pinning belongs to the caller's deployment workflow.
+    An optional `candidate_guard` runs on every accepted canonical candidate
+    before tokenization/scoring; only the audited wrapper supplies a guard
+    bound to its independently pinned manifest. A caller-supplied no-op guard
+    offers no integrity guarantee.
 
     Fail-closed contract: the reranker must return exactly one finite score per
     submitted pair, a pair over the token budget is REJECTED (never truncated),
@@ -48,11 +54,14 @@ class RerankedCandidateSource:
         batch_size: int = 1,
         top_k: int = 8,
         candidate_limit: int = 20,
+        candidate_guard: Callable[[HybridCandidate], None] | None = None,
     ) -> None:
         if type(source) is not CanonicalHybridCandidates:
             raise ValueError("canonical candidate source is required")
         if not callable(getattr(reranker, "compute_score", None)) or not callable(tokenizer):
             raise ValueError("reranker and tokenizer are required")
+        if candidate_guard is not None and not callable(candidate_guard):
+            raise ValueError("candidate guard must be callable")
         for name, value, upper in (
             ("max_length", max_length, 512),
             ("batch_size", batch_size, 64),
@@ -70,6 +79,7 @@ class RerankedCandidateSource:
         self._batch_size = batch_size
         self._top_k = top_k
         self._candidate_limit = candidate_limit
+        self._candidate_guard = candidate_guard
 
     def candidates(
         self, query: str, *, context: AuthorizationContext,
@@ -79,6 +89,11 @@ class RerankedCandidateSource:
         )
         if not observed:
             return []
+        if self._candidate_guard is not None:
+            # The caller's optional manifest barrier runs before *any* passage
+            # reaches the tokenizer or model. Not a sandbox for those callables.
+            for candidate in observed:
+                self._candidate_guard(candidate)
         pairs = []
         for candidate in observed:
             # Reject over-budget pairs instead of truncating: a silently
