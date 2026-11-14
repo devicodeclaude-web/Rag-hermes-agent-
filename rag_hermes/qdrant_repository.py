@@ -143,11 +143,16 @@ def _snapshot_document(document: Document) -> _DocumentSnapshot:
 
 @dataclass(frozen=True)
 class HybridCandidate:
-    """RRF candidate, not a calibrated answer score or an ACL attestation."""
+    """RRF candidate, not a calibrated answer score or an ACL attestation.
+
+    `authorized_by_index` has no default on purpose: a construction site that
+    forgets it must fail loudly instead of minting a candidate that claims the
+    payload ACL accepted it.
+    """
 
     chunk: Chunk
     rrf_score: float
-    authorized_by_index: bool = True
+    authorized_by_index: bool
 
 
 @dataclass(frozen=True)
@@ -723,16 +728,20 @@ class QdrantChunkRepository:
         # The prefilter is only an optimization: recheck the decoded ACL before
         # the output cap, so a foreign top hit never hides an authorized hit.
         ordered = sorted(scores, key=lambda point_id: (-scores[point_id], point_id))
-        fused: list[HybridCandidate] = []
+        authorized: list[HybridCandidate] = []
+        denied: list[HybridCandidate] = []
         for point_id in ordered:
-            authorized = bool(filter_authorized([chunks[point_id]], context))
-            if authorized:
-                fused.append(HybridCandidate(chunks[point_id], scores[point_id]))
+            if filter_authorized([chunks[point_id]], context):
+                authorized.append(HybridCandidate(
+                    chunks[point_id], scores[point_id], authorized_by_index=True,
+                ))
             elif include_denied:
-                fused.append(HybridCandidate(
+                denied.append(HybridCandidate(
                     chunks[point_id], scores[point_id], authorized_by_index=False,
                 ))
-        return fused[:output_limit]
+        # The cap bounds the AUTHORIZED candidates; the denied ones are extra
+        # diagnostics, so asking for them never shrinks the usable window.
+        return authorized[:output_limit] + denied
 
     def search(
         self,

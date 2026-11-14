@@ -49,7 +49,7 @@ class CanonicalHybridCandidates:
                 # from an honest no-answer. An unknown document stays a foreign
                 # hit, since the snapshot carries no claim about it.
                 policy = self._authority.policy_for(chunk.document_id)
-                if document is not None and policy is not None and policy.allows(context):
+                if policy is not None and policy.allows(context):
                     raise CanonicalAclError(
                         "observed ACL conflicts with canonical document"
                     )
@@ -74,4 +74,7 @@ class CanonicalHybridCandidates:
         )
         if stale_authorized and not accepted:
             raise CanonicalAclError("stale ACL index has no usable authorized candidates")
-        return [HybridCandidate(item.chunk, item.score) for item in accepted[:limit]]
+        return [
+            HybridCandidate(item.chunk, item.score, authorized_by_index=True)
+            for item in accepted[:limit]
+        ]

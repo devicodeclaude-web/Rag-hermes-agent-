@@ -23,16 +23,27 @@ utilisateurs), **dans les deux sens** :
   propriétaire, avec ou sans nouvelle `acl_version`) : la barrière n'examine la
   provenance qu'*après* avoir autorisé le demandeur, donc ce cas sortait en
   fenêtre vide. Il lève désormais `CanonicalAclError`.
-- **Index plus restrictif que le canonique** : le candidat est écarté par l'ACL
-  du payload avant d'être vu. La source les redemande explicitement
+- **Index plus restrictif que le canonique** : le candidat est écarté avant
+  d'être vu. La source redemande explicitement les refusés
   (`hybrid_candidates(..., include_denied=True)`, drapeau
   `authorized_by_index=False`) et lève `CanonicalAclError` quand la politique
-  canonique, elle, autorise le demandeur. Un document inconnu du snapshot reste
-  traité comme un candidat étranger ordinaire — le snapshot n'affirme rien à son
-  sujet — et n'est jamais renvoyé.
+  canonique, elle, autorise le demandeur. **Portée réelle très limitée** : avec
+  `QdrantRestClient`, le préfiltre serveur reçoit le même filtre ACL sur les
+  deux voies et retire le point *avant* la réponse, donc aucun candidat refusé
+  ne peut être matérialisé et ce cas sort en **fenêtre vide silencieuse**
+  (figé par `test_server_side_prefilter_hides_the_restrictive_divergence`).
+  Ce contrôle ne détecte donc qu'un client qui n'applique pas le préfiltre
+  (adaptateur injecté, double de test, déploiement mal configuré) — ce n'est
+  **pas** une détection générale de l'index trop restrictif. Un document
+  inconnu du snapshot reste un candidat étranger ordinaire et n'est jamais
+  renvoyé.
 
 Les candidats marqués `authorized_by_index=False` servent **uniquement** à ce
 diagnostic : ils ne sont ni renvoyés, ni citables, ni transmis à un générateur.
+Le plafond `output_limit` du dépôt borne les candidats **autorisés** ; les
+refusés sont ajoutés en plus et ne réduisent donc jamais la fenêtre utile.
+`authorized_by_index` n'a **pas** de valeur par défaut : un site de
+construction qui l'oublie échoue au lieu de fabriquer un candidat « autorisé ».
 
 Limites connues de cette tranche, à lever avant tout branchement sur une règle
 d'abstention :

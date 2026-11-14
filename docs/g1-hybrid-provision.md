@@ -28,10 +28,13 @@ l'ACL du payload sont exclus avant `output_limit`. Le résultat est un
 consommable par `RagService` : un score RRF n'est pas un seuil d'abstention.
 Une intégration Qdrant réelle est couverte en CI avec trois passages autorisés
 et un tenant étranger, mais ni BGE-M3 ni le reranker n'y sont exécutés.
-`include_denied=True` renvoie en plus les candidats écartés par l'ACL du
+`include_denied=True` renvoie **en plus** les candidats écartés par l'ACL du
 payload, marqués `authorized_by_index=False`, pour qu'une autorité canonique
 puisse distinguer un index trop restrictif d'un candidat réellement étranger ;
-ces candidats ne sont **jamais** des preuves autorisées (voir
+le plafond `output_limit` ne borne que les candidats autorisés. Avec le vrai
+client REST, le préfiltre serveur retire ces points avant la réponse, donc ce
+drapeau ne révèle qu'un client qui n'applique pas le filtre. Ces candidats ne
+sont **jamais** des preuves autorisées (voir
 `g1-hybrid-canonical-candidates.md`).
 
 Le service G1 reste sur le chemin dense : l'autorité ACL et la provenance

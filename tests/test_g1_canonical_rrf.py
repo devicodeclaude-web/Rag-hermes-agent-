@@ -10,9 +10,30 @@ import unittest
 
 from rag_hermes.acl import AuthorizationContext
 from rag_hermes.ingestion import Document, chunk_document
+from rag_hermes.qdrant_filter import build_qdrant_filter
+from rag_hermes.qdrant_filter_eval import payload_matches_filter
 from rag_hermes.qdrant_repository import QdrantChunkRepository
 from rag_hermes.qdrant_store import chunk_to_point
 from tests.test_qdrant_hybrid_candidates import HybridQueryClient
+
+
+class PrefilteringHybridClient(HybridQueryClient):
+    """Applique vraiment le filtre ACL, comme le fait le serveur Qdrant."""
+
+    def query(self, collection, vector, *, query_filter, limit):
+        self.queries.append((collection, vector, query_filter, limit))
+        return [
+            point for point in self.dense_results
+            if payload_matches_filter(point["payload"], query_filter)
+        ][:limit]
+
+    def query_sparse(self, collection, lexical_weights, *, context, limit):
+        self.sparse_queries.append((collection, lexical_weights, context, limit))
+        query_filter = build_qdrant_filter(context)
+        return [
+            point for point in self.sparse_results
+            if payload_matches_filter(point["payload"], query_filter)
+        ][:limit]
 
 
 class CanonicalHybridCandidateTests(unittest.TestCase):
@@ -55,6 +76,88 @@ class CanonicalHybridCandidateTests(unittest.TestCase):
             CanonicalHybridCandidates(self.repo, self.path, expected_sha256="0" * 64)
         self.assertEqual(self.client.queries, [])
         self.assertEqual(self.client.sparse_queries, [])
+
+    def test_server_side_prefilter_hides_the_restrictive_divergence(self) -> None:
+        """Limite DÉCLARÉE : avec un vrai préfiltre serveur, ce cas reste muet.
+
+        Le préfiltre Qdrant retire le point avant toute réponse, donc
+        `include_denied` ne peut PAS matérialiser le candidat et la divergence
+        « index plus restrictif que le canonique » sort en fenêtre vide. Ce test
+        fige cette réalité pour que la doc ne promette pas l'inverse.
+        """
+        from rag_hermes.g1_hybrid_candidates import CanonicalHybridCandidates
+        client = PrefilteringHybridClient()
+        repo = QdrantChunkRepository(
+            client, collection="chunks", embed=lambda text: [1.0, 0.0],
+            embed_hybrid=lambda text: ([1.0, 0.0], {"7": 0.5}),
+        )
+        indexed = chunk_document(replace(self.doc, owner_id="bob"))[0]
+        client.dense_results = [{**chunk_to_point(indexed, [1.0, 0.0]), "score": 0.9}]
+        source = CanonicalHybridCandidates(
+            repo, self.path, expected_sha256=self.snapshot(self.doc)
+        )
+        self.assertEqual(source.candidates("question", context=self.context), [])
+
+    def test_prefiltering_client_still_returns_a_valid_candidate(self) -> None:
+        from rag_hermes.g1_hybrid_candidates import CanonicalHybridCandidates
+        client = PrefilteringHybridClient()
+        repo = QdrantChunkRepository(
+            client, collection="chunks", embed=lambda text: [1.0, 0.0],
+            embed_hybrid=lambda text: ([1.0, 0.0], {"7": 0.5}),
+        )
+        client.dense_results = [
+            {**chunk_to_point(chunk_document(self.doc)[0], [1.0, 0.0]), "score": 0.9},
+        ]
+        source = CanonicalHybridCandidates(
+            repo, self.path, expected_sha256=self.snapshot(self.doc)
+        )
+        found = source.candidates("question", context=self.context)
+        self.assertEqual([item.chunk.document_id for item in found], ["guide"])
+
+    def test_each_permissive_acl_field_divergence_is_reported(self) -> None:
+        from rag_hermes.g1_hybrid_candidates import CanonicalHybridCandidates
+        canonical_variants = {
+            "tenant_id": replace(self.doc, tenant_id="beta"),
+            "visibility": replace(self.doc, visibility="public"),
+            "owner_id": replace(self.doc, owner_id="bob"),
+            "classification": replace(self.doc, classification=5),
+            "allowed_groups": replace(self.doc, allowed_groups=("support",)),
+            "allowed_users": replace(self.doc, allowed_users=("carol",)),
+        }
+        for field, canonical in canonical_variants.items():
+            with self.subTest(field=field):
+                source = CanonicalHybridCandidates(
+                    self.repo, self.path, expected_sha256=self.snapshot(canonical)
+                )
+                with self.assertRaisesRegex(PermissionError, "ACL.*conflicts"):
+                    source.candidates("question", context=self.context)
+
+    def test_foreign_hit_absent_from_snapshot_does_not_abort_a_valid_one(self) -> None:
+        from rag_hermes.g1_hybrid_candidates import CanonicalHybridCandidates
+        foreign = replace(self.doc, document_id="beta-doc", tenant_id="beta", owner_id="bob")
+        self.client.dense_results.insert(0, {
+            **chunk_to_point(chunk_document(foreign)[0], [1.0, 0.0]), "score": 1.0,
+        })
+        source = CanonicalHybridCandidates(
+            self.repo, self.path, expected_sha256=self.snapshot(self.doc)
+        )
+        found = source.candidates("question", context=self.context)
+        self.assertEqual([item.chunk.document_id for item in found], ["guide"])
+
+    def test_limit_truncates_the_returned_candidates(self) -> None:
+        from rag_hermes.g1_hybrid_candidates import CanonicalHybridCandidates
+        extra = [replace(self.doc, document_id=f"doc-{index}", content=f"Passage {index}.")
+                 for index in range(4)]
+        for index, document in enumerate(extra):
+            self.client.dense_results.append({
+                **chunk_to_point(chunk_document(document)[0], [1.0, 0.0]),
+                "score": 0.5 - index / 100,
+            })
+        source = CanonicalHybridCandidates(
+            self.repo, self.path, expected_sha256=self.snapshot(self.doc, *extra)
+        )
+        self.assertEqual(len(source.candidates("question", context=self.context, limit=5)), 5)
+        self.assertEqual(len(source.candidates("question", context=self.context, limit=2)), 2)
 
     def test_restrictive_index_divergence_is_error_not_empty_window(self) -> None:
         """Index plus restrictif que le canonique : fausse abstention à fermer."""

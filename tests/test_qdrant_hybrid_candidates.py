@@ -76,6 +76,22 @@ class HybridCandidateTests(unittest.TestCase):
         ranked = self.repo.hybrid_candidates("question", context=self.context, output_limit=1)
         self.assertEqual([item.chunk.document_id for item in ranked], ["valid"])
 
+    def test_denied_candidates_never_consume_the_authorized_cap(self) -> None:
+        points = []
+        for index in range(6):
+            tenant = "beta" if index % 2 else "alpha"
+            points.append({**self.point(f"doc-{index}", tenant=tenant), "score": 1.0 - index / 10})
+        self.client.dense_results = points
+        ranked = self.repo.hybrid_candidates(
+            "question", context=self.context, output_limit=3, include_denied=True,
+        )
+        authorized = [item for item in ranked if item.authorized_by_index]
+        self.assertEqual(len(authorized), 3)
+        self.assertEqual(
+            self.repo.hybrid_candidates("question", context=self.context, output_limit=3),
+            authorized,
+        )
+
     def test_denied_candidates_are_opt_in_and_flagged(self) -> None:
         foreign, valid = self.point("foreign", tenant="beta"), self.point("valid")
         self.client.dense_results = [{**foreign, "score": 0.9}, {**valid, "score": 0.8}]
@@ -87,7 +103,7 @@ class HybridCandidateTests(unittest.TestCase):
         )
         self.assertEqual(
             [(item.chunk.document_id, item.authorized_by_index) for item in with_denied],
-            [("foreign", False), ("valid", True)],
+            [("valid", True), ("foreign", False)],
         )
 
     def test_include_denied_must_be_boolean(self) -> None:
