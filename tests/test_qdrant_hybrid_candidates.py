@@ -76,6 +76,25 @@ class HybridCandidateTests(unittest.TestCase):
         ranked = self.repo.hybrid_candidates("question", context=self.context, output_limit=1)
         self.assertEqual([item.chunk.document_id for item in ranked], ["valid"])
 
+    def test_authorization_flag_has_no_default(self) -> None:
+        from rag_hermes.qdrant_repository import HybridCandidate
+        chunk = chunk_document(Document(
+            document_id="d", content="texte", tenant_id="alpha", visibility="private",
+            owner_id="alice", allowed_groups=(), allowed_users=(), classification=1,
+            doc_version=1, source_uri="local://d",
+        ))[0]
+        with self.assertRaises(TypeError):
+            HybridCandidate(chunk, 0.5)
+
+    def test_output_limit_truncates_the_authorized_candidates(self) -> None:
+        points = [
+            {**self.point(f"doc-{index}"), "score": 1.0 - index / 10}
+            for index in range(4)
+        ]
+        self.client.dense_results = points
+        ranked = self.repo.hybrid_candidates("question", context=self.context, output_limit=2)
+        self.assertEqual([item.chunk.document_id for item in ranked], ["doc-0", "doc-1"])
+
     def test_denied_candidates_never_consume_the_authorized_cap(self) -> None:
         points = []
         for index in range(6):

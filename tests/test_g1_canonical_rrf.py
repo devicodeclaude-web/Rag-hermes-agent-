@@ -129,7 +129,9 @@ class CanonicalHybridCandidateTests(unittest.TestCase):
                 source = CanonicalHybridCandidates(
                     self.repo, self.path, expected_sha256=self.snapshot(canonical)
                 )
-                with self.assertRaisesRegex(PermissionError, "ACL.*conflicts"):
+                # Message de la garde g1 UNIQUEMENT : « ACL payload conflicts »
+                # viendrait de _recheck et rendrait ce test non discriminant.
+                with self.assertRaisesRegex(PermissionError, "observed ACL conflicts"):
                     source.candidates("question", context=self.context)
 
     def test_foreign_hit_absent_from_snapshot_does_not_abort_a_valid_one(self) -> None:
@@ -257,6 +259,7 @@ class CanonicalHybridCandidateTests(unittest.TestCase):
         source = CanonicalHybridCandidates(self.repo, self.path, expected_sha256=self.snapshot(self.doc))
         found = source.candidates("comment installer ?", context=self.context)
         self.assertEqual([item.chunk.document_id for item in found], ["guide"])
+        self.assertEqual([item.authorized_by_index for item in found], [True])
         self.assertEqual(found[0].chunk.text, self.doc.content)
         self.assertGreater(found[0].rrf_score, 0)
 

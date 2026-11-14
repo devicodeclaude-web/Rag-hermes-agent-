@@ -51,6 +51,12 @@ d'abstention :
 - Le snapshot est **épinglé en mémoire à la construction** : une révocation
   écrite dans le JSONL après coup reste invisible pour une instance de longue
   durée. Reconstruire l'objet à chaque révision du corpus.
+- **Snapshot en retard sur un index légitimement mis à jour** (révocation déjà
+  appliquée à Qdrant, fichier pas encore ré-épinglé) : côté client non
+  préfiltrant, la requête entière est avortée par `CanonicalAclError` et un
+  candidat valide de la même fenêtre est perdu ; côté vrai client REST, le même
+  cas dégrade en fenêtre vide silencieuse. Ré-épingler le snapshot **avant** de
+  révoquer dans l'index.
 - Un seul candidat de la fenêtre absent du snapshot (ou divergent) **avorte
   toute la requête** : le fichier épinglé doit couvrir le corpus indexé, un
   snapshot partiel rend la source inutilisable.
@@ -58,6 +64,12 @@ d'abstention :
   fenêtre vide silencieuse : `acl.filter_authorized` le traite comme un
   locataire ordinaire alors que `AclPolicy.allows` traite `public` comme
   global/public-only. Divergence **préexistante** hors de cette tranche.
+- La garde `type(repository) is not QdrantChunkRepository` refuse aussi une
+  sous-classe légitime (dépôt instrumenté) : choix fail-closed assumé.
+- Avec `include_denied=True`, la liste du dépôt dépasse `output_limit` (bornée
+  par les 80 points de la fusion) et transporte du texte non autorisé à
+  l'intérieur du processus pour ce seul diagnostic ; le seul appelant actuel le
+  jette sans le renvoyer.
 - Le constructeur accepte un dépôt dense seul ; l'échec est différé au premier
   appel (`hybrid candidates require a hybrid encoder`).
 - La validation du contexte vit dans le dépôt (`hybrid_candidates`), pas dans

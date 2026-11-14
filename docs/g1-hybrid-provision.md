@@ -23,7 +23,7 @@ expose maintenant `hybrid_candidates` **uniquement si `embed_hybrid` est fourni*
 il encode la requête en un appel, interroge séparément les top-40 dense et sparse
 avec le préfiltre ACL, valide les points bruts (ID/payload/score), déduplique par
 ID et fusionne les rangs avec `1/(60+rang)` par voie. Les candidats refusés par
-l'ACL du payload sont exclus avant `output_limit`. Le résultat est un
+l'ACL du payload sont exclus avant `output_limit` (chemin par défaut). Le résultat est un
 `HybridCandidate` avec score RRF brut, **pas** un `SearchResult` directement
 consommable par `RagService` : un score RRF n'est pas un seuil d'abstention.
 Une intégration Qdrant réelle est couverte en CI avec trois passages autorisés
