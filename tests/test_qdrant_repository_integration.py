@@ -138,7 +138,11 @@ class QdrantRepositoryIntegrationTests(unittest.TestCase):
                 contender.start()
                 contender.join(15)
                 self.assertEqual(contender.exitcode, 0)
-                self.assertTrue(results.get(timeout=5).startswith("TimeoutError: document write lock"))
+                contender_outcome = results.get(timeout=5)
+                self.assertTrue(
+                    contender_outcome.startswith("DocumentWriteLockTimeout: document write lock"),
+                    contender_outcome,
+                )
                 # The held writer has not changed Qdrant, and the contender
                 # must not even scan while it waits for this lock.
                 points = self.client.scroll(self.collection, query_filter={"must": [

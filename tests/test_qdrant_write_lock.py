@@ -29,7 +29,7 @@ class DocumentWriteLockTests(unittest.TestCase):
             self.assertEqual(len(set(names)), 2)
 
     def test_other_process_cannot_enter_same_document_until_release(self) -> None:
-        from rag_hermes.qdrant_write_lock import document_write_lock
+        from rag_hermes.qdrant_write_lock import DocumentWriteLockTimeout, document_write_lock
         ctx = multiprocessing.get_context("spawn")
         with tempfile.TemporaryDirectory() as directory:
             entered, release = ctx.Event(), ctx.Event()
@@ -37,7 +37,7 @@ class DocumentWriteLockTests(unittest.TestCase):
             worker.start()
             try:
                 self.assertTrue(entered.wait(10), "worker did not acquire lock")
-                with self.assertRaisesRegex(TimeoutError, "lock"):
+                with self.assertRaisesRegex(DocumentWriteLockTimeout, "lock"):
                     with document_write_lock(directory, "chunks", "tenant", "doc", timeout=0.15):
                         self.fail("second process entered while lock held")
                 release.set()
