@@ -18,6 +18,19 @@ Un test d'intégration conditionné par `QDRANT_INTEGRATION_URL` tente une créa
 réelle, l'écriture d'un point dense+sparse et une requête sparse avec préfiltre
 locataire. Sans serveur, il est ignoré ; la CI doit confirmer son exécution.
 Ce test ne prouve ni l'intégrité des vecteurs du corpus, ni la provenance des
-points retournés, ni le câblage R3 : le dépôt et le service G1 restent sur le
-chemin dense, sans fusion RRF ni reranking branchés. Les résultats bruts sparse
-ne peuvent pas être exposés sans réconciliation ACL/provenance canonique.
+points retournés, ni le câblage R3 de bout en bout. `QdrantChunkRepository`
+expose maintenant `hybrid_candidates` **uniquement si `embed_hybrid` est fourni** :
+il encode la requête en un appel, interroge séparément les top-40 dense et sparse
+avec le préfiltre ACL, valide les points bruts (ID/payload/score), déduplique par
+ID et fusionne les rangs avec `1/(60+rang)` par voie. Les candidats refusés par
+l'ACL du payload sont exclus avant `output_limit`. Le résultat est un
+`HybridCandidate` avec score RRF brut, **pas** un `SearchResult` directement
+consommable par `RagService` : un score RRF n'est pas un seuil d'abstention.
+Une intégration Qdrant réelle est couverte en CI avec trois passages autorisés
+et un tenant étranger, mais ni BGE-M3 ni le reranker n'y sont exécutés.
+
+Le service G1 reste sur le chemin dense : l'autorité ACL et la provenance
+canonique, le reranking, l'abstention calibrée et la génération citée ne sont
+**pas** branchés sur ces candidats. Les résultats bruts sparse/RRF ne peuvent
+pas être exposés à l'utilisateur sans ces barrières, et cette tranche ne prouve
+pas une qualité de retrieval ni une campagne G1.

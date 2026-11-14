@@ -12,7 +12,7 @@ from .acl import AuthorizationContext, Chunk, filter_authorized
 from .ingestion import Document
 from .qdrant_filter import build_qdrant_filter
 from .qdrant_preflight import verify_collection_ready
-from .qdrant_store import chunk_to_point, stable_point_id
+from .qdrant_store import chunk_to_point, lexical_weights_to_sparse_vector, stable_point_id
 from .qdrant_write_lock import default_lock_directory, document_write_lock
 from .retrieval import SearchResult
 
@@ -139,6 +139,14 @@ def _snapshot_document(document: Document) -> _DocumentSnapshot:
         content=document.content,
         source_sha=source_sha,
     )
+
+
+@dataclass(frozen=True)
+class HybridCandidate:
+    """RRF candidate, not a calibrated answer score or an ACL attestation."""
+
+    chunk: Chunk
+    rrf_score: float
 
 
 @dataclass(frozen=True)
@@ -627,6 +635,90 @@ class QdrantChunkRepository:
         except (KeyError, TypeError, ValueError) as exc:
             raise ValueError(f"invalid Qdrant candidate payload: {exc}") from exc
 
+    def _verified_query_point(self, point: object) -> tuple[str, Chunk, str]:
+        """Check a raw query hit before ACL filtering can hide corruption."""
+        if type(point) is not dict or (
+            type(point.get("score")) not in (int, float)
+            or not math.isfinite(point["score"])
+        ):
+            raise ValueError("Qdrant candidate score is invalid")
+        chunk = self._chunk_from_point(point)
+        canonical = chunk_to_point(chunk, [1.0])
+        try:
+            raw_payload = json.dumps(point["payload"], sort_keys=True, allow_nan=False)
+            decoded_payload = json.dumps(canonical["payload"], sort_keys=True, allow_nan=False)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("Qdrant candidate point is invalid") from exc
+        if type(point.get("id")) is not str or point["id"] != canonical["id"] or raw_payload != decoded_payload:
+            raise ValueError("Qdrant candidate point conflicts with decoded chunk")
+        return point["id"], chunk, raw_payload
+
+    def hybrid_candidates(
+        self, query: str, *, context: AuthorizationContext, output_limit: int = 40,
+    ) -> list[HybridCandidate]:
+        """Fetch dense/sparse top-40 and fuse by RRF; NEVER use RRF as a quality gate.
+
+        These candidates still need a trusted canonical ACL/provenance source,
+        reranking and a calibrated abstention rule before any answer or citation.
+        """
+        if self._embed_hybrid is None:
+            raise ValueError("hybrid candidates require a hybrid encoder")
+        if type(output_limit) is not int or not 1 <= output_limit <= 80:
+            raise ValueError("hybrid output_limit must be between 1 and 80")
+        if (
+            type(context) is not AuthorizationContext
+            or type(context.tenant_id) is not str or not context.tenant_id
+            or type(context.user_id) is not str or not context.user_id
+            or type(context.groups) is not tuple
+            or any(type(group) is not str or not group for group in context.groups)
+            or type(context.clearance) is not int or context.clearance < 0
+        ):
+            raise ValueError("valid authorization context is required")
+        dense, sparse = self._embed_hybrid(query)
+        if (
+            type(dense) is not list or len(dense) != self._vector_size
+            or any(type(value) not in (int, float) or not math.isfinite(value) for value in dense)
+        ):
+            raise ValueError("hybrid query dense vector is invalid")
+        lexical_weights_to_sparse_vector(sparse)
+        query_sparse = getattr(self._client, "query_sparse", None)
+        if not callable(query_sparse):
+            raise RuntimeError("Qdrant client must implement query_sparse")
+        dense_hits = self._client.query(
+            self._collection, dense, query_filter=build_qdrant_filter(context), limit=40,
+        )
+        sparse_hits = query_sparse(
+            self._collection, sparse, context=context, limit=40,
+        )
+        scores: dict[str, float] = {}
+        chunks: dict[str, Chunk] = {}
+        payloads: dict[str, str] = {}
+        for hits in (dense_hits, sparse_hits):
+            if type(hits) is not list or len(hits) > 40:
+                raise ValueError("Qdrant hybrid candidate page is invalid")
+            lane: list[tuple[str, Chunk, str, float]] = []
+            seen: set[str] = set()
+            for hit in hits:
+                point_id, chunk, payload = self._verified_query_point(hit)
+                if point_id in seen:
+                    raise ValueError("duplicate Qdrant candidate in a lane")
+                seen.add(point_id)
+                lane.append((point_id, chunk, payload, float(hit["score"])))
+            lane.sort(key=lambda item: (-item[3], item[0]))
+            for rank, (point_id, chunk, payload, _score) in enumerate(lane, 1):
+                if point_id in payloads and payloads[point_id] != payload:
+                    raise ValueError("conflicting Qdrant candidate across lanes")
+                payloads[point_id] = payload
+                chunks[point_id] = chunk
+                scores[point_id] = scores.get(point_id, 0.0) + 1.0 / (60 + rank)
+        # The prefilter is only an optimization: recheck the decoded ACL before
+        # the output cap, so a foreign top hit never hides an authorized hit.
+        ordered = sorted(scores, key=lambda point_id: (-scores[point_id], point_id))
+        return [
+            HybridCandidate(chunks[point_id], scores[point_id])
+            for point_id in ordered if filter_authorized([chunks[point_id]], context)
+        ][:output_limit]
+
     def search(
         self,
         query: str,
@@ -645,29 +737,7 @@ class QdrantChunkRepository:
         )
         results: list[SearchResult] = []
         for point in candidates:
-            if not isinstance(point, dict) or (
-                type(point.get("score")) not in (int, float)
-                or not math.isfinite(point["score"])
-            ):
-                raise ValueError("Qdrant candidate score is invalid")
-            chunk = self._chunk_from_point(point)
-            # Do not let coercion in _chunk_from_point erase the raw Qdrant
-            # identity or JSON types: int(True) == 1 and a reconstructed point
-            # ID says nothing about the ID returned by the query. A mismatched
-            # candidate aborts instead of silently becoming an honest abstention
-            # or a seemingly well-provenanced citation.
-            canonical = chunk_to_point(chunk, [1.0])
-            try:
-                raw_payload = json.dumps(
-                    point["payload"], sort_keys=True, allow_nan=False
-                )
-                decoded_payload = json.dumps(
-                    canonical["payload"], sort_keys=True, allow_nan=False
-                )
-            except (KeyError, TypeError, ValueError) as exc:
-                raise ValueError("Qdrant candidate point is invalid") from exc
-            if type(point.get("id")) is not str or point["id"] != canonical["id"] or raw_payload != decoded_payload:
-                raise ValueError("Qdrant candidate point conflicts with decoded chunk")
+            _point_id, chunk, _payload = self._verified_query_point(point)
             if not filter_authorized([chunk], context):
                 continue
             results.append(SearchResult(chunk=chunk, score=float(point["score"])))
