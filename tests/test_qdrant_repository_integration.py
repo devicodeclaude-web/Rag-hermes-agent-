@@ -88,6 +88,64 @@ class QdrantRepositoryIntegrationTests(unittest.TestCase):
             source_uri=f"local://{doc_id}",
         )
 
+    def test_hybrid_rrf_queries_real_qdrant_with_acl_prefilter(self) -> None:
+        collection = "hermes_hybrid_" + uuid.uuid4().hex[:12]
+        self.client.create_collection(collection, vector_size=4, sparse=True)
+        try:
+            specification = json.loads(INDEX_SPEC.read_text())
+            for index in specification["payload_indexes"]:
+                self.client.create_payload_index(
+                    collection, index["field_name"], index["field_schema"]
+                )
+            encoded = {
+                "dense-first": ([0.9, 0.435889894, 0.0, 0.0], {"8": 1.0}),
+                "both": ([0.8, 0.6, 0.0, 0.0], {"7": 1.0}),
+                "sparse-second": ([0.0, 1.0, 0.0, 0.0], {"7": 0.4}),
+            }
+
+            def embed_hybrid(text):
+                if text == "question":
+                    return [1.0, 0.0, 0.0, 0.0], {"7": 1.0}
+                return encoded[text]
+
+            repo = QdrantChunkRepository(
+                self.client, collection=collection,
+                embed=lambda text: embed_hybrid(text)[0], embed_hybrid=embed_hybrid,
+            )
+            for doc_id in encoded:
+                doc = self._document(doc_id, "alpha", "alice", doc_id)
+                repo.replace_document(doc, chunk_document(doc))
+            # An unfiltered top-40 from either lane is saturated by foreign
+            # points: postfiltering alone can no longer rescue the three alpha
+            # results. This distinguishes a real Qdrant prefilter from a local
+            # ACL-only check on the final list.
+            foreign_points = [
+                chunk_to_point(
+                    chunk_document(self._document(
+                        f"foreign-{index:02d}", "beta", "bob", f"foreign-{index:02d}"
+                    ))[0], [1.0, 0.0, 0.0, 0.0], sparse_weights={"7": 2.0},
+                )
+                for index in range(40)
+            ]
+            inserted = self.client.upsert(collection, foreign_points)
+            self.assertEqual(inserted["result"]["status"], "completed")
+            foreign_in_index = self.client.scroll(collection, query_filter={"must": [
+                {"key": "tenant_id", "match": {"value": "beta"}},
+            ]}, limit=50)
+            self.assertEqual(len(foreign_in_index), 40)
+            ranked = repo.hybrid_candidates(
+                "question", context=AuthorizationContext("alpha", "alice", ("support",), 1),
+                output_limit=4,
+            )
+            self.assertEqual([candidate.chunk.document_id for candidate in ranked],
+                             ["both", "sparse-second", "dense-first"])
+            for candidate, expected in zip(
+                ranked, (1 / 62 + 1 / 61, 1 / 63 + 1 / 62, 1 / 61)
+            ):
+                self.assertAlmostEqual(candidate.rrf_score, expected)
+        finally:
+            self.client.delete_collection(collection)
+
     def test_search_never_returns_foreign_tenant_even_with_identical_vector(self) -> None:
         alpha = self._document("alpha-doc", "alpha", "alice", "Installer Hermes localement.")
         beta = self._document("beta-doc", "beta", "bob", "Installer Hermes localement.")
