@@ -190,7 +190,20 @@ ne doivent **jamais être effacés ni remplacés** pendant que des écrivains
 fonctionnent. Un chemin relatif ou une configuration de permissions dangereuse
 échoue avant le scan/l'écriture. Après 30 secondes de contention (paramètre
 `lock_timeout=` pour les appelants directs), l'opération échoue **sans commencer
-le remplacement** ; le verrou est libéré aussi en cas d'exception.
+le remplacement** ; le verrou est libéré aussi en cas d'exception. Pour
+`POST /api/documents`, une contention expirée renvoie `503 Service Unavailable`
+(`document_write_busy`, `Retry-After: 1`) sans exposer le chemin du verrou.
+
+Le chemin est ouvert composant par composant depuis `/` via des descripteurs de
+répertoire (`O_PATH|O_NOFOLLOW`) : aucun parent symbolique n'est accepté. Les parents
+doivent appartenir à l'UID courant ou à root, et ne pas être modifiables par un
+autre utilisateur, sauf répertoire à sticky bit possédé par root ou l'UID
+courant (par exemple `/tmp`). Un parent non fiable échoue avant la création du
+verrou ; le fichier est ouvert relativement au répertoire privé vérifié.
+La clé inclut le **nom de collection fourni** : tous les écrivains d'une même
+collection Qdrant doivent employer exactement le même nom, pas un mélange de
+nom canonique et d'alias pointant vers cette collection. Même sur le même hôte,
+un alias différent contourne la sérialisation.
 
 `update_filter` ne rend toujours pas atomiques le scan et les mutations : un
 écrivain qui parle directement à Qdrant, un autre UID/chemin, un autre hôte ou

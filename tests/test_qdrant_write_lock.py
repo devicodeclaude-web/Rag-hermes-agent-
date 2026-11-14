@@ -6,6 +6,8 @@ from pathlib import Path
 import stat
 import tempfile
 import unittest
+from contextlib import nullcontext
+from unittest.mock import patch
 
 
 def _hold_lock(directory: str, entered, release) -> None:
@@ -61,6 +63,53 @@ class DocumentWriteLockTests(unittest.TestCase):
             with self.assertRaisesRegex(OSError, "lock directory"):
                 with document_write_lock(shortcut, "chunks", "tenant", "doc"):
                     pass
+
+    def test_writable_nonsticky_parent_is_rejected_before_creating_lock(self) -> None:
+        from rag_hermes.qdrant_write_lock import document_write_lock
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory) / "untrusted"
+            parent.mkdir(mode=0o700)
+            os.chmod(parent, 0o777)
+            target = parent / "private"
+            with self.assertRaisesRegex(OSError, "lock directory"):
+                with document_write_lock(target, "chunks", "tenant", "doc"):
+                    self.fail("unsafe ancestor permitted a lock")
+            self.assertFalse(target.exists())
+
+    def test_symlinked_parent_is_rejected(self) -> None:
+        from rag_hermes.qdrant_write_lock import document_write_lock
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "real").mkdir()
+            (root / "shortcut").symlink_to(root / "real", target_is_directory=True)
+            with self.assertRaisesRegex(OSError, "lock directory"):
+                with document_write_lock(root / "shortcut" / "locks", "chunks", "tenant", "doc"):
+                    self.fail("symlinked ancestor permitted a lock")
+
+    def test_execute_only_parent_allows_lock(self) -> None:
+        from rag_hermes.qdrant_write_lock import document_write_lock
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory) / "execute-only"
+            parent.mkdir(mode=0o700)
+            target = parent / "private"
+            target.mkdir(mode=0o700)
+            os.chmod(parent, 0o111)
+            try:
+                native_open = os.open
+
+                def guard_open(path, flags, *args, **kwargs):
+                    # Root bypasses DAC on this host; model the non-root rule.
+                    if (path == "execute-only" and flags & os.O_DIRECTORY
+                            and not flags & os.O_PATH):
+                        raise PermissionError("execute-only parent cannot be read")
+                    return native_open(path, flags, *args, **kwargs)
+
+                context = patch("os.open", side_effect=guard_open) if os.geteuid() == 0 else nullcontext()
+                with context:
+                    with document_write_lock(target, "chunks", "tenant", "doc"):
+                        pass
+            finally:
+                os.chmod(parent, 0o700)
 
     def test_private_permissions_and_release_after_exception(self) -> None:
         from rag_hermes.qdrant_write_lock import document_write_lock

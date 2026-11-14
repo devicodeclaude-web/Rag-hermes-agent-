@@ -17,6 +17,10 @@ import time
 from typing import Iterator
 
 
+class DocumentWriteLockTimeout(TimeoutError):
+    """An import could not acquire its cooperative document lock in time."""
+
+
 def default_lock_directory() -> Path:
     return Path.home() / ".local" / "state" / "rag-hermes" / "qdrant-locks"
 
@@ -30,6 +34,48 @@ def _lock_filename(collection: str, tenant_id: str, document_id: str) -> str:
         digest.update(len(raw).to_bytes(8, "big"))
         digest.update(raw)
     return digest.hexdigest() + ".lock"
+
+
+def _open_private_directory(root: Path) -> int:
+    """Open each component from / without following links or trusting writable parents."""
+    fd = os.open("/", os.O_PATH | os.O_DIRECTORY | os.O_CLOEXEC)
+    try:
+        parts = root.parts[1:]
+        if not parts or any(part in ("", ".", "..") for part in parts):
+            raise OSError("lock directory must be a private subdirectory")
+        for index, part in enumerate(parts):
+            try:
+                os.mkdir(part, mode=0o700, dir_fd=fd)
+            except FileExistsError:
+                pass
+            try:
+                child = os.open(
+                    part, os.O_PATH | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                    dir_fd=fd,
+                )
+            except OSError as exc:
+                raise OSError(exc.errno, "lock directory contains an unsafe component", part) from exc
+            try:
+                info = os.fstat(child)
+                mode = stat.S_IMODE(info.st_mode)
+                if index == len(parts) - 1:
+                    trusted = info.st_uid == os.getuid() and not mode & 0o077
+                else:
+                    trusted = (
+                        info.st_uid in (0, os.getuid())
+                        and (not mode & 0o022 or (mode & stat.S_ISVTX and info.st_uid in (0, os.getuid())))
+                    )
+                if not trusted:
+                    raise OSError("lock directory has an untrusted ancestor or permissions")
+            except BaseException:
+                os.close(child)
+                raise
+            os.close(fd)
+            fd = child
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
 
 
 @contextmanager
@@ -50,16 +96,12 @@ def document_write_lock(
     if not root.is_absolute():
         raise ValueError("lock directory must be an absolute path")
     filename = _lock_filename(collection, tenant_id, document_id)
-    os.makedirs(root, mode=0o700, exist_ok=True)
-    info = os.lstat(root)
-    if (
-        not stat.S_ISDIR(info.st_mode)
-        or info.st_uid != os.getuid()
-        or stat.S_IMODE(info.st_mode) & 0o077
-    ):
-        raise OSError("lock directory must be owned by this user and private")
-    flags = os.O_CREAT | os.O_RDWR | os.O_CLOEXEC | os.O_NOFOLLOW
-    fd = os.open(root / filename, flags, 0o600)
+    root_fd = _open_private_directory(root)
+    try:
+        flags = os.O_CREAT | os.O_RDWR | os.O_CLOEXEC | os.O_NOFOLLOW
+        fd = os.open(filename, flags, 0o600, dir_fd=root_fd)
+    finally:
+        os.close(root_fd)
     try:
         locked = os.fstat(fd)
         if (
@@ -79,7 +121,7 @@ def document_write_lock(
                     raise
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
-                    raise TimeoutError("document write lock contention") from exc
+                    raise DocumentWriteLockTimeout("document write lock contention") from exc
                 time.sleep(min(0.05, remaining))
         try:
             yield
