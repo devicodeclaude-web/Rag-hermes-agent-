@@ -635,8 +635,7 @@ Répartition actuelle du champ `authorship` :
 
 - `scaffold_assisted_llm_written` : 203 ;
 - `human_drafted_llm_reworded_independently_reviewed` : 82 ;
-- `human_rewritten_in_independent_review` : 12 ;
-- `human_drafted_pending_independent_review` : 1 ;
+- `human_rewritten_in_independent_review` : 13 ;
 - `scaffold_assisted_human_written` : 2.
 
 Répartition des statuts de revue :
