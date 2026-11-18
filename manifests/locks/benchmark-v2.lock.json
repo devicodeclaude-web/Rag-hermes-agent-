@@ -1,13 +1,13 @@
 {
   "benchmark_version": "v2",
-  "frozen_at": "2026-11-02",
+  "frozen_at": "2026-11-18",
   "git_head": "c48e3a0ff147afe876d0c465a894b0402576faed",
   "git_describe": "audit-20260923-246-gc48e3a0",
-  "benchmark_sha": "654dd33f50049bf7b12002f307b21383b773aad97e9f2a1ebc2212e1b0b5b3fd",
+  "benchmark_sha": "f2cd4c84448b4a5c16732dc483f8b90d0d54ac79d97937a7e618308bc343d486",
   "test_suite": "571 tests OK (skipped=19) @ HEAD; PYTHONPATH=. python -m unittest discover -s tests",
   "active_dataset": {
     "path": "data/benchmark/dataset-v2.jsonl",
-    "sha256": "e976b648c783018db88440e6e89de01eb50c56e8cfc32edb973ca8a1284209e6",
+    "sha256": "f8162c4d720773c7a81fab506b8785628c9ba66e9f72588b9752a0cc6e008d7c",
     "record_count": 300,
     "role": "active_eval_set_public_only",
     "category_distribution": {
@@ -66,5 +66,5 @@
     "human_independent_review": "NON ATTEINT",
     "note": "les validations d'auteur (devicodeclaude-web) sont des auto-revues (auteur=reviseur); un second humain independant reste requis. Honnetete gravee dans les review_note du dataset."
   },
-  "note": "Identite figee du benchmark d'evaluation v2. verify_benchmark_lock.py recalcule sha256+comptes et sort 1 a la moindre derive. Les 4 strates restent dans des fichiers dedies hors dataset-v2.jsonl (invariante public-only). L'identite du corpus est epinglee separement dans corpus.lock.json."
+  "note": "Identite figee du benchmark d'evaluation v2. verify_benchmark_lock.py recalcule sha256+comptes et sort 1 a la moindre derive. Les 4 strates restent dans des fichiers dedies hors dataset-v2.jsonl (invariante public-only). L'identite du corpus est epinglee separement dans corpus.lock.json. Re-gele 2026-11-18 : rewrite independant du cas v3-010 (paraphrase, gold heartbeat, discriminant resserre) applique ; sha256 du jeu actif et benchmark_sha recalcules, comptes et distribution inchanges (300)."
 }
