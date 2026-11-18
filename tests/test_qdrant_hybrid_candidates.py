@@ -163,6 +163,55 @@ class HybridCandidateTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "conflicting"):
             self.repo.hybrid_candidates("question", context=self.context)
 
+    def test_denied_candidates_never_shrink_a_full_authorized_window(self) -> None:
+        # Plafond EFFECTIVEMENT atteint : 3 autorisés pour output_limit=2, plus
+        # 1 refusé. Le plafond ne borne QUE les autorisés ; les refusés
+        # (diagnostic) ne doivent jamais consommer le quota ni disparaître.
+        # Sans la garde (`(authorized + denied)[:output_limit]`), le refusé
+        # serait tronqué et la fenêtre utile rétrécie — le cas existant à
+        # len(autorisés) == plafond ne discrimine pas ce défaut.
+        self.client.dense_results = [
+            {**self.point("doc-0"), "score": 0.9},
+            {**self.point("doc-1"), "score": 0.8},
+            {**self.point("doc-2"), "score": 0.7},
+            {**self.point("doc-3", tenant="beta"), "score": 0.6},
+        ]
+        ranked = self.repo.hybrid_candidates(
+            "question", context=self.context, output_limit=2, include_denied=True,
+        )
+        pairs = [(item.chunk.document_id, item.authorized_by_index) for item in ranked]
+        self.assertEqual(pairs, [("doc-0", True), ("doc-1", True), ("doc-3", False)])
+
+    def test_lane_longer_than_the_requested_limit_is_refused(self) -> None:
+        # Un client mal élevé qui renvoie plus de 40 hits (au-delà de la limite
+        # demandée) doit échouer fermé, pas être fusionné en silence.
+        class OverfilledLaneClient(HybridQueryClient):
+            def query(self, collection, vector, *, query_filter, limit):
+                self.queries.append((collection, vector, query_filter, limit))
+                return self.dense_results  # ignore la limite : 41 hits
+        client = OverfilledLaneClient()
+        repo = QdrantChunkRepository(
+            client, collection="chunks", embed=lambda text: [1.0, 0.0],
+            embed_hybrid=lambda text: ([1.0, 0.0], {"7": 0.5}),
+        )
+        client.dense_results = [
+            {**self.point(f"doc-{index}"), "score": 1.0 - index / 100}
+            for index in range(41)
+        ]
+        with self.assertRaisesRegex(ValueError, "page is invalid"):
+            repo.hybrid_candidates("question", context=self.context)
+
+    def test_non_finite_score_cannot_become_an_empty_answer(self) -> None:
+        # inf/NaN passent le contrôle de type (float) mais ne sont pas des
+        # scores valides : sans le contrôle de finitude, un hit non fini
+        # franchirait la barrière et fausserait la fusion.
+        for bad in (float("inf"), float("-inf"), float("nan")):
+            with self.subTest(score=bad):
+                self.client.dense_results = [{**self.point("a"), "score": bad}]
+                self.client.sparse_results = []
+                with self.assertRaisesRegex(ValueError, "score is invalid"):
+                    self.repo.hybrid_candidates("question", context=self.context)
+
 
 if __name__ == "__main__":
     unittest.main()
