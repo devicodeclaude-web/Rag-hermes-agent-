@@ -242,6 +242,31 @@ class AuditedG1CandidateWindowTests(unittest.TestCase):
             "schema", "audit", "dense", "sparse", "audit",
         ])
 
+    def test_duplicate_point_in_canonical_manifest_refused_before_any_io(self):
+        # Un chunker qui émet deux chunks au MÊME point_id empoisonnerait le
+        # manifeste par écrasement silencieux (deux chunks annoncés, un seul
+        # retenu). Refus explicite AVANT toute construction de session ou I/O
+        # Qdrant — sinon la divergence ne sortirait qu'au scroll d'ouverture,
+        # avec un autre type d'erreur et après une requête de schéma gâchée.
+        def colliding_chunker(document):
+            produced = chunk_document(document)
+            return [produced[0], produced[0]]
+        with self.assertRaisesRegex(ValueError, "duplicate point in canonical manifest"):
+            self.run_window(chunker=colliding_chunker)
+        # Un preflight de schéma a lieu, mais AUCUN scroll d'audit ni requête :
+        # sans la garde, la collision ne sortirait qu'au scroll d'ouverture, en
+        # AuditedIndexSessionError (« opening audit failed »), pas en ValueError.
+        self.assertEqual([event[0] for event in self.events], ["schema"])
+
+    def test_canonical_source_without_chunks_refused_before_any_io(self):
+        # Une source qui ne produit AUCUN chunk n'est pas une fenêtre vide
+        # honnête : refus explicite et spécifique à la source AVANT tout I/O,
+        # distinct du « empty canonical chunk manifest » du constructeur de
+        # session (deux étages fail-closed, libellés distincts).
+        with self.assertRaisesRegex(ValueError, "canonical source produced no chunks"):
+            self.run_window(chunker=lambda document: [])
+        self.assertEqual(self.events, [])
+
 
 if __name__ == "__main__":
     unittest.main()
