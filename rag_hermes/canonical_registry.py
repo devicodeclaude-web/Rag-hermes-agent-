@@ -311,8 +311,17 @@ class CanonicalDocumentRegistry:
             raise PermissionError("canonical owner_id must not change")
         if document.doc_version < previous.doc_version:
             raise ValueError("canonical doc_version must not regress")
+        if document.doc_version == previous.doc_version and (
+            document.content != previous.content or document.source_uri != previous.source_uri
+        ):
+            raise ValueError("canonical content or provenance change requires an incremented doc_version")
         if document.acl_version < previous.acl_version:
             raise ValueError("canonical acl_version must not regress")
+        if document.acl_version == previous.acl_version and any(
+            getattr(document, field) != getattr(previous, field)
+            for field in ("visibility", "allowed_groups", "allowed_users", "classification")
+        ):
+            raise ValueError("canonical ACL change requires an incremented acl_version")
 
     def source(self, document_id: str) -> Document | None:
         if type(document_id) is not str:

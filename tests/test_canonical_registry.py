@@ -301,14 +301,98 @@ class RegistryStoreTests(unittest.TestCase):
         self.assertEqual(stored.owner_id, "alice")
         self.assertEqual(stored.doc_version, 1)
 
-    def test_revocation_at_equal_versions_is_accepted_and_overwrites(self) -> None:
+    def test_acl_change_at_equal_version_is_refused_without_touching_authority(self) -> None:
         registry = CanonicalDocumentRegistry(self.store)
         registry.register(document(allowed_users=("bob",)))
-        registry.register(document(allowed_users=()))
+        original = registry.path.read_bytes()
 
+        with self.assertRaisesRegex(ValueError, "acl_version"):
+            registry.register(document(allowed_users=()))
+
+        self.assertEqual(registry.path.read_bytes(), original)
         policy = registry.authority.policy_for("doc-1")
         assert policy is not None
+        self.assertEqual(policy.allowed_users, ("bob",))
+        reloaded = CanonicalDocumentRegistry(self.store)
+        self.assertEqual(reloaded.authority.policy_for("doc-1"), policy)
+
+    def test_old_allowlist_replayed_after_revocation_is_refused(self) -> None:
+        registry = CanonicalDocumentRegistry(self.store)
+        registry.register(document(allowed_users=("bob",), acl_version=1))
+        registry.register(document(allowed_users=(), acl_version=2))
+        original = registry.path.read_bytes()
+
+        with self.assertRaisesRegex(ValueError, "acl_version"):
+            registry.register(document(allowed_users=("bob",), acl_version=2))
+
+        self.assertEqual(registry.path.read_bytes(), original)
+        policy = registry.authority.policy_for("doc-1")
+        assert policy is not None
+        self.assertEqual(policy.acl_version, 2)
         self.assertEqual(policy.allowed_users, ())
+        self.assertEqual(CanonicalDocumentRegistry(self.store).authority.policy_for("doc-1"), policy)
+
+    def test_content_change_at_equal_doc_version_is_refused(self) -> None:
+        registry = CanonicalDocumentRegistry(self.store)
+        original = document(content="contenu initial")
+        registry.register(original)
+        before = registry.path.read_bytes()
+
+        with self.assertRaisesRegex(ValueError, "doc_version"):
+            registry.register(document(content="contenu remplacé", acl_version=2))
+
+        self.assertEqual(registry.path.read_bytes(), before)
+        self.assertEqual(registry.source("doc-1"), original)
+        self.assertEqual(CanonicalDocumentRegistry(self.store).source("doc-1"), original)
+
+    def test_source_uri_change_at_equal_doc_version_is_refused(self) -> None:
+        registry = CanonicalDocumentRegistry(self.store)
+        original = document()
+        registry.register(original)
+        before = registry.path.read_bytes()
+        with self.assertRaisesRegex(ValueError, "doc_version"):
+            registry.register(replace(original, source_uri="file:///docs/forged.md"))
+        self.assertEqual(registry.path.read_bytes(), before)
+        self.assertEqual(CanonicalDocumentRegistry(self.store).source("doc-1"), original)
+
+    def test_acl_mutations_at_same_version_are_all_refused(self) -> None:
+        registry = CanonicalDocumentRegistry(self.store)
+        original = document()
+        registry.register(original)
+        for field, value in (
+            ("visibility", "public"),
+            ("classification", 0),
+            ("allowed_groups", ("ops",)),
+            ("allowed_users", ("bob",)),
+        ):
+            with self.subTest(field=field):
+                with self.assertRaisesRegex(ValueError, "acl_version"):
+                    registry.register(replace(original, **{field: value}, doc_version=2))
+        self.assertEqual(registry.source("doc-1"), original)
+
+    def test_reimport_identical_and_independent_version_bumps_succeed(self) -> None:
+        registry = CanonicalDocumentRegistry(self.store)
+        original = document()
+        registry.register(original)
+        registry.register(original)
+        registry.register(replace(original, allowed_users=("bob",), acl_version=2))
+        updated = replace(
+            original, content="nouveau contenu", source_uri="file:///docs/new.md",
+            allowed_users=("bob",), acl_version=2, doc_version=2,
+        )
+        registry.register(updated)
+        self.assertEqual(CanonicalDocumentRegistry(self.store).source("doc-1"), updated)
+
+    def test_replayed_acl_record_at_equal_version_refuses_startup(self) -> None:
+        registry = CanonicalDocumentRegistry(self.store)
+        registry.register(document(allowed_users=("bob",), acl_version=1))
+        registry.register(document(allowed_users=(), acl_version=2))
+        replay = json.loads(registry.path.read_text(encoding="utf-8").splitlines()[0])
+        replay["acl_version"] = 2
+        with registry.path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(replay) + "\n")
+        with self.assertRaisesRegex(ValueError, "acl_version"):
+            CanonicalDocumentRegistry(self.store)
 
     def test_tampered_store_file_refuses_startup(self) -> None:
         registry = CanonicalDocumentRegistry(self.store)
@@ -516,34 +600,25 @@ class BarrierWiringTests(unittest.TestCase):
         with self.assertRaisesRegex(CanonicalAclError, "conflicts"):
             service.answer_with_trace("question", context=context)
 
-    def test_canonical_revocation_at_equal_version_is_never_served(self) -> None:
-        """Révoquer dans le registre sans réindexer rend le payload contradictoire.
-
-        L'index garde `allowed_users=("bob",)` que le registre a retiré. Les
-        deux issues sont sûres mais DIFFÉRENTES, parce que la comparaison du
-        payload à la politique vient APRÈS l'autorisation du demandeur :
-        - le lecteur révoqué est refusé par la politique canonique -> abstention ;
-        - le propriétaire, lui, est autorisé, donc la divergence de payload est
-          atteinte et échoue fermé jusqu'à réindexation (déni de service assumé).
-        """
+    def test_revocation_without_acl_version_bump_is_rejected_before_index_write(self) -> None:
         shared = document(visibility="private", allowed_users=("bob",))
         repository = FakeRepository([SearchResult(chunk_document(shared)[0], 0.9)])
         service = self._service(repository)
         owner = AuthorizationContext("alpha", "alice", (), 1)
         reader = AuthorizationContext("alpha", "bob", (), 1)
         service.import_document(shared, context=owner)
+        original = self.registry.path.read_bytes()
+        repository.written.clear()
 
-        self.assertFalse(
-            service.answer_with_trace("question", context=reader).response.abstained
-        )
+        with self.assertRaisesRegex(ValueError, "acl_version"):
+            service.import_document(document(allowed_users=()), context=owner)
 
-        self.registry.register(document(visibility="private", allowed_users=()))
-
-        trace = service.answer_with_trace("question", context=reader)
-        self.assertTrue(trace.response.abstained)
-        self.assertEqual(trace.cited_chunks, ())
-        with self.assertRaisesRegex(CanonicalAclError, "conflicts"):
-            service.answer_with_trace("question", context=owner)
+        self.assertEqual(repository.written, [])
+        self.assertEqual(self.registry.path.read_bytes(), original)
+        policy = self.registry.authority.policy_for("doc-1")
+        assert policy is not None
+        self.assertEqual(policy.allowed_users, ("bob",))
+        self.assertFalse(service.answer_with_trace("question", context=reader).response.abstained)
 
     def test_revocation_with_an_acl_version_bump_fails_closed_as_stale(self) -> None:
         """Chemin de révocation normal : l'index devient périmé, pas permissif."""

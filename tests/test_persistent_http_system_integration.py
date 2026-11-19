@@ -169,6 +169,50 @@ class PersistentHttpSystemIntegrationTests(unittest.TestCase):
         self.assertEqual(answered["citations"][0]["source_uri"], "file:///docs/original.md")
         self.assertNotIn("Bob", answered["answer"])
 
+    def test_replayed_allowlist_at_same_acl_version_is_refused_before_qdrant_write(self) -> None:
+        """Le registre refuse le rejeu ; Bob reste révoqué après redémarrage."""
+        app = self._new_app()
+        base = {
+            "document_id": "revocable-guide",
+            "content": "Une instruction secrète pour le propriétaire.",
+            "visibility": "private",
+            "allowed_groups": [],
+            "allowed_users": ["bob"],
+            "classification": 1,
+            "doc_version": 1,
+            "acl_version": 1,
+            "source_uri": "file:///docs/revocable-guide.md",
+        }
+        status, _, _ = request(
+            app, "POST", "/api/documents", {"document": base}, token=ALPHA_ALICE_TOKEN
+        )
+        self.assertEqual(status, "201 Created")
+        status, _, _ = request(
+            app, "POST", "/api/documents",
+            {"document": {**base, "allowed_users": [], "acl_version": 2}},
+            token=ALPHA_ALICE_TOKEN,
+        )
+        self.assertEqual(status, "201 Created")
+        registry = CanonicalDocumentRegistry(self.store_dir)
+        before = registry.path.read_bytes()
+
+        status, _, body = request(
+            app, "POST", "/api/documents",
+            {"document": {**base, "acl_version": 2}}, token=ALPHA_ALICE_TOKEN,
+        )
+        self.assertEqual(status, "400 Bad Request")
+        self.assertEqual(body["error"], "invalid_request")
+        self.assertEqual(registry.path.read_bytes(), before)
+
+        restarted = self._new_app()
+        status, _, answered = request(
+            restarted, "POST", "/api/questions",
+            {"question": "instruction secrète"}, token=ALPHA_BOB_TOKEN,
+        )
+        self.assertEqual(status, "200 OK")
+        self.assertTrue(answered["abstained"])
+        self.assertEqual(answered["citations"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

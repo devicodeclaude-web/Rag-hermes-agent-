@@ -67,6 +67,13 @@ refuse le démarrage au lieu de servir une politique affaiblie :
   remplacerait celle de l'autre ;
 - `doc_version` et `acl_version` ne peuvent pas **régresser** (anti-rejeu d'une
   ACL révoquée) ;
+- une modification de la politique ACL (`visibility`, `classification`,
+  `allowed_groups`, `allowed_users`) exige une augmentation de `acl_version`,
+  même si `doc_version` augmente ; une modification du contenu ou de sa
+  provenance (`source_uri`) exige une augmentation de `doc_version`, même si
+  `acl_version` augmente. À versions égales, seul un document inchangé peut
+  être réimporté. L'ancien ensemble d'utilisateurs autorisés ne peut donc pas
+  être rejoué après révocation à la même `acl_version` ;
 - l'`owner_id` d'un document ne peut pas **changer** (refus levé en
   `PermissionError`, rendu `403` par la couche HTTP). Ce refus est nécessaire
   *parce que* le registre écrit avant l'index : une tentative de reprise que le
@@ -99,13 +106,16 @@ la couche voisine serait un test vacant.
 | Chunk d'index absent du registre | refusé → abstention |
 | Chunk d'un autre locataire | refusé → abstention |
 | Payload d'index contredisant la politique, même `acl_version` | `CanonicalAclError` (échec fermé) |
-| Révocation canonique sans réindexation, demandeur révoqué | abstention |
-| Révocation canonique sans réindexation, demandeur toujours autorisé | `CanonicalAclError` (le payload d'index contredit la politique) |
-| Révocation avec `acl_version` incrémentée, demandeur autorisé | `CanonicalAclError` « stale ACL index » |
+| Révocation sans incrémenter `acl_version` | `ValueError`, autorité et index inchangés |
+| Révocation avec `acl_version` incrémentée, avant réindexation, demandeur révoqué | abstention |
+| Révocation avec `acl_version` incrémentée, avant réindexation, demandeur autorisé | `CanonicalAclError` « stale ACL index » |
 
 La comparaison payload ↔ politique vient **après** l'autorisation du demandeur :
 un demandeur que la politique canonique refuse n'atteint jamais ce contrôle,
-d'où l'asymétrie abstention / échec fermé des deux dernières lignes.
+d'où l'asymétrie abstention / échec fermé des deux dernières lignes. Un
+changement ACL à version égale est désormais refusé au registre (et au
+redémarrage si une ligne rejouée est ajoutée au fichier), non testé comme une
+révocation valable.
 
 ## Limites assumées
 
@@ -124,9 +134,11 @@ d'où l'asymétrie abstention / échec fermé des deux dernières lignes.
   Qdrant), ni ARCH-01 (chunking du service en mots 420/40 alors que le pipeline
   évalué chunke en tokens 384/64). Le registre enregistre le **document**, pas
   les chunks : il est donc insensible au chunker utilisé.
-- Les tests sont CPU, avec un dépôt double fidèle. Ils ne prouvent pas le
-  parcours contre un vrai Qdrant ; la CI d'intégration Qdrant couvre le
-  pré-filtrage/post-filtrage du dépôt, pas ce câblage.
+- Les tests ciblés du registre sont CPU, avec un dépôt double fidèle ; **les
+  tests système HTTP de la CI exercent aussi ce câblage contre un vrai Qdrant**
+  (import, redémarrage du service, registre relu du disque, réponse citée,
+  tentative de reprise de propriété refusée). Cela ne prouve ni l'atomicité
+  du remplacement (SEC-02), ni un déploiement multi-instance.
 
 ## Exploitation
 
