@@ -67,3 +67,9 @@ Sources auditées :
 - **Lot 3 — Transport/privilèges Qdrant** : validation d'URL (`validate_endpoint` déjà existant côté générateur), support `api-key`, clients lecture/écriture/audit distincts.
 - **Lot 4 — Honnêteté des reçus** : non-mesuré = `null` et non `0.0` dans le schéma de reçu ; mention explicite « harnais de preuve, pas produit » en tête de README.
 - **Lot 5 — Atomicité/concurrence (SEC-02, CONS-01)** : génération active + CAS, monotonie `doc_version`/`acl_version`. Chantier lourd, à ne lancer que si un déploiement partagé est visé.
+
+### État d'application (mis à jour à chaque lot livré)
+
+- **Lot 0 : APPLIQUÉ** (PR #84, mergée). Premier run du workflow sur une PR observé vert (`lock-install` + `qa`) : le test d'acceptation de CI-01 est passé.
+- **Lot 1 : APPLIQUÉ** (cette PR). Détail des écarts par rapport au plan : le garde de finitude est partagé par **trois** chemins et non deux (`rag_hermes/reranker_scores.py` est aussi utilisé par `retrieval.score_authorized_pairs`, le runner de campagne, qui convertissait les scores sans refuser `bool` ni les chaînes), et le tenant réservé est désormais une constante unique `acl.GLOBAL_PUBLIC_TENANT` au lieu d'un littéral répété dans `acl.py` et `qdrant_filter.py`.
+- **Lots 2 à 5 : NON appliqués.** ARCH-01 (chunking du service), SEC-03 (transport/privilèges Qdrant), QUAL-01 (non-mesuré rendu `0.0`) et SEC-02 (remplacement non atomique) restent ouverts tels que décrits en section 1. SEC-01 (autorité ACL canonique non branchée sur la V1) reste également ouvert : aucun lot ci-dessus ne le traite.

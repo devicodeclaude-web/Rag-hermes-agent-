@@ -56,9 +56,14 @@ les en-têtes de sécurité puis confirme l'arrêt propre.
 
 **Durcissement HTTP.** L'API n'accepte que les hôtes loopback (`localhost`,
 `127.0.0.1`, `[::1]`), exige `Content-Type: application/json` sur les routes
-mutantes, plafonne le corps à 1 Mo et mappe chaque erreur (400/403/404/405/413/
-415/502) sans fuite de pile. Toute réponse (HTML, JS, JSON) porte les en-têtes de
-sécurité : `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
+mutantes, plafonne le corps à 1 Mo et mappe chaque erreur (400/401/403/404/405/
+413/415/500/502/503) sans fuite de pile. Les deux mappages de panne serveur sont
+explicites : un dépassement du budget de tokens du reranker (`RerankerBudgetExceeded`,
+décision du serveur) rend `502 backend_error` et non un `400` imputé au client,
+et toute exception imprévue rend `500 internal_error` — un corps JSON muet, avec
+les en-têtes de sécurité, au lieu du 500 HTML nu de wsgiref (`KeyboardInterrupt`
+et `SystemExit` continuent de remonter). Toute réponse (HTML, JS, JSON) porte les
+en-têtes de sécurité : `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
 `Referrer-Policy: no-referrer`, `Cross-Origin-Opener-Policy: same-origin`,
 `Cross-Origin-Resource-Policy: same-origin`, `Cache-Control: no-store` et une
 **Content-Security-Policy stricte** (`default-src 'none'; script-src 'self'; …;
@@ -66,6 +71,15 @@ frame-ancestors 'none'`). Le JavaScript de l'interface est servi depuis `/app.js
 (plus aucun `<script>` inline), de sorte que la CSP interdit toute exécution de
 script inline ou `eval`. Seul `style-src 'unsafe-inline'` reste toléré pour la
 feuille de style intégrée (vecteur sans exécution de code).
+
+**Tenant `public` réservé.** Les passages dont le `tenant_id` est `public` et la
+visibilité `public` constituent le corpus global lisible par TOUS les tenants
+(`acl._is_authorized`, `qdrant_filter.build_qdrant_filter`). Un principal du
+registre d'authentification ne peut donc pas porter ce tenant : le chargement du
+fichier de principaux le refuse (`ValueError`), pour qu'une mauvaise
+configuration empêche le démarrage au lieu de laisser un client écrire dans le
+corpus commun. `public-corp` ou tout autre tenant simplement préfixé reste
+valide : seule la valeur exacte est réservée.
 
 ### Backend de stockage (mémoire ou Qdrant)
 

@@ -10,6 +10,7 @@ from .auth import AuthenticationError
 from .generator import GenerationError
 from .ingestion import Document
 from .qdrant_write_lock import DocumentWriteLockTimeout
+from .reranker_budget import RerankerBudgetExceeded
 from .service import RagService
 from .web_ui import APP_JS, INDEX_HTML
 
@@ -249,11 +250,32 @@ def make_app(service: RagService, *, authenticator):
                 "403 Forbidden",
                 {"error": "forbidden"},
             )
+        except RerankerBudgetExceeded:
+            # `RerankerBudgetExceeded` hérite de ValueError : sans cette clause
+            # AVANT la famille ValueError, un dépassement de budget décidé par
+            # le serveur (paire trop longue pour le cross-encodeur) serait rendu
+            # « 400 invalid_request » et imputé au client.
+            return _json_response(
+                start_response,
+                "502 Bad Gateway",
+                {"error": "backend_error"},
+            )
         except (KeyError, TypeError, ValueError, json.JSONDecodeError):
             return _json_response(
                 start_response,
                 "400 Bad Request",
                 {"error": "invalid_request"},
+            )
+        except Exception:
+            # Filet de sécurité : une panne imprévue (ex. RuntimeError « Qdrant
+            # unavailable ») remontait à wsgiref, qui rend un 500 HTML SANS
+            # `_SECURITY_HEADERS` et peut publier la trace. Elle devient un 500
+            # JSON muet et en-têté. On attrape `Exception`, jamais
+            # `BaseException` : KeyboardInterrupt/SystemExit doivent remonter.
+            return _json_response(
+                start_response,
+                "500 Internal Server Error",
+                {"error": "internal_error"},
             )
 
     return app

@@ -6,6 +6,12 @@ from typing import Iterable
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
+# Tenant RÉSERVÉ : les passages portant ce tenant avec `visibility="public"`
+# sont lisibles par TOUS les tenants (corpus commun). Aucun principal
+# authentifié ne doit donc en porter l'identité, sinon il écrit dans le corpus
+# de tout le monde — c'est `auth._context_from_entry` qui l'interdit.
+GLOBAL_PUBLIC_TENANT = "public"
+
 
 @dataclass(frozen=True)
 class AuthorizationContext:
@@ -52,7 +58,9 @@ class Chunk:
 
 
 def _is_authorized(chunk: Chunk, context: AuthorizationContext) -> bool:
-    is_global_public = chunk.tenant_id == "public" and chunk.visibility == "public"
+    is_global_public = (
+        chunk.tenant_id == GLOBAL_PUBLIC_TENANT and chunk.visibility == "public"
+    )
     if chunk.tenant_id != context.tenant_id and not is_global_public:
         return False
     if chunk.classification > context.clearance:

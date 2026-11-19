@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .acl import AuthorizationContext
+from .acl import GLOBAL_PUBLIC_TENANT, AuthorizationContext
 
 
 def _match(key: str, value: Any) -> dict[str, Any]:
@@ -41,7 +41,7 @@ def build_qdrant_filter(
     }
     global_public = {
         "must": [
-            _match("tenant_id", "public"),
+            _match("tenant_id", GLOBAL_PUBLIC_TENANT),
             _match("visibility", "public"),
         ]
     }

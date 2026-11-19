@@ -434,6 +434,28 @@ class RagServiceTests(unittest.TestCase):
         with self.assertRaises(GenerationError):
             service.answer("Comment installer Hermes ?", context=self.context)
 
+    def test_reranker_non_finite_scores_fail_closed(self) -> None:
+        # Un score non fini (NaN, ±inf) corrompt l'ordre des preuves : NaN rend
+        # la comparaison de tri non transitive et ±inf épingle un candidat en
+        # tête quelle que soit sa pertinence. Le chemin G1 le refuse déjà
+        # (g1_reranking) ; la V1 doit refuser de la même façon, et comme une
+        # panne de composant serveur (GenerationError → 5xx), pas un 400.
+        for bad_score in (float("nan"), float("inf"), float("-inf")):
+            with self.subTest(score=bad_score):
+                def rerank(question, chunks, bad=bad_score):
+                    return [bad] + [0.5] * (len(chunks) - 1)
+
+                def generate(question, evidence):
+                    return "Réponse [S1]."
+
+                service = RagService(
+                    generator=generate, reranker=rerank, retrieval_k=10, top_k=2
+                )
+                self._install_two_docs(service)
+
+                with self.assertRaises(GenerationError):
+                    service.answer("Comment installer Hermes ?", context=self.context)
+
     def test_retrieval_k_must_be_at_least_top_k(self) -> None:
         with self.assertRaises(ValueError):
             RagService(retrieval_k=2, top_k=5)
