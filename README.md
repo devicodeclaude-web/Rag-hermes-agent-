@@ -206,9 +206,9 @@ considéré sûr.
 
 ### Tests
 
-La suite complète utilise `hypothesis`, verrouillé dans
-`requirements-audit.lock.txt`. Sur un nouveau clone, préparer l’environnement
-d’audit avec :
+La suite complète utilise `hypothesis` et `numpy`, verrouillés dans
+`requirements-audit.lock.txt` (hashes obligatoires). Sur un nouveau clone,
+préparer l’environnement d’audit avec :
 
 ```bash
 python -m venv .venv-audit
@@ -220,6 +220,21 @@ Exécuter ensuite tous les tests :
 ```bash
 .venv-audit/bin/python -m unittest discover -s tests -v
 ```
+
+Mode CI strict (tout `skip` d’intégration devient un échec) : il exige un
+Qdrant réel via `QDRANT_INTEGRATION_URL` **et** un binaire `gitleaks` résolu
+depuis le `PATH` ou depuis un chemin explicite `GITLEAKS_BIN=<chemin>`. Aucun
+repli implicite sur `/tmp/gitleaks` n’est accepté : un chemin
+monde-inscriptible laisserait exécuter un faux scanner.
+
+```bash
+QDRANT_INTEGRATION_URL=http://127.0.0.1:6333 GITLEAKS_BIN=/usr/local/bin/gitleaks \
+  .venv-audit/bin/python scripts/run_ci_strict.py
+```
+
+Côté GitHub Actions, cette suite stricte (installation des locks + Qdrant réel
++ scan de secrets) tourne sur **chaque pull request et chaque push sur `main`**,
+sans filtre de chemins, et toutes les actions sont épinglées par SHA de commit.
 
 Reconstruction du corpus public :
 
