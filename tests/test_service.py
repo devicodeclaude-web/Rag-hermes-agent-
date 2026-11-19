@@ -5,7 +5,7 @@ from dataclasses import replace
 
 from rag_hermes.acl import AuthorizationContext
 from rag_hermes.generator import GenerationError
-from rag_hermes.ingestion import Document
+from rag_hermes.ingestion import Document, chunk_document_tokens
 from rag_hermes.service import RagService
 
 
@@ -29,6 +29,27 @@ class RagServiceTests(unittest.TestCase):
             doc_version=1,
             source_uri="file:///docs/guide-installation.md",
         )
+
+    def test_import_uses_explicit_token_chunker_when_configured(self) -> None:
+        class Tokenizer:
+            def __call__(self, text, **_kwargs):
+                import re
+                words = list(re.finditer(r"\S+", text))
+                return {"input_ids": list(range(len(words))),
+                        "offset_mapping": [(m.start(), m.end()) for m in words]}
+
+        def pinned(document):
+            return chunk_document_tokens(
+                document, Tokenizer(), max_passage_tokens=3, overlap_tokens=1,
+                tokenizer_name="pinned-model", tokenizer_revision="pinned-revision",
+            )
+
+        service = RagService(chunker=pinned)
+        imported = service.import_document(self.document, context=self.context)
+        self.assertGreater(imported.chunk_count, 1)
+        self.assertEqual(len(service._chunks), imported.chunk_count)
+        self.assertTrue(all(chunk.tokenizer_name == "pinned-model" for chunk in service._chunks))
+        self.assertTrue(all(chunk.tokenizer_revision == "pinned-revision" for chunk in service._chunks))
 
     def test_answer_with_trace_exposes_ranked_evidence_and_cited_chunks(self) -> None:
         def generate(question, evidence):

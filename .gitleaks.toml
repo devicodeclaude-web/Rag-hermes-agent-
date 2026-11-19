@@ -10,7 +10,7 @@ useDefault = true
 [[allowlists]]
 description = """
 Valeurs publiques ou factices exactes uniquement :
-1. SHA public du tokenizer HuggingFace bge-reranker-v2-m3.
+1. Revision et SHA-256 publics du tokenizer HuggingFace bge-reranker-v2-m3.
 2. Fixtures volontaires du scanner de secrets interne.
 3. Identifiants d'exemple reproduits depuis la documentation publique Hermes.
 Aucun chemin entier n'est exclu et aucune condition AND dependante du mode de scan
@@ -19,6 +19,7 @@ n'est utilisee.
 regexTarget = "match"
 regexes = [
   '''953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e''',
+  '''69564b696052886ed0ac63fa393e928384e0f8caada38c1f4864a9bfbf379c15''',
   '''supersecretvalue123''',
   '''change-me-local-dev''',
   '''(?:3uo8dkh1p7g1mfk49ear5fzs5c|abc123def456ghi789jkl012mn|123456789012345678|284102345871466496|111222333444555666)''',

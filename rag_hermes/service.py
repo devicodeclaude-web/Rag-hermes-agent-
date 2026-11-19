@@ -58,6 +58,7 @@ class RagService:
         repository: Any | None = None,
         generator: Callable[[str, tuple[Chunk, ...]], str] | None = None,
         reranker: Callable[[str, tuple[Chunk, ...]], list[float]] | None = None,
+        chunker: Callable[[Document], list[Chunk]] = chunk_document,
         retrieval_k: int | None = None,
         top_k: int = 1,
     ) -> None:
@@ -73,10 +74,13 @@ class RagService:
             raise ValueError("retrieval_k must be >= top_k")
         if isinstance(repository, CanonicalAclSearch) and repository.minimum_score != minimum_score:
             raise ValueError("repository and service minimum_score must match")
+        if not callable(chunker):
+            raise ValueError("chunker must be callable")
         self._minimum_score = minimum_score
         self._repository = repository
         self._generator = generator
         self._reranker = reranker
+        self._chunker = chunker
         self._retrieval_k = retrieval_k
         self._top_k = top_k
         self._chunks: list[Chunk] = []
@@ -96,7 +100,7 @@ class RagService:
         existing_owner = self._document_owners.get(document_key)
         if existing_owner is not None and existing_owner != context.user_id:
             raise PermissionError("only the existing document owner can replace it")
-        chunks = chunk_document(document)
+        chunks = self._chunker(document)
         if not chunks:
             raise ValueError("an import must carry at least one passage")
         if self._repository is not None:

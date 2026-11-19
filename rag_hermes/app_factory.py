@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Callable, Mapping
+from typing import Any, Callable, Mapping
 
 from .closed_book import ClosedBookGenerator
 from .canonical_registry import (
@@ -12,6 +12,7 @@ from .qdrant_preflight import verify_collection_ready
 from .qdrant_repository import QdrantChunkRepository
 from .qdrant_rest import QdrantRestClient
 from .service import RagService
+from .token_chunking_profile import LockedTokenChunker
 
 Embedder = Callable[[str], list[float]]
 
@@ -57,6 +58,7 @@ def build_service(
     *,
     env: Mapping[str, str],
     embed: Embedder | None = None,
+    tokenizer: Any = None,
 ) -> RagService:
     """Build a RagService.
 
@@ -140,6 +142,17 @@ def build_service(
             "the index itself (set RAG_CANONICAL_STORE to an existing absolute "
             "directory holding the canonical document store)"
         )
+    tokenizer_lock = env.get("RAG_TOKENIZER_LOCK", "").strip()
+    tokenizer_file = env.get("RAG_TOKENIZER_FILE", "").strip()
+    if not tokenizer_lock or not tokenizer_file:
+        raise ValueError(
+            "Qdrant requires RAG_TOKENIZER_LOCK and RAG_TOKENIZER_FILE: "
+            "refusing the legacy word chunker on the V1 persistent path"
+        )
+    chunker = LockedTokenChunker(
+        lock_path=tokenizer_lock, tokenizer_path=tokenizer_file,
+        tokenizer=tokenizer,
+    )
     registry = CanonicalDocumentRegistry(store_dir)
     if retrieval_k > _CANONICAL_SCAN_BUDGET:
         raise ValueError(
@@ -158,8 +171,9 @@ def build_service(
     )
     return RagService(
         repository=wrap_repository_with_canonical_barrier(
-            repository, registry, minimum_score=_MINIMUM_SCORE
+            repository, registry, minimum_score=_MINIMUM_SCORE, chunker=chunker
         ),
+        chunker=chunker,
         generator=generator,
         minimum_score=_MINIMUM_SCORE,
         top_k=top_k,

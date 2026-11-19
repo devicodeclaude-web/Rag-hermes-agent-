@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 from pathlib import Path
 import tempfile
@@ -9,6 +10,8 @@ import uuid
 
 from rag_hermes.app_factory import build_service
 from rag_hermes.canonical_registry import CanonicalDocumentRegistry
+from rag_hermes.ingestion import Document, chunk_document
+from rag_hermes.qdrant_store import chunk_to_point
 from rag_hermes.http_api import make_app
 from rag_hermes.qdrant_provision import provision_collection
 from rag_hermes.qdrant_rest import QdrantRestClient
@@ -25,6 +28,16 @@ INDEX_SPEC = Path("qdrant/payload-indexes.json")
 
 def _fixed_vector(_text: str) -> list[float]:
     return [1.0, 0.0, 0.0, 0.0]
+
+
+class _FixtureTokenizer:
+    """Fake CPU tokenizer, not evidence of the BGE tokenizer checkpoint."""
+
+    def __call__(self, text, **_kwargs):
+        import re
+        matches = list(re.finditer(r"\S+", text))
+        return {"input_ids": list(range(len(matches))),
+                "offset_mapping": [(m.start(), m.end()) for m in matches]}
 
 
 @unittest.skipUnless(
@@ -53,6 +66,16 @@ class PersistentHttpSystemIntegrationTests(unittest.TestCase):
         self.addCleanup(store.cleanup)
         self.store_dir = store.name
         self.env["RAG_CANONICAL_STORE"] = self.store_dir
+        token_fixture = Path(self.store_dir) / "tokenizer.json"
+        token_fixture.write_bytes(b"integration-fixture-only")
+        lock_fixture = Path(self.store_dir) / "reranker.lock.json"
+        lock_fixture.write_text(json.dumps({
+            "repo_id": "test/tokenizer", "revision": "a" * 40,
+            "files": [{"path": "tokenizer.json",
+                       "sha256": hashlib.sha256(token_fixture.read_bytes()).hexdigest()}],
+        }), encoding="utf-8")
+        self.env["RAG_TOKENIZER_FILE"] = str(token_fixture)
+        self.env["RAG_TOKENIZER_LOCK"] = str(lock_fixture)
 
     def tearDown(self) -> None:
         if self.client.collection_exists(self.collection):
@@ -61,7 +84,7 @@ class PersistentHttpSystemIntegrationTests(unittest.TestCase):
     def _new_app(self):
         # Identité dérivée côté serveur du jeton : Alice et Bob (tenant alpha).
         return make_app(
-            build_service(env=self.env, embed=_fixed_vector),
+            build_service(env=self.env, embed=_fixed_vector, tokenizer=_FixtureTokenizer()),
             authenticator=SHARED_AUTHENTICATOR,
         )
 
@@ -116,6 +139,52 @@ class PersistentHttpSystemIntegrationTests(unittest.TestCase):
         self.assertEqual(stored.tenant_id, "alpha")
         self.assertEqual(stored.owner_id, "alice")
         self.assertEqual(stored.allowed_groups, ("support",))
+
+    def test_import_emits_pinned_token_passages_into_qdrant(self) -> None:
+        app = self._new_app()
+        status, _, imported = request(
+            app, "POST", "/api/documents", {"document": {
+                "document_id": "tokenized", "content": " ".join("mot" for _ in range(500)),
+                "visibility": "private", "allowed_groups": [], "allowed_users": [],
+                "classification": 1, "doc_version": 1, "source_uri": "file:///tokenized.md",
+            }}, token=ALPHA_ALICE_TOKEN,
+        )
+        self.assertEqual(status, "201 Created")
+        self.assertEqual(imported["chunk_count"], 2)
+        points = self.client.scroll(self.collection, query_filter={"must": [{
+            "key": "document_id", "match": {"value": "tokenized"},
+        }]}, limit=10)
+        self.assertEqual(len(points), 2)
+        self.assertEqual({point["payload"]["tokenizer_name"] for point in points},
+                         {"test/tokenizer"})
+        self.assertEqual({point["payload"]["tokenizer_revision"] for point in points},
+                         {"a" * 40})
+        self.assertEqual({point["payload"]["token_count"] for point in points},
+                         {384, 180})
+
+    def test_legacy_word_point_in_existing_collection_is_not_cited(self) -> None:
+        document = Document(
+            document_id="legacy", content="ancien contenu visible autorisé",
+            tenant_id="alpha", visibility="private", owner_id="alice",
+            allowed_groups=(), allowed_users=(), classification=1,
+            doc_version=1, source_uri="file:///docs/legacy.md",
+        )
+        CanonicalDocumentRegistry(self.store_dir).register(document)
+        self.client.upsert(
+            self.collection, [chunk_to_point(chunk_document(document)[0], _fixed_vector(""))]
+        )
+        legacy_points = self.client.scroll(self.collection, query_filter={"must": [{
+            "key": "document_id", "match": {"value": "legacy"},
+        }]}, limit=10)
+        self.assertEqual(len(legacy_points), 1)
+        self.assertEqual(legacy_points[0]["payload"]["token_count"], 0)
+        status, _, body = request(
+            self._new_app(), "POST", "/api/questions",
+            {"question": "ancien"}, token=ALPHA_ALICE_TOKEN,
+        )
+        self.assertEqual(status, "403 Forbidden")
+        self.assertEqual(body["error"], "forbidden")
+        self.assertNotIn("citations", body)
 
     def test_restart_does_not_allow_another_user_to_hijack_document_owner(self) -> None:
         first_app = self._new_app()
