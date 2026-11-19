@@ -23,12 +23,33 @@ from rag_hermes.integration_gate import assert_no_skipped_integration_tests
 TESTS_DIR = os.path.join(ROOT, "tests")
 
 
+GITLEAKS_BIN_ENV = "GITLEAKS_BIN"
+
+
+def resolve_gitleaks() -> str | None:
+    """Résout le binaire gitleaks sans repli implicite.
+
+    L'ancien code se rabattait sur `/tmp/gitleaks` : n'importe quel processus
+    local pouvait y déposer un faux scanner que la CI aurait exécuté en
+    croyant scanner l'historique. Le binaire doit donc venir du `PATH` ou
+    d'un chemin explicitement déclaré via `GITLEAKS_BIN`.
+    """
+    explicit = os.environ.get(GITLEAKS_BIN_ENV, "").strip()
+    if explicit:
+        if os.path.isfile(explicit) and os.access(explicit, os.X_OK):
+            return explicit
+        return None
+    return shutil.which("gitleaks")
+
+
 def run_gitleaks() -> int:
     """Scanne tout l'historique git. Un scanner absent est un échec dur."""
-    binary = shutil.which("gitleaks") or "/tmp/gitleaks"
-    if not (shutil.which("gitleaks") or os.path.exists("/tmp/gitleaks")):
+    binary = resolve_gitleaks()
+    if binary is None:
         sys.stderr.write(
             "ECHEC CI : gitleaks absent, scan de secrets historique impossible.\n"
+            f"Mets le binaire dans le PATH ou declare {GITLEAKS_BIN_ENV}=<chemin>.\n"
+            "Aucun repli sur un chemin monde-inscriptible (/tmp) n'est accepte.\n"
         )
         return 5
     config = os.path.join(ROOT, ".gitleaks.toml")
