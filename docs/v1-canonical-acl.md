@@ -30,6 +30,22 @@ P0 avant tout déploiement multi-tenant.
 `RAG_RETRIEVAL_K` supérieur au budget de scan de la barrière (128) à la
 construction plutôt qu'au milieu d'une requête.
 
+**Protection du registre (documents privés en clair).** Le répertoire doit
+appartenir à l'UID effectif du service et ne donner aucun droit au groupe ni
+aux autres (`0700` au plus) ; le fichier doit être régulier, appartenir au
+même UID et ne donner aucun droit au groupe ni aux autres (`0600` au plus).
+Chaque ouverture valide les descripteurs réels avec `fstat` avant de lire ou
+d'écrire ; les liens symboliques sur le répertoire final et le fichier sont
+refusés. Le fichier neuf est créé par `os.open(..., mode=0o600)` avec
+`O_NOFOLLOW`, ancré au descripteur du répertoire : un `umask 022` ne peut
+donc pas élargir ses droits à `0644`. Une modification de droits après le
+démarrage fait échouer l'écriture au lieu de continuer silencieusement.
+Un ancien fichier déjà en `0644` est **refusé sans changement de droits** :
+une permission corrigée après coup n'efface pas une divulgation éventuelle.
+L'opérateur doit vérifier l'exposition passée puis corriger les droits hors
+ligne avant de relancer. Cette porte POSIX ne chiffre pas les données et ne
+protège pas contre un processus du même UID, root, ou une sauvegarde exposée.
+
 ## Contrôles stricts du registre
 
 L'autorité compare en Python, où `True == 1` et où une sous-classe de `str`
@@ -115,7 +131,7 @@ d'où l'asymétrie abstention / échec fermé des deux dernières lignes.
 ## Exploitation
 
 ```bash
-mkdir -p /srv/hermes/canonical          # l'opérateur crée le répertoire
+install -d -m 700 /srv/hermes/canonical # créé pour l'UID qui exécute le service
 export RAG_QDRANT_URL=http://127.0.0.1:6333
 export RAG_CANONICAL_STORE=/srv/hermes/canonical
 export RAG_EMBED_LOCK=manifests/locks/bge-m3.lock.json

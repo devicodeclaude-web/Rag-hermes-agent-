@@ -133,6 +133,9 @@ Un service adossé à Qdrant exige en plus `RAG_CANONICAL_STORE` : un répertoir
 autorité ACL. Les imports y écrivent la révision canonique **avant** l'index,
 et chaque candidat classé est recontrôlé contre cette autorité (politique ACL,
 provenance, texte aux offsets) avant d'atteindre le générateur ou une citation.
+Le répertoire doit appartenir au service et n'accorder aucun droit au groupe
+ni aux autres ; le fichier est créé en `0600` même avec `umask 022`. Un ancien
+fichier permissif (`0644`) fait refuser le démarrage, sans correction silencieuse.
 Détail du câblage, comportements observables et limites assumées (abstention en
 cas de désynchronisation, déni de service après révocation sans réindexation,
 verrou intra-processus) : `docs/v1-canonical-acl.md`.

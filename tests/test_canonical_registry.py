@@ -9,7 +9,9 @@ from __future__ import annotations
 
 from dataclasses import replace
 import json
+import os
 from pathlib import Path
+import stat
 import tempfile
 import unittest
 
@@ -96,6 +98,80 @@ class RegistryStoreTests(unittest.TestCase):
         self.assertEqual(policy.owner_id, "alice")
         self.assertEqual(policy.classification, 1)
         self.assertEqual(policy.acl_version, 1)
+
+    def test_new_file_remains_private_with_umask_022(self) -> None:
+        registry = CanonicalDocumentRegistry(self.store)
+        previous = os.umask(0o022)
+        try:
+            registry.register(document(content="document confidentiel"))
+        finally:
+            os.umask(previous)
+        path = self.store / "canonical_documents.jsonl"
+        self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+        self.assertEqual(path.stat().st_uid, os.geteuid())
+        self.assertEqual(stat.S_IMODE(self.store.stat().st_mode), 0o700)
+        self.assertEqual(CanonicalDocumentRegistry(self.store).source("doc-1"),
+                         document(content="document confidentiel"))
+
+    def test_permissive_directory_is_refused_before_creating_file(self) -> None:
+        self.store.chmod(0o755)
+        with self.assertRaisesRegex(ValueError, "canonical store directory.*permissions"):
+            CanonicalDocumentRegistry(self.store)
+        self.assertFalse((self.store / "canonical_documents.jsonl").exists())
+
+    def test_existing_permissive_file_is_refused_without_chmod_or_append(self) -> None:
+        path = self.store / "canonical_documents.jsonl"
+        path.write_text("unchanged\n", encoding="utf-8")
+        path.chmod(0o644)
+        with self.assertRaisesRegex(ValueError, "canonical store file.*permissions"):
+            CanonicalDocumentRegistry(self.store)
+        self.assertEqual(path.read_text(encoding="utf-8"), "unchanged\n")
+        self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o644)
+
+    def test_file_permissions_changed_after_startup_refuse_append(self) -> None:
+        registry = CanonicalDocumentRegistry(self.store)
+        registry.register(document())
+        path = self.store / "canonical_documents.jsonl"
+        original = path.read_bytes()
+        path.chmod(0o644)
+        with self.assertRaisesRegex(ValueError, "canonical store file.*permissions"):
+            registry.register(document(doc_version=2))
+        self.assertEqual(path.read_bytes(), original)
+        self.assertEqual(registry.source("doc-1"), document())
+
+    def test_directory_permissions_changed_after_startup_refuse_append(self) -> None:
+        registry = CanonicalDocumentRegistry(self.store)
+        self.store.chmod(0o755)
+        with self.assertRaisesRegex(ValueError, "canonical store directory.*permissions"):
+            registry.register(document())
+        self.assertFalse((self.store / "canonical_documents.jsonl").exists())
+
+    def test_symlinked_store_file_is_refused_without_touching_target(self) -> None:
+        target = self.store / "target"
+        target.write_bytes(b"secret\n")
+        target.chmod(0o600)
+        (self.store / "canonical_documents.jsonl").symlink_to(target)
+        with self.assertRaises(ValueError):
+            CanonicalDocumentRegistry(self.store)
+        self.assertEqual(target.read_bytes(), b"secret\n")
+
+    def test_store_file_replaced_by_symlink_after_startup_refuses_append(self) -> None:
+        registry = CanonicalDocumentRegistry(self.store)
+        target = self.store / "target"
+        target.write_bytes(b"unchanged\n")
+        target.chmod(0o600)
+        (self.store / "canonical_documents.jsonl").symlink_to(target)
+        with self.assertRaisesRegex(ValueError, "symlink"):
+            registry.register(document())
+        self.assertEqual(target.read_bytes(), b"unchanged\n")
+        self.assertIsNone(registry.source("doc-1"))
+
+    def test_store_directory_symlink_is_refused(self) -> None:
+        link = self.store.parent / (self.store.name + "-link")
+        link.symlink_to(self.store, target_is_directory=True)
+        self.addCleanup(link.unlink)
+        with self.assertRaisesRegex(ValueError, "symlink"):
+            CanonicalDocumentRegistry(link)
 
     def test_store_directory_must_be_an_existing_absolute_directory(self) -> None:
         with self.assertRaisesRegex(ValueError, "absolute"):

@@ -29,8 +29,10 @@ Limites assumées (ne pas sur-promettre) :
 from __future__ import annotations
 
 import json
+import errno
 import os
 from pathlib import Path
+import stat
 import threading
 from typing import Any, Iterable, Mapping
 
@@ -52,6 +54,56 @@ _LIST_FIELDS = ("allowed_groups", "allowed_users")
 _INT_FIELDS = ("classification", "doc_version", "acl_version")
 _IDENTITY_FIELDS = ("document_id", "tenant_id", "owner_id", "visibility")
 _RECORD_KEYS = frozenset(_TEXT_FIELDS + _LIST_FIELDS + _INT_FIELDS)
+
+
+def _open_private_dir(path: Path) -> int:
+    """Ouvrir le répertoire de stockage et contrôler le descripteur RÉEL.
+
+    `Path.is_dir`/`stat` suivis d'un `open` seraient sensibles aux échanges
+    de chemin. `O_NOFOLLOW` protège le dernier composant et `dir_fd` ancre
+    ensuite toutes les opérations sur le même répertoire vérifié.
+    """
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    except OSError as exc:
+        if exc.errno in (errno.ELOOP, errno.ENOTDIR):
+            raise ValueError("canonical store directory must not be a symlink") from exc
+        raise
+    try:
+        info = os.fstat(fd)
+        if info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) & 0o7077:
+            raise ValueError("canonical store directory has unsafe owner or permissions")
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+def _open_private_file(dir_fd: int, *, write: bool) -> int:
+    """Créer en 0600 même avec umask 022, ou refuser un fichier déjà exposé.
+
+    La validation par fstat précède TOUTE lecture/écriture ; une vieille
+    installation en 0644 n'est jamais réparée silencieusement (la divulgation
+    éventuelle a déjà eu lieu et exige une décision de l'opérateur).
+    """
+    flags = os.O_NOFOLLOW | os.O_CLOEXEC
+    flags |= (os.O_WRONLY | os.O_APPEND | os.O_CREAT) if write else os.O_RDONLY
+    try:
+        fd = os.open(_STORE_FILENAME, flags, 0o600, dir_fd=dir_fd)
+    except OSError as exc:
+        if exc.errno in (errno.ELOOP, errno.ENOTDIR):
+            raise ValueError("canonical store file must not be a symlink") from exc
+        raise
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode):
+            raise ValueError("canonical store file must be a regular file")
+        if info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) & 0o7077:
+            raise ValueError("canonical store file has unsafe owner or permissions")
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
 
 
 def _check_exact_str(value: object, field: str) -> str:
@@ -197,6 +249,8 @@ class CanonicalDocumentRegistry:
             # Créer le répertoire masquerait une faute de frappe de déploiement :
             # l'opérateur doit l'avoir créé délibérément.
             raise ValueError("canonical store directory must exist and be a directory")
+        dir_fd = _open_private_dir(path)
+        os.close(dir_fd)
         self._store_dir = path
         self._path = path / _STORE_FILENAME
         self._lock = threading.Lock()
@@ -213,9 +267,16 @@ class CanonicalDocumentRegistry:
 
     def _load(self) -> None:
         self._authority = _LiveCanonicalAclAuthority(self)
-        if not self._path.exists():
-            return
-        payload = self._path.read_bytes().decode("utf-8")
+        dir_fd = _open_private_dir(self._store_dir)
+        try:
+            try:
+                file_fd = _open_private_file(dir_fd, write=False)
+            except FileNotFoundError:
+                return
+            with os.fdopen(file_fd, "rb") as handle:
+                payload = handle.read().decode("utf-8")
+        finally:
+            os.close(dir_fd)
         for number, line in enumerate(payload.splitlines(), 1):
             if not line.strip():
                 continue
@@ -281,10 +342,16 @@ class CanonicalDocumentRegistry:
             raise ValueError("canonical record does not round-trip")
         with self._lock:
             self._check_against_previous(validated)
-            with self._path.open("ab") as handle:
-                handle.write(line.encode("ascii") + b"\n")
-                handle.flush()
-                os.fsync(handle.fileno())
+            dir_fd = _open_private_dir(self._store_dir)
+            try:
+                file_fd = _open_private_file(dir_fd, write=True)
+                with os.fdopen(file_fd, "ab") as handle:
+                    handle.write(line.encode("ascii") + b"\n")
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                os.fsync(dir_fd)
+            finally:
+                os.close(dir_fd)
             self._documents[validated.document_id] = validated
         return validated
 
