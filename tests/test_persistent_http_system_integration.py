@@ -3,10 +3,12 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import tempfile
 import unittest
 import uuid
 
 from rag_hermes.app_factory import build_service
+from rag_hermes.canonical_registry import CanonicalDocumentRegistry
 from rag_hermes.http_api import make_app
 from rag_hermes.qdrant_provision import provision_collection
 from rag_hermes.qdrant_rest import QdrantRestClient
@@ -44,6 +46,13 @@ class PersistentHttpSystemIntegrationTests(unittest.TestCase):
             "RAG_QDRANT_URL": self.url,
             "RAG_QDRANT_COLLECTION": self.collection,
         }
+        # SEC-01 : un service adossé à Qdrant exige une autorité ACL canonique
+        # locale. Le répertoire survit aux deux démarrages du test, donc le
+        # registre est rechargé depuis le disque au « redémarrage ».
+        store = tempfile.TemporaryDirectory()
+        self.addCleanup(store.cleanup)
+        self.store_dir = store.name
+        self.env["RAG_CANONICAL_STORE"] = self.store_dir
 
     def tearDown(self) -> None:
         if self.client.collection_exists(self.collection):
@@ -97,6 +106,16 @@ class PersistentHttpSystemIntegrationTests(unittest.TestCase):
             answered["citations"][0]["source_uri"],
             "file:///docs/persistent-guide.md",
         )
+        # SEC-01 : la réponse n'a pu franchir la barrière que parce que le
+        # registre canonique, rechargé du disque au redémarrage, porte la
+        # révision du document — l'index n'a pas été sa propre autorité.
+        registry = CanonicalDocumentRegistry(self.store_dir)
+        stored = registry.source("persistent-guide")
+        self.assertIsNotNone(stored)
+        assert stored is not None
+        self.assertEqual(stored.tenant_id, "alpha")
+        self.assertEqual(stored.owner_id, "alice")
+        self.assertEqual(stored.allowed_groups, ("support",))
 
     def test_restart_does_not_allow_another_user_to_hijack_document_owner(self) -> None:
         first_app = self._new_app()

@@ -50,7 +50,13 @@ refuse le démarrage au lieu de servir une politique affaiblie :
   indexe par `(tenant_id, document_id)` ; sans ce refus, la politique de l'un
   remplacerait celle de l'autre ;
 - `doc_version` et `acl_version` ne peuvent pas **régresser** (anti-rejeu d'une
-  ACL révoquée).
+  ACL révoquée) ;
+- l'`owner_id` d'un document ne peut pas **changer** (refus levé en
+  `PermissionError`, rendu `403` par la couche HTTP). Ce refus est nécessaire
+  *parce que* le registre écrit avant l'index : une tentative de reprise que le
+  dépôt rejetterait ensuite laisserait sinon l'autorité canonique attribuer le
+  document à l'usurpateur, et le vrai propriétaire se verrait refuser ses
+  propres passages. La V1 ne transfère jamais la propriété.
 
 Chaque enregistrement valide la **projection JSON réellement persistée**
 (aller-retour `json.dumps`/`loads`, `allow_nan=False`, jeu de clés exact) avant

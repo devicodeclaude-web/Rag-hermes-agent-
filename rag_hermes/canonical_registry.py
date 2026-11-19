@@ -222,7 +222,9 @@ class CanonicalDocumentRegistry:
             try:
                 document = _document_from_record(json.loads(line))
                 self._check_against_previous(document)
-            except ValueError as exc:
+            except (ValueError, PermissionError) as exc:
+                # Au démarrage, toute violation d'invariant est un refus de
+                # démarrage : on uniformise en ValueError.
                 raise ValueError(
                     f"invalid canonical document record at line {number}: {exc}"
                 ) from exc
@@ -236,6 +238,16 @@ class CanonicalDocumentRegistry:
             raise ValueError(
                 "canonical document_id already registered by another tenant"
             )
+        if previous.owner_id != document.owner_id:
+            # Écriture canonique AVANT l'index : sans ce refus, une tentative de
+            # reprise rejetée ensuite par le dépôt laisserait le registre
+            # attribuer le document à l'usurpateur (index et autorité divergents,
+            # donc échec fermé pour le vrai propriétaire). La V1 ne transfère
+            # jamais la propriété : `RagService.import_document` et le dépôt
+            # Qdrant la refusent tous deux.
+            # PermissionError (et non ValueError) : c'est un refus d'autorisation,
+            # que la couche HTTP rend en 403 forbidden, pas en 400.
+            raise PermissionError("canonical owner_id must not change")
         if document.doc_version < previous.doc_version:
             raise ValueError("canonical doc_version must not regress")
         if document.acl_version < previous.acl_version:

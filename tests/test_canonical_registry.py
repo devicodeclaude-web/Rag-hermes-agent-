@@ -206,6 +206,25 @@ class RegistryStoreTests(unittest.TestCase):
         assert policy is not None
         self.assertEqual(policy.acl_version, 4)
 
+    def test_owner_change_is_refused_even_within_the_same_tenant(self) -> None:
+        """La V1 ne transfère pas la propriété ; le registre écrit AVANT l'index.
+
+        Sans ce refus, une reprise que le dépôt rejetterait ensuite laisserait
+        l'autorité canonique attribuer le document à l'usurpateur, et le vrai
+        propriétaire se verrait refuser ses propres passages (échec fermé).
+        """
+        registry = CanonicalDocumentRegistry(self.store)
+        registry.register(document(owner_id="alice"))
+
+        # PermissionError : la couche HTTP doit rendre 403, pas 400.
+        with self.assertRaisesRegex(PermissionError, "owner_id"):
+            registry.register(document(owner_id="bob", doc_version=2))
+
+        stored = registry.source("doc-1")
+        assert stored is not None
+        self.assertEqual(stored.owner_id, "alice")
+        self.assertEqual(stored.doc_version, 1)
+
     def test_revocation_at_equal_versions_is_accepted_and_overwrites(self) -> None:
         registry = CanonicalDocumentRegistry(self.store)
         registry.register(document(allowed_users=("bob",)))
@@ -289,6 +308,22 @@ class WriteThroughTests(unittest.TestCase):
             self.write_through.replace_document(intruder, chunk_document(intruder))
 
         self.assertEqual(self.repository.written, [])
+
+    def test_an_ownership_takeover_never_reaches_the_index(self) -> None:
+        """Le dépôt refuse déjà la reprise, mais APRÈS l'écriture canonique."""
+        self.registry.register(document(owner_id="alice"))
+        self.repository.written.clear()
+
+        with self.assertRaisesRegex(PermissionError, "owner_id"):
+            self.write_through.replace_document(
+                document(owner_id="bob", doc_version=2),
+                chunk_document(document(owner_id="bob", doc_version=2)),
+            )
+
+        self.assertEqual(self.repository.written, [])
+        stored = self.registry.source("doc-1")
+        assert stored is not None
+        self.assertEqual(stored.owner_id, "alice")
 
     def test_an_empty_replacement_is_refused_before_both_sides(self) -> None:
         doc = document(content="   ")
