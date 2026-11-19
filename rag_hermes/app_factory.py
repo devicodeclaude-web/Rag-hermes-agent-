@@ -3,6 +3,10 @@ from __future__ import annotations
 from typing import Callable, Mapping
 
 from .closed_book import ClosedBookGenerator
+from .canonical_registry import (
+    CanonicalDocumentRegistry,
+    wrap_repository_with_canonical_barrier,
+)
 from .generator import OpenAICompatibleGenerator
 from .qdrant_preflight import verify_collection_ready
 from .qdrant_repository import QdrantChunkRepository
@@ -12,6 +16,10 @@ from .service import RagService
 Embedder = Callable[[str], list[float]]
 
 _DEFAULT_COLLECTION = "hermes_chunks_v1"
+# `CanonicalAclSearch` refuse une fenêtre de scan > 128 : le vérifier à la
+# construction plutôt qu'au milieu d'une requête.
+_CANONICAL_SCAN_BUDGET = 128
+_MINIMUM_SCORE = 0.2
 
 
 def build_baseline_generator(
@@ -120,6 +128,25 @@ def build_service(
     if not collection:
         raise ValueError("RAG_QDRANT_COLLECTION must not be empty")
 
+    # SEC-01 : l'index Qdrant ne peut pas être sa propre autorité ACL. Un
+    # service adossé à Qdrant exige donc un registre documentaire canonique
+    # local, alimenté par les imports authentifiés et interrogé après le
+    # classement, avant toute preuve exposée au générateur.
+    store_dir = env.get("RAG_CANONICAL_STORE", "").strip()
+    if not store_dir:
+        raise ValueError(
+            "RAG_QDRANT_URL is set but RAG_CANONICAL_STORE is missing; refusing "
+            "to start a Qdrant-backed service whose only ACL authority would be "
+            "the index itself (set RAG_CANONICAL_STORE to an existing absolute "
+            "directory holding the canonical document store)"
+        )
+    registry = CanonicalDocumentRegistry(store_dir)
+    if retrieval_k > _CANONICAL_SCAN_BUDGET:
+        raise ValueError(
+            "RAG_RETRIEVAL_K must not exceed the canonical scan budget "
+            f"({_CANONICAL_SCAN_BUDGET})"
+        )
+
     client = QdrantRestClient(qdrant_url)
     schema = verify_collection_ready(client, collection)
     repository = QdrantChunkRepository(
@@ -130,8 +157,11 @@ def build_service(
         lock_dir=env.get("RAG_QDRANT_LOCK_DIR"),
     )
     return RagService(
-        repository=repository,
+        repository=wrap_repository_with_canonical_barrier(
+            repository, registry, minimum_score=_MINIMUM_SCORE
+        ),
         generator=generator,
+        minimum_score=_MINIMUM_SCORE,
         top_k=top_k,
         retrieval_k=retrieval_k,
     )
