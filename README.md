@@ -124,6 +124,19 @@ pas d'`embed`. Deux options explicites pour la persistance Qdrant :
 La barrière ACL pré-filtrage/post-filtrage est déjà prouvée contre un vrai
 Qdrant 1.19.0.
 
+### Autorité ACL canonique obligatoire (SEC-01)
+
+Un service adossé à Qdrant exige en plus `RAG_CANONICAL_STORE` : un répertoire
+**absolu et existant** où vit le registre documentaire canonique
+(`canonical_documents.jsonl`), indépendant de l'index. Démarrer avec
+`RAG_QDRANT_URL` sans lui est refusé — l'index ne doit jamais être sa propre
+autorité ACL. Les imports y écrivent la révision canonique **avant** l'index,
+et chaque candidat classé est recontrôlé contre cette autorité (politique ACL,
+provenance, texte aux offsets) avant d'atteindre le générateur ou une citation.
+Détail du câblage, comportements observables et limites assumées (abstention en
+cas de désynchronisation, déni de service après révocation sans réindexation,
+verrou intra-processus) : `docs/v1-canonical-acl.md`.
+
 ### Génération optionnelle OpenAI-compatible
 
 Sans configuration supplémentaire, la V1 conserve son mode extractif local :

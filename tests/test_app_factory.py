@@ -6,8 +6,10 @@ from pathlib import Path
 from unittest.mock import patch
 
 from rag_hermes.app_factory import build_service
+from rag_hermes.canonical_registry import CanonicalDocumentRegistry, CanonicalWriteThrough
 from rag_hermes.qdrant_preflight import QdrantPreflightError
 from rag_hermes.qdrant_repository import QdrantChunkRepository
+from rag_hermes.retrieval import CanonicalAclSearch
 
 _VERIFIED_SCHEMA = {
     "collection": "hermes_chunks_v1",
@@ -19,6 +21,29 @@ _VERIFIED_SCHEMA = {
 
 
 class BuildServiceTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._store = tempfile.TemporaryDirectory()
+        self.addCleanup(self._store.cleanup)
+        self.store_dir = self._store.name
+
+    def qdrant_env(self, **extra: str) -> dict[str, str]:
+        env = {
+            "RAG_QDRANT_URL": "http://127.0.0.1:6333",
+            "RAG_CANONICAL_STORE": self.store_dir,
+        }
+        env.update(extra)
+        return env
+
+    def inner_repository(self, service) -> QdrantChunkRepository:  # noqa: ANN001
+        """Dérouler barrière canonique -> write-through -> dépôt Qdrant."""
+        barrier = service._repository
+        assert isinstance(barrier, CanonicalAclSearch)
+        write_through = barrier._ranked_search
+        assert isinstance(write_through, CanonicalWriteThrough)
+        repository = write_through._repository
+        assert isinstance(repository, QdrantChunkRepository)
+        return repository
+
     def test_without_qdrant_env_uses_in_memory_backend(self) -> None:
         service = build_service(env={})
         self.assertIsNone(service._repository)
@@ -93,9 +118,58 @@ class BuildServiceTests(unittest.TestCase):
     def test_with_qdrant_url_but_no_embedder_refuses_to_start(self) -> None:
         with self.assertRaisesRegex(ValueError, "embedding"):
             build_service(
-                env={"RAG_QDRANT_URL": "http://127.0.0.1:6333"},
+                env=self.qdrant_env(),
                 embed=None,
             )
+
+    def test_qdrant_without_canonical_store_refuses_to_start(self) -> None:
+        """SEC-01 : l'index ne peut pas être sa propre autorité ACL."""
+        with self.assertRaisesRegex(ValueError, "RAG_CANONICAL_STORE"):
+            build_service(
+                env={"RAG_QDRANT_URL": "http://127.0.0.1:6333"},
+                embed=lambda _text: [1.0, 0.0],
+            )
+
+    def test_canonical_store_must_be_an_existing_absolute_directory(self) -> None:
+        for value in ("relative/store", f"{self.store_dir}/absent"):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(ValueError, "canonical store directory"):
+                    build_service(
+                        env=self.qdrant_env(RAG_CANONICAL_STORE=value),
+                        embed=lambda _text: [1.0, 0.0],
+                    )
+
+    @patch("rag_hermes.app_factory.verify_collection_ready")
+    def test_qdrant_service_is_wrapped_in_the_canonical_barrier(self, verify) -> None:
+        verify.return_value = _VERIFIED_SCHEMA
+        service = build_service(
+            env=self.qdrant_env(), embed=lambda _text: [1.0, 0.0]
+        )
+
+        barrier = service._repository
+        self.assertIs(type(barrier), CanonicalAclSearch)
+        # Le seuil de la barrière doit égaler celui du service, sinon un
+        # candidat sous le seuil changerait une erreur ACL en abstention.
+        self.assertEqual(barrier.minimum_score, service._minimum_score)
+        registry = CanonicalDocumentRegistry(self.store_dir)
+        self.assertEqual(registry.documents(), {})
+        self.assertIsInstance(self.inner_repository(service), QdrantChunkRepository)
+
+    @patch("rag_hermes.app_factory.verify_collection_ready")
+    def test_retrieval_k_above_the_canonical_scan_budget_refuses_startup(
+        self, verify
+    ) -> None:
+        verify.return_value = _VERIFIED_SCHEMA
+        with self.assertRaisesRegex(ValueError, "canonical scan budget"):
+            build_service(
+                env=self.qdrant_env(RAG_TOP_K="1", RAG_RETRIEVAL_K="129"),
+                embed=lambda _text: [1.0, 0.0],
+            )
+        service = build_service(
+            env=self.qdrant_env(RAG_TOP_K="1", RAG_RETRIEVAL_K="128"),
+            embed=lambda _text: [1.0, 0.0],
+        )
+        self.assertEqual(service._retrieval_k, 128)
 
     @patch("rag_hermes.app_factory.verify_collection_ready")
     def test_with_qdrant_url_and_embedder_builds_repository_backed_service(
@@ -103,36 +177,29 @@ class BuildServiceTests(unittest.TestCase):
     ) -> None:
         verify.return_value = _VERIFIED_SCHEMA
         service = build_service(
-            env={
-                "RAG_QDRANT_URL": "http://127.0.0.1:6333",
-                "RAG_QDRANT_COLLECTION": "hermes_chunks_v1",
-            },
+            env=self.qdrant_env(RAG_QDRANT_COLLECTION="hermes_chunks_v1"),
             embed=lambda text: [1.0, 0.0],
         )
         self.assertIsNotNone(service._repository)
         verify.assert_called_once()
         # The verified dense size is handed to the repository: the dense-only
         # path cannot read collection metadata by itself.
-        self.assertEqual(service._repository._vector_size, 1024)
+        self.assertEqual(self.inner_repository(service)._vector_size, 1024)
 
     @patch("rag_hermes.app_factory.verify_collection_ready")
     def test_qdrant_lock_directory_must_be_absolute_and_is_forwarded(self, verify) -> None:
         verify.return_value = _VERIFIED_SCHEMA
         with self.assertRaisesRegex(ValueError, "lock directory"):
             build_service(
-                env={"RAG_QDRANT_URL": "http://127.0.0.1:6333",
-                     "RAG_QDRANT_LOCK_DIR": "relative/locks"},
+                env=self.qdrant_env(RAG_QDRANT_LOCK_DIR="relative/locks"),
                 embed=lambda _text: [1.0, 0.0],
             )
         with tempfile.TemporaryDirectory() as directory:
             service = build_service(
-                env={"RAG_QDRANT_URL": "http://127.0.0.1:6333",
-                     "RAG_QDRANT_LOCK_DIR": directory},
+                env=self.qdrant_env(RAG_QDRANT_LOCK_DIR=directory),
                 embed=lambda _text: [1.0, 0.0],
             )
-            repository = service._repository
-            assert isinstance(repository, QdrantChunkRepository)
-            self.assertEqual(repository._lock_dir, Path(directory))
+            self.assertEqual(self.inner_repository(service)._lock_dir, Path(directory))
 
     @patch("rag_hermes.app_factory.verify_collection_ready")
     def test_misconfigured_qdrant_collection_refuses_startup(self, verify) -> None:
@@ -141,7 +208,7 @@ class BuildServiceTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(QdrantPreflightError, "is_tenant"):
             build_service(
-                env={"RAG_QDRANT_URL": "http://127.0.0.1:6333"},
+                env=self.qdrant_env(),
                 embed=lambda text: [1.0, 0.0],
             )
 
@@ -153,10 +220,7 @@ class BuildServiceTests(unittest.TestCase):
         # build time (lazy), so this stays offline-safe.
         verify.return_value = _VERIFIED_SCHEMA
         service = build_service(
-            env={
-                "RAG_QDRANT_URL": "http://127.0.0.1:6333",
-                "RAG_EMBED_LOCK": "manifests/locks/bge-m3.lock.json",
-            },
+            env=self.qdrant_env(RAG_EMBED_LOCK="manifests/locks/bge-m3.lock.json"),
         )
         self.assertIsNotNone(service._repository)
         verify.assert_called_once()
