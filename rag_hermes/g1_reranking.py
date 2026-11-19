@@ -7,16 +7,14 @@ that the canonical ACL/provenance barrier already accepted.
 from __future__ import annotations
 
 from dataclasses import dataclass
-import math
 from collections.abc import Callable
-from itertools import islice
-from numbers import Real
 from typing import Any
 
 from rag_hermes.acl import AuthorizationContext, Chunk
 from rag_hermes.qdrant_repository import HybridCandidate
 from rag_hermes.g1_hybrid_candidates import CanonicalHybridCandidates
 from rag_hermes.reranker_budget import assert_pair_fits
+from rag_hermes.reranker_scores import RerankerScoreError, ensure_finite_scores
 
 
 @dataclass(frozen=True)
@@ -108,33 +106,25 @@ class RerankedCandidateSource:
             pairs, batch_size=self._batch_size, max_length=self._max_length,
             normalize=True,
         )
-        # Materialize only the expected number plus one: an infinite stream of
-        # scores must not hang a request. Real accepts NumPy scalar scores, but
-        # bool and numeric strings remain invalid scoring contracts.
+        # Garde PARTAGÉE avec le chemin service V1 (`rag_hermes.service`) et le
+        # runner de campagne (`retrieval.score_authorized_pairs`) : scalaire
+        # accepté, matérialisation bornée à n+1 (un flux de scores infini ne
+        # doit pas faire boucler la requête), bool/chaînes refusés, scores
+        # exigés FINIS.
         try:
-            values = [raw] if isinstance(raw, Real) and not isinstance(raw, bool) else list(
-                islice(raw, len(submitted) + 1)
-            )
-        except TypeError as exc:
+            scores = ensure_finite_scores(raw, len(submitted))
+        except RerankerScoreError as exc:
             raise ValueError("reranker must return exactly one finite score per pair") from exc
+        # Vérifié APRÈS matérialisation et conversion : une sous-classe de Real
+        # dont __float__ muterait les paires serait sinon scorée sur un texte
+        # différent de celui que la citation revendique. Le message garde les
+        # deux formulations (paires mutées / score par paire) : c'est le même
+        # contrat rompu, et les deux sont épinglées par les tests.
         if tuple(tuple(pair) for pair in pairs) != submitted:
-            raise ValueError("reranker modified scoring pairs")
-        if (
-            len(values) != len(submitted)
-            or any(not isinstance(value, Real) or isinstance(value, bool) for value in values)
-        ):
-            raise ValueError("reranker must return exactly one finite score per pair")
-        try:
-            scores = [float(value) for value in values]
-        except (OverflowError, TypeError, ValueError) as exc:
-            raise ValueError("reranker must return exactly one finite score per pair") from exc
-        # Check the values actually published, not just the objects before
-        # float conversion: a Real subclass may override __float__.
-        if (
-            any(not math.isfinite(score) for score in scores)
-            or tuple(tuple(pair) for pair in pairs) != submitted
-        ):
-            raise ValueError("reranker must return exactly one finite score per pair")
+            raise ValueError(
+                "reranker modified scoring pairs while converting: it must "
+                "return exactly one finite score per pair"
+            )
         order = sorted(
             range(len(observed)),
             key=lambda index: (-scores[index], observed[index].chunk.chunk_id),

@@ -13,6 +13,7 @@ from .ingestion import Document
 from .qdrant_filter import build_qdrant_filter
 from .qdrant_store import chunk_to_point
 from .reranker_budget import assert_pair_fits
+from .reranker_scores import RerankerScoreError, ensure_finite_scores
 
 _TOKEN_RE = re.compile(r"\w+", re.UNICODE)
 
@@ -317,7 +318,10 @@ def score_authorized_pairs(reranker: Any, tokenizer: Any, query: str, candidates
     if not pairs:
         return [], RerankerBudgetCounters(0, 0, 0)
     raw = reranker.compute_score(pairs, batch_size=batch_size, max_length=max_length, normalize=True)
-    scores = [float(raw)] if isinstance(raw, (float, int)) else [float(item) for item in raw]
-    if len(scores) != len(pairs) or any(not math.isfinite(score) for score in scores):
-        raise ValueError("reranker must return exactly one finite score per pair")
+    # Garde PARTAGÉE avec le service V1 et le chemin G1 (`reranker_scores`) :
+    # compte exact, nombres réels (bool et chaînes refusés), scores FINIS.
+    try:
+        scores = ensure_finite_scores(raw, len(pairs))
+    except RerankerScoreError as exc:
+        raise ValueError("reranker must return exactly one finite score per pair") from exc
     return scores, RerankerBudgetCounters(len(pairs), max(lengths), 0)

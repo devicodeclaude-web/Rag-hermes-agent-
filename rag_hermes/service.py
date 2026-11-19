@@ -7,6 +7,7 @@ from typing import Any, Callable
 from .acl import AuthorizationContext, Chunk
 from .generator import ABSTENTION_ANSWER, GenerationError
 from .ingestion import Document, chunk_document
+from .reranker_scores import RerankerScoreError, ensure_finite_scores
 from .retrieval import CanonicalAclSearch, LexicalRetriever, SearchResult
 
 _CITATION_MARKER_RE = re.compile(r"\[S(\d+)\]")
@@ -163,7 +164,7 @@ class RagService:
         # widens authorization — it only reorders already-authorized chunks.
         if self._reranker is not None:
             scores = self._reranker(question, evidence)
-            if not isinstance(scores, list) or len(scores) != len(evidence):
+            if not isinstance(scores, list):
                 # An injected reranker returning malformed output is a server-side
                 # generation-component failure, not a client request error, so it
                 # must fail closed as GenerationError (mapped to 502) rather than a
@@ -171,9 +172,18 @@ class RagService:
                 raise GenerationError(
                     "reranker must return one score per candidate chunk"
                 )
+            # Même garde que le chemin G1 (`g1_reranking`) : compte exact,
+            # nombres réels, scores FINIS. Un NaN rendrait le tri non
+            # transitif et ±inf épinglerait un candidat en tête.
+            try:
+                finite_scores = ensure_finite_scores(scores, len(evidence))
+            except RerankerScoreError as exc:
+                raise GenerationError(
+                    "reranker must return one finite score per candidate chunk"
+                ) from exc
             ordered = sorted(
                 range(len(evidence)),
-                key=lambda index: (-float(scores[index]), evidence[index].chunk_id),
+                key=lambda index: (-finite_scores[index], evidence[index].chunk_id),
             )
             evidence = tuple(evidence[index] for index in ordered[: self._top_k])
         else:

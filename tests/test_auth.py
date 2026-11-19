@@ -113,6 +113,49 @@ class LoadFromFileTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             load_authenticator_from_file(path)
 
+    def test_reserved_public_tenant_is_refused(self) -> None:
+        # `tenant_id == "public"` est le tenant GLOBAL lisible par tous les
+        # tenants (acl.py `is_global_public`, qdrant_filter.py). Un principal
+        # porteur de ce tenant écrirait donc dans le corpus commun : le
+        # registre doit le refuser à la lecture du fichier (fail-closed), y
+        # compris quand la valeur n'est réservée qu'après `strip()`.
+        for raw_tenant in ("public", "  public  "):
+            with self.subTest(tenant=raw_tenant):
+                path = self._write(
+                    {
+                        "principals": [
+                            {
+                                "token": ALICE_TOKEN,
+                                "tenant_id": raw_tenant,
+                                "user_id": "alice",
+                                "groups": [],
+                                "clearance": 1,
+                            }
+                        ]
+                    }
+                )
+                with self.assertRaises(ValueError):
+                    load_authenticator_from_file(path)
+
+    def test_tenant_only_prefixed_by_public_stays_accepted(self) -> None:
+        # Seule la valeur exacte est réservée : "public-corp" est un tenant
+        # ordinaire et ne doit pas être bloqué par le garde.
+        path = self._write(
+            {
+                "principals": [
+                    {
+                        "token": ALICE_TOKEN,
+                        "tenant_id": "public-corp",
+                        "user_id": "alice",
+                        "groups": [],
+                        "clearance": 1,
+                    }
+                ]
+            }
+        )
+        auth = load_authenticator_from_file(path)
+        self.assertEqual(auth.authenticate(_env(ALICE_TOKEN)).tenant_id, "public-corp")
+
 
 class DevAuthenticatorTests(unittest.TestCase):
     def test_generated_token_authenticates(self) -> None:

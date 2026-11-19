@@ -19,7 +19,7 @@ from pathlib import Path
 import secrets
 from typing import Any, Mapping
 
-from .acl import AuthorizationContext
+from .acl import GLOBAL_PUBLIC_TENANT, AuthorizationContext
 
 
 class AuthenticationError(Exception):
@@ -92,6 +92,16 @@ def _context_from_entry(entry: Mapping[str, Any]) -> AuthorizationContext:
         raise ValueError(f"principal invalide : {exc}") from exc
     if not tenant_id or not user_id:
         raise ValueError("principal invalide : tenant_id et user_id requis")
+    if tenant_id == GLOBAL_PUBLIC_TENANT:
+        # Fail-closed : ce tenant est le corpus global lisible par tous les
+        # tenants (acl._is_authorized, qdrant_filter.build_qdrant_filter). Un
+        # principal qui le porterait importerait des documents visibles de
+        # tous — l'erreur est refusée au CHARGEMENT du registre, pas au premier
+        # import, pour que la mauvaise configuration empêche le démarrage.
+        raise ValueError(
+            "principal invalide : le tenant 'public' est réservé au corpus "
+            "global lisible par tous les tenants"
+        )
     if type(clearance) is not int or clearance < 0:
         raise ValueError("principal invalide : clearance doit être un entier >= 0")
     if not isinstance(groups_raw, list) or not all(

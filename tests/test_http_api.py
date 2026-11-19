@@ -9,6 +9,7 @@ from rag_hermes.acl import AuthorizationContext
 from rag_hermes.auth import TokenAuthenticator
 from rag_hermes.http_api import make_app
 from rag_hermes.generator import GenerationError, OpenAICompatibleGenerator
+from rag_hermes.reranker_budget import RerankerBudgetExceeded
 from rag_hermes.service import RagService
 
 
@@ -460,6 +461,107 @@ class HttpApiTests(unittest.TestCase):
                 )
                 self.assertEqual(status, "400 Bad Request")
                 self.assertEqual(response["error"], "invalid_request")
+
+
+class _RaisingService:
+    """Service minimal qui échoue toujours, pour éprouver le mappage HTTP.
+
+    L'application n'appelle que `answer` / `import_document` : un double fidèle
+    suffit à provoquer l'erreur exacte à mapper, sans Qdrant ni générateur.
+    """
+
+    def __init__(self, error: BaseException) -> None:
+        self._error = error
+
+    def answer(self, question: str, *, context: AuthorizationContext) -> Any:
+        raise self._error
+
+    def import_document(self, document: Any, *, context: AuthorizationContext) -> Any:
+        raise self._error
+
+
+class ServerFailureMappingTests(unittest.TestCase):
+    def _app(self, error: BaseException):
+        return make_app(_RaisingService(error), authenticator=SHARED_AUTHENTICATOR)  # type: ignore[arg-type]
+
+    def test_reranker_budget_exceeded_is_a_backend_error_not_a_bad_request(self) -> None:
+        # `RerankerBudgetExceeded` hérite de ValueError : sans clause dédiée,
+        # un dépassement de budget côté serveur est rendu « 400 invalid_request »
+        # et accuse le client d'une faute qui n'est pas la sienne.
+        app = self._app(
+            RerankerBudgetExceeded("reranker pair has 731 tokens, exceeding max_length 512")
+        )
+        status, headers, response = request(
+            app, "POST", "/api/questions", {"question": "Comment installer Hermes ?"}
+        )
+        self.assertEqual(status, "502 Bad Gateway")
+        self.assertEqual(response, {"error": "backend_error"})
+        self.assertEqual(headers["X-Content-Type-Options"], "nosniff")
+        # Aucun détail interne (compte de tokens, budget) ne doit fuiter.
+        self.assertNotIn("731", json.dumps(response))
+
+    def test_unexpected_error_is_a_json_500_with_security_headers(self) -> None:
+        # Une panne imprévue (ex. Qdrant injoignable) remontait jusqu'à wsgiref :
+        # 500 HTML générique, SANS en-têtes de sécurité et avec le risque de
+        # publier la trace. Elle doit devenir un 500 JSON muet et en-têté.
+        app = self._app(RuntimeError("Qdrant unavailable at 10.0.0.5:6333"))
+        status, headers, response = request(
+            app, "POST", "/api/questions", {"question": "Comment installer Hermes ?"}
+        )
+        self.assertEqual(status, "500 Internal Server Error")
+        self.assertEqual(response, {"error": "internal_error"})
+        self.assertEqual(headers["X-Content-Type-Options"], "nosniff")
+        self.assertEqual(headers["X-Frame-Options"], "DENY")
+        self.assertIn("Content-Security-Policy", headers)
+        self.assertEqual(headers["Cache-Control"], "no-store")
+        serialized = json.dumps(response)
+        self.assertNotIn("Qdrant", serialized)
+        self.assertNotIn("10.0.0.5", serialized)
+
+    def test_unexpected_error_on_import_is_also_a_json_500(self) -> None:
+        app = self._app(OSError("disk is gone"))
+        status, _, response = request(
+            app, "POST", "/api/documents", {"document": _document()}
+        )
+        self.assertEqual(status, "500 Internal Server Error")
+        self.assertEqual(response, {"error": "internal_error"})
+
+    def test_real_service_with_an_over_budget_reranker_returns_502(self) -> None:
+        # Preuve sur le VRAI service (pas le double) : le budget du reranker est
+        # franchi pendant `service.answer`, exactement le chemin que l'audit
+        # voyait rendu en 400.
+        def over_budget_reranker(question, chunks):
+            raise RerankerBudgetExceeded(
+                "reranker pair has 900 tokens, exceeding max_length 512"
+            )
+
+        service = RagService(reranker=over_budget_reranker, retrieval_k=5, top_k=1)
+        app = make_app(service, authenticator=SHARED_AUTHENTICATOR)
+        created, _, _ = request(
+            app,
+            "POST",
+            "/api/documents",
+            {
+                "document": _document(
+                    document_id="guide-budget",
+                    content="Pour installer Hermes, utilisez pipx install hermes-agent.",
+                )
+            },
+        )
+        self.assertEqual(created, "201 Created")
+
+        status, _, response = request(
+            app, "POST", "/api/questions", {"question": "Comment installer Hermes ?"}
+        )
+        self.assertEqual(status, "502 Bad Gateway")
+        self.assertEqual(response, {"error": "backend_error"})
+
+    def test_keyboard_interrupt_is_not_swallowed_as_a_500(self) -> None:
+        # Le filet de sécurité attrape `Exception`, jamais `BaseException` :
+        # un arrêt du process ne doit pas être déguisé en réponse 500.
+        app = self._app(KeyboardInterrupt())
+        with self.assertRaises(KeyboardInterrupt):
+            request(app, "POST", "/api/questions", {"question": "Comment installer ?"})
 
 
 if __name__ == "__main__":
