@@ -37,10 +37,16 @@ d'un **scroll non filtré et paginé** à la liste complète des chunks canoniqu
 fournie indépendamment de Qdrant. Il échoue si un point manque, est en trop,
 est dupliqué ou si son payload/ACL diffère ; il détecte ainsi un `owner_id`
 indexé trop restrictif qu'une requête préfiltrée n'aurait pas retourné. Le
-scroll sans filtre (`QdrantAuditRestClient.scroll_page`) est destiné au seul
-auditeur hors du chemin des requêtes utilisateur ; la séparation en classes
-n'est **pas** une autorisation réseau. Utiliser des droits/identifiants
-opérateur distincts et ne pas exposer ce client à l'API publique. L'audit
+scroll sans filtre (`QdrantAuditClient.scroll_page`) est destiné au seul
+auditeur hors du chemin des requêtes utilisateur. Ce lecteur ne détient qu'un
+transport HTTP : aucune méthode de mutation n'existe dans son graphe d'objets,
+et il n'hérite plus du client lecture/écriture. La composition en Python n'est
+toutefois **pas** une autorisation réseau : `run_audited_g1_candidate_window`
+exige deux identifiants de lecture distincts (`audit_api_key`,
+`query_api_key`), refusés s'ils ne portent pas exactement le droit `r` sur la
+collection ou s'ils sont identiques, et c'est Qdrant qui applique ces droits.
+Les deux peuvent rester vides seulement sur une instance de développement sans
+authentification. L'audit
 compare les payloads et IDs (types JSON inclus), **pas les vecteurs**.
 L'essai `scripts/smoke_g1_qdrant.py` sur **Qdrant 1.20.0 réel** vérifie
 l'audit paginé, une réponse citée depuis une source JSONL épinglée, une

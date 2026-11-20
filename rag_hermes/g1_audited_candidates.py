@@ -17,7 +17,8 @@ from .g1_reranking import RerankedCandidate, RerankedCandidateSource
 from .index_integrity import AuditedIndexSession, IndexSnapshotReport
 from .ingestion import Document
 from .qdrant_repository import HybridCandidate, QdrantChunkRepository
-from .qdrant_rest import QdrantAuditRestClient, QdrantRestClient
+from .qdrant_identity import validate_audit_tokens
+from .qdrant_rest import QdrantAuditClient, QdrantRestClient
 from .qdrant_store import chunk_to_point
 from .retrieval import CanonicalAclError
 
@@ -48,6 +49,8 @@ def run_audited_g1_candidate_window(
     tokenizer: object,
     question: str,
     context: AuthorizationContext,
+    audit_api_key: str = "",
+    query_api_key: str = "",
     candidate_limit: int = 20,
     top_k: int = 8,
     max_length: int = 512,
@@ -59,6 +62,11 @@ def run_audited_g1_candidate_window(
     but this is not a network identity proof (proxies and mutable indexes can
     change what they serve). The chunker and SHA pins must be approved by the
     operator independently, not computed from whichever index responds.
+
+    The audit reader and the query client carry SEPARATE read-only credentials
+    (`audit_api_key`, `query_api_key`): neither role writes, and keeping them
+    distinct makes audit reads separable from user traffic server-side. Both
+    may be empty only against an unauthenticated development instance.
     """
     if type(base_url) is not str or not base_url.startswith(("http://", "https://")):
         raise ValueError("Qdrant base URL is required")
@@ -66,6 +74,9 @@ def run_audited_g1_candidate_window(
         raise ValueError("one normalized Qdrant collection is required")
     if not callable(chunker) or not callable(embed_hybrid):
         raise ValueError("chunker and hybrid encoder are required")
+    validate_audit_tokens(
+        audit_key=audit_api_key, query_key=query_api_key, collection=collection
+    )
     snapshot = load_pinned_document_snapshot(
         source_path, expected_sha256=expected_source_sha256,
     )
@@ -74,8 +85,10 @@ def run_audited_g1_candidate_window(
     ]
     if not expected_chunks:
         raise ValueError("canonical source produced no chunks")
-    audit_client = QdrantAuditRestClient(base_url)
-    query_client = QdrantRestClient(base_url)
+    # The audit reader holds only a transport: no mutation method exists in its
+    # object graph, and its credential is read-only on this collection.
+    audit_client = QdrantAuditClient(base_url, api_key=audit_api_key)
+    query_client = QdrantRestClient(base_url, api_key=query_api_key)
     session = AuditedIndexSession(
         audit_client, collection, expected_chunks,
         expected_manifest_sha256=expected_manifest_sha256,

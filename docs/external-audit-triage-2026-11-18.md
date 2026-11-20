@@ -98,10 +98,15 @@ Sources auditées :
   celle d'écriture, et n'expose aucune méthode d'administration. Les refus sont
   prouvés contre un Qdrant 1.19.0 authentifié (`jwt_rbac`), y compris sur les
   clients réellement câblés par `build_service`, et la CI démarre une seconde
-  instance authentifiée. Ne pas compter cette tranche livrée avant la CI
-  distante. La classe d'audit hérite encore des méthodes de mutation, les deux
-  jetons vivent dans le même processus et le RBAC Qdrant ignore le filtre
-  tenant : SEC-03 reste ouvert.
+  instance authentifiée. Une troisième tranche isole l'auditeur :
+  `QdrantAuditClient` ne détient qu'un transport HTTP (plus aucune méthode de
+  mutation dans son graphe d'objets, plus d'héritage du client lecture/écriture)
+  et `run_audited_g1_candidate_window` exige deux identifiants de lecture
+  distincts, validés comme `r` sur la collection. Ne pas compter ces tranches
+  livrées avant la CI distante. **Restent ouverts** : les jetons du service
+  vivent dans le même processus, et le RBAC Qdrant porte sur la collection et
+  non sur le filtre tenant — l'isolation par tenant demeure applicative. SEC-03
+  n'est pas clos.
 - **Lot 4 / QUAL-01 : PR #89 fusionnée.**
   Le scoreur publie désormais `null` si aucune citation n'est émise (précision
   historique, validité et support, ainsi que leurs bornes) ; un zéro mesuré sur

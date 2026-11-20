@@ -137,8 +137,22 @@ Limites assumées : les deux jetons vivent dans le même processus, donc une
 compromission du service les expose tous les deux ; le RBAC de Qdrant porte sur
 une collection et non sur le filtre tenant, donc le jeton de requête pourrait
 lire toute la collection V1 — l'isolation par tenant reste garantie côté
-application (barrière ACL canonique), pas côté serveur. Le client d'audit
-hérite encore de méthodes de mutation. SEC-03 n'est donc pas clos.
+application (barrière ACL canonique), pas côté serveur. SEC-03 n'est donc pas
+clos.
+
+**Lecteur d'audit.** Le scroll non filtré appartient au seul
+`QdrantAuditClient` (`rag_hermes/qdrant_rest.py`), qui ne détient qu'un
+transport HTTP : aucune méthode de mutation n'existe dans son graphe d'objets
+et il n'hérite plus du client lecture/écriture. La fenêtre auditée
+`run_audited_g1_candidate_window` exige deux identifiants de **lecture**
+distincts, `audit_api_key` et `query_api_key`, refusés s'ils ne portent pas
+exactement le droit `r` sur la collection, s'ils sont identiques, ou si un seul
+des deux est fourni ; les deux peuvent rester vides uniquement face à une
+instance de développement sans authentification. Frapper ces jetons avec
+`scripts/mint_qdrant_jwt.py --only r`. Là encore c'est Qdrant qui applique les
+droits : un test d'intégration vérifie que l'identité d'audit lit tous les
+points et se fait refuser upsert, suppression de points et suppression de
+collection.
 La collection et ses index de payload doivent exister au préalable
 (voir `qdrant/payload-indexes.json`).
 

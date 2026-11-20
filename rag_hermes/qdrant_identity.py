@@ -160,3 +160,44 @@ def validate_service_tokens(*, query_key: str, write_key: str, collection: str) 
         raise ValueError(
             "RAG_QDRANT_QUERY_API_KEY and RAG_QDRANT_WRITE_API_KEY must be distinct tokens"
         )
+
+
+def validate_audit_tokens(*, audit_key: str, query_key: str, collection: str) -> None:
+    """Refuse the G1 audit window's credentials unless they are two readers.
+
+    The audited candidate window compares the index to a canonical manifest
+    and then queries it; neither role writes. Two DISTINCT read-only tokens
+    keep the audit trail separable from user traffic.
+
+    Both empty means "unauthenticated Qdrant", which only a development or
+    local-fixture instance may be: it is accepted so the window stays usable
+    there, but a half-configured pair is refused.
+    """
+    if type(collection) is not str or not collection.strip():
+        raise ValueError("one normalized Qdrant collection is required")
+    collection = collection.strip()
+    audit_key = audit_key.strip() if type(audit_key) is str else audit_key
+    query_key = query_key.strip() if type(query_key) is str else query_key
+    if audit_key == "" and query_key == "":
+        return
+    for variable, token in (
+        ("RAG_QDRANT_G1_AUDIT_API_KEY", audit_key),
+        ("RAG_QDRANT_G1_QUERY_API_KEY", query_key),
+    ):
+        if type(token) is not str or not token:
+            raise ValueError(
+                f"{variable} is missing: either both G1 credentials are set, or "
+                "neither (unauthenticated Qdrant)"
+            )
+        try:
+            _check(token, collection=collection, expected=QUERY_ACCESS)
+        except _TokenError as reason:
+            raise ValueError(
+                f"{variable} {reason.args[0]}: mint a read-only collection-scoped "
+                f"Qdrant JWT with scripts/mint_qdrant_jwt.py --only {QUERY_ACCESS}"
+            ) from None
+    if audit_key == query_key:
+        raise ValueError(
+            "RAG_QDRANT_G1_AUDIT_API_KEY and RAG_QDRANT_G1_QUERY_API_KEY must be "
+            "distinct tokens, so audit reads stay separable from query reads"
+        )
