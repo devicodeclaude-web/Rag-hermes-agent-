@@ -51,7 +51,7 @@ class EvaluationReport:
     executed_case_count: int
     recall_at_k: float
     mrr: float
-    citation_precision: float
+    citation_precision: float | None
     citation_precision_lower_bound: float | None
     citation_validity_precision: float | None
     citation_validity_precision_lower_bound: float | None
@@ -179,7 +179,7 @@ def evaluate(cases: Iterable[EvaluationCase], k: int) -> EvaluationReport:
     # (inconclusive) rather than as an unfounded guarantee; the point estimates
     # remain as a description of the cases that did execute.
     citation_bounds_conclusive = len(citation_eligible_cases) == len(items)
-    strict_citations_available = all(
+    strict_citations_available = bool(all_citations) and all(
         case.citation_judgments is not None
         and Counter(judgment.chunk_id for judgment in case.citation_judgments)
         == Counter(case.cited_chunk_ids)
@@ -216,10 +216,13 @@ def evaluate(cases: Iterable[EvaluationCase], k: int) -> EvaluationReport:
         executed_case_count=len(citation_eligible_cases),
         recall_at_k=_safe_ratio(sum(recalls), len(recalls)),
         mrr=_safe_ratio(sum(reciprocal_ranks), len(reciprocal_ranks)),
-        citation_precision=_safe_ratio(legacy_supported_citations, len(all_citations)),
+        citation_precision=(
+            _safe_ratio(legacy_supported_citations, len(all_citations))
+            if all_citations else None
+        ),
         citation_precision_lower_bound=(
             _safe_ratio(legacy_supported_citations, observed_citation_count)
-            if citation_bounds_conclusive
+            if citation_bounds_conclusive and all_citations
             else None
         ),
         citation_validity_precision=(

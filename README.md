@@ -15,7 +15,10 @@ Ce dépôt est un harnais de preuve, pas encore une plateforme de production. Il
 - Qdrant 1.19.0 aarch64 réellement démarré sur `127.0.0.1` ; 2 945 chunks persistés.
 - Dix index payload créés ; `tenant_id` est confirmé avec `is_tenant: true` par lecture de la collection.
 - Probes réels : accès privé autorisé pour Alpha/Beta/Gamma, refus par clearance, fuite inter-tenant `0`.
-- Métriques : recall@k, MRR, précision des citations, précision/rappel d’abstention et fuite absolue.
+- Métriques prévues : recall@k, MRR, précision des citations, précision/rappel
+  d’abstention et fuite absolue. Sans citation émise, les précisions de citation
+  sont désormais `null` (non mesurées), pas `0.0` (échec mesuré). Les reçus
+  historiques restent inchangés ; ce correctif ne les réévalue pas.
 - Deux profils d’inférence exacts : GGUF + llama.cpp et BF16 + vLLM.
 - Baseline lexicale exécutée : recall@10 `0,667`, rappel d’abstention `0,25`, fuite `0`.
 - Smoke d’infrastructure BGE-M3 exécuté sur **NVIDIA A40** (run `bge-m3-smoke-rtx4090-v1` du 2026-09-21 ; le manifeste est nommé « rtx4090 » mais le matériel réel est une A40 44,4 Gio) : **7 371 chunks** (découpage tokenizer exact 384/64) encodés en `54,37 s`, soit `135,58 chunks/s`, pic CUDA alloué `1,085 Gio`.

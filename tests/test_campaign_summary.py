@@ -26,6 +26,8 @@ def retrieval(*, total=100, quality_eligible=False, security=True):
             "recall_at_k": 0.3,
             "mrr": 0.2,
             "citation_precision": 0.12,
+            "citation_validity_precision": None,
+            "citation_support_precision": None,
             "abstention_precision": 0.0,
             "abstention_recall": 0.0,
             "leak_count": 0 if security else 1,
@@ -119,6 +121,122 @@ class CampaignSummaryTests(unittest.TestCase):
         self.assertIsNone(technical["citation_precision_lower_bound"])
         self.assertIsNone(technical["citation_validity_precision_lower_bound"])
         self.assertIsNone(technical["citation_support_precision_lower_bound"])
+
+    def test_modern_report_accepts_unmeasured_citations_as_null(self):
+        source = retrieval()
+        source["metrics"].update(
+            executed_case_count=100, acl_error_count=0, backend_error_count=0,
+            abstention_precision_lower_bound=0.0,
+            citation_precision=None, citation_precision_lower_bound=None,
+            citation_validity_precision=None, citation_validity_precision_lower_bound=None,
+            citation_support_precision=None, citation_support_precision_lower_bound=None,
+        )
+        result = build_campaign_summary(source, comparison(), human())
+        self.assertIsNone(result["retrieval_technical"]["citation_precision"])
+        self.assertIsNone(result["retrieval_technical"]["citation_precision_lower_bound"])
+
+    def test_modern_report_refuses_missing_citation_point_key(self):
+        source = retrieval()
+        source["metrics"].update(
+            executed_case_count=100, acl_error_count=0, backend_error_count=0,
+            abstention_precision_lower_bound=0.0,
+            citation_precision_lower_bound=None,
+            citation_validity_precision_lower_bound=None,
+            citation_support_precision_lower_bound=None,
+        )
+        del source["metrics"]["citation_precision"]
+        with self.assertRaisesRegex(ValueError, "citation_precision"):
+            build_campaign_summary(source, comparison(), human())
+
+    def test_modern_report_refuses_strict_scores_without_citations(self):
+        source = retrieval()
+        source["metrics"].update(
+            executed_case_count=100, acl_error_count=0, backend_error_count=0,
+            abstention_precision_lower_bound=0.0,
+            citation_precision=None, citation_precision_lower_bound=None,
+            citation_validity_precision=1.0, citation_validity_precision_lower_bound=1.0,
+            citation_support_precision=1.0, citation_support_precision_lower_bound=1.0,
+        )
+        with self.assertRaisesRegex(ValueError, "citation_precision"):
+            build_campaign_summary(source, comparison(), human())
+
+    def test_modern_report_refuses_half_judged_citation_family(self):
+        source = retrieval()
+        source["metrics"].update(
+            executed_case_count=100, acl_error_count=0, backend_error_count=0,
+            abstention_precision_lower_bound=0.0,
+            citation_precision_lower_bound=0.12,
+            citation_validity_precision=1.0, citation_validity_precision_lower_bound=1.0,
+            citation_support_precision=None, citation_support_precision_lower_bound=None,
+        )
+        with self.assertRaisesRegex(ValueError, "strict citation"):
+            build_campaign_summary(source, comparison(), human())
+
+    def test_modern_report_rejects_support_above_validity(self):
+        for validity, support, validity_bound, support_bound in (
+            (0.4, 0.5, 0.2, 0.2),
+            (0.8, 0.7, 0.2, 0.3),
+        ):
+            with self.subTest(values=(validity, support, validity_bound, support_bound)):
+                source = retrieval()
+                source["metrics"].update(
+                    executed_case_count=100, acl_error_count=0, backend_error_count=0,
+                    abstention_precision_lower_bound=0.0,
+                    citation_precision=0.9, citation_precision_lower_bound=0.9,
+                    citation_validity_precision=validity,
+                    citation_validity_precision_lower_bound=validity_bound,
+                    citation_support_precision=support,
+                    citation_support_precision_lower_bound=support_bound,
+                )
+                with self.assertRaisesRegex(ValueError, "citation_support_precision"):
+                    build_campaign_summary(source, comparison(), human())
+
+    def test_modern_report_requires_retrieval_metrics(self):
+        for field in ("recall_at_k", "mrr"):
+            with self.subTest(field=field):
+                source = retrieval()
+                source["metrics"].update(
+                    executed_case_count=100, acl_error_count=0, backend_error_count=0,
+                    abstention_precision_lower_bound=0.0,
+                    citation_precision_lower_bound=0.12,
+                    citation_validity_precision_lower_bound=None,
+                    citation_support_precision_lower_bound=None,
+                )
+                del source["metrics"][field]
+                with self.assertRaisesRegex(ValueError, field):
+                    build_campaign_summary(source, comparison(), human())
+
+    def test_summary_preserves_unmeasured_zero_and_positive_strict_citations(self):
+        for value in (None, 0.0, 1.0):
+            with self.subTest(value=value):
+                source = retrieval()
+                source["metrics"].update(
+                    executed_case_count=100, acl_error_count=0, backend_error_count=0,
+                    abstention_precision_lower_bound=0.0,
+                    citation_precision=None if value is None else 0.12,
+                    citation_precision_lower_bound=None if value is None else 0.12,
+                    citation_validity_precision=value,
+                    citation_validity_precision_lower_bound=value,
+                    citation_support_precision=value,
+                    citation_support_precision_lower_bound=value,
+                )
+                technical = build_campaign_summary(source, comparison(), human())["retrieval_technical"]
+                for field in ("citation_validity_precision", "citation_support_precision"):
+                    self.assertIn(field, technical)
+                    self.assertIs(technical[field], value)
+
+    def test_incomplete_report_rejects_non_numeric_citation_point(self):
+        source = retrieval()
+        source["metrics"].update(
+            executed_case_count=99, acl_error_count=1, backend_error_count=0,
+            security_gate_passed=False,
+            abstention_precision_lower_bound=0.0,
+            citation_precision="unknown", citation_precision_lower_bound=None,
+            citation_validity_precision=None, citation_validity_precision_lower_bound=None,
+            citation_support_precision=None, citation_support_precision_lower_bound=None,
+        )
+        with self.assertRaisesRegex(ValueError, "citation_precision"):
+            build_campaign_summary(source, comparison(), human())
 
     def test_complete_modern_campaign_remains_only_a_synthetic_technical_witness(self):
         source = retrieval()
