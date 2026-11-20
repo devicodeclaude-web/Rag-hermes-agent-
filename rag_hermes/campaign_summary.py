@@ -84,6 +84,26 @@ def build_campaign_summary(
     if not modern and any(field in metrics for field in new_fields):
         raise ValueError("partial metrics contract")
     if modern:
+        for field in ("recall_at_k", "mrr"):
+            if field not in metrics or not _probability(metrics[field]):
+                raise ValueError(f"modern metrics require valid {field}")
+        for field in (
+            "abstention_precision", "citation_precision",
+            "citation_validity_precision", "citation_support_precision",
+        ):
+            if field not in metrics:
+                raise ValueError(f"modern metrics missing {field}")
+        if metrics["citation_precision"] is None and any(
+            metrics[field] is not None for field in (
+                "citation_validity_precision", "citation_support_precision",
+                "citation_validity_precision_lower_bound",
+                "citation_support_precision_lower_bound",
+            )
+        ):
+            raise ValueError("citation_precision is null but strict citation metrics are present")
+        if ((metrics["citation_validity_precision"] is None)
+            != (metrics["citation_support_precision"] is None)):
+            raise ValueError("strict citation validity and support must be measured together")
         count = _integer(metrics["case_count"], "retrieval.metrics.case_count")
         executed = _integer(metrics["executed_case_count"], "retrieval.metrics.executed_case_count")
         acl_errors = _integer(metrics["acl_error_count"], "retrieval.metrics.acl_error_count")
@@ -107,16 +127,24 @@ def build_campaign_summary(
         ):
             bound_field = f"{point_field}_lower_bound"
             point, bound = metrics.get(point_field), metrics[bound_field]
-            if bound is None and point_field.startswith("citation_") and (
-                executed != count or (
-                    point_field != "citation_precision" and point is None
-                )
-            ):
-                continue  # Incomplete campaign, or unavailable strict judgments.
+            if point_field.startswith("citation_") and point is None and bound is None:
+                continue  # No citations or no strict judgments.
+            if bound is None and point_field.startswith("citation_") and executed != count:
+                if not _probability(point):
+                    raise ValueError(f"invalid {point_field} point estimate")
+                continue  # Point measured; bound inconclusive after a failure.
             if not _probability(bound) or not _probability(point):
                 raise ValueError(f"invalid {bound_field} or point estimate")
             if bound > point:
                 raise ValueError(f"invalid {bound_field} or point estimate")
+        validity = metrics["citation_validity_precision"]
+        support = metrics["citation_support_precision"]
+        if validity is not None and support > validity:
+            raise ValueError("citation_support_precision exceeds citation_validity_precision")
+        validity_bound = metrics["citation_validity_precision_lower_bound"]
+        support_bound = metrics["citation_support_precision_lower_bound"]
+        if validity_bound is not None and support_bound > validity_bound:
+            raise ValueError("citation_support_precision_lower_bound exceeds validity bound")
     gate_verdict = security_passed if modern or not security_passed else None
 
     retrieval_section = {
@@ -128,6 +156,8 @@ def build_campaign_summary(
         "recall_at_k": metrics.get("recall_at_k"),
         "mrr": metrics.get("mrr"),
         "citation_precision": metrics.get("citation_precision"),
+        "citation_validity_precision": metrics.get("citation_validity_precision"),
+        "citation_support_precision": metrics.get("citation_support_precision"),
         "metrics_contract": (
             "failure_bounds_v2" if modern else "legacy_missing_failure_bounds"
         ),

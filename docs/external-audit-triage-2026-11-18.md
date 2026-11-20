@@ -86,11 +86,17 @@ Sources auditées :
   sans `chunker` restent en mots ; une collection existante nécessite une
   réingestion hors ligne (pas de migration automatique). La CI Qdrant teste le
   câblage avec un tokenizer factice, pas le checkpoint BGE réel.
-- **Lot 3 / SEC-03 : transport en cours (branche dédiée).** Validation de l'URL
+- **Lot 3 / SEC-03 : transport appliqué (PR #88 fusionnée), privilèges ouverts.** Validation de l'URL
   Qdrant (HTTPS distant, HTTP loopback seulement), clé optionnelle via
   `RAG_QDRANT_API_KEY`, redirections refusées et détails HTTP masqués. La
   séparation des privilèges lecture/écriture/audit reste à faire : la classe
   d'audit hérite encore du client qui peut muter, et le service utilise un
   client commun. Ne pas classer SEC-03 comme résolu.
-- **Lots 4 à 5 : NON appliqués.** QUAL-01 (non-mesuré rendu `0.0`)
-  et SEC-02 (remplacement non atomique) restent ouverts.
+- **Lot 4 / QUAL-01 : correctif proposé sur branche, non encore fusionné.**
+  Le scoreur publie désormais `null` si aucune citation n'est émise (précision
+  historique, validité et support, ainsi que leurs bornes) ; un zéro mesuré sur
+  des citations effectivement émises reste `0.0`. Le runner GPU sérialise
+  `EvaluationReport` avec `asdict` : les futurs reçus refléteront cette
+  convention, sans modifier ni requalifier les reçus historiques committés.
+  Le contrôle sémantique des citations et les portes de qualité restent ouverts.
+- **Lot 5 / SEC-02 : NON appliqué.** Le remplacement non atomique reste ouvert.

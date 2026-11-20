@@ -1,4 +1,6 @@
 import copy
+from dataclasses import asdict
+import json
 import pickle
 import unittest
 
@@ -165,6 +167,23 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(report.citation_precision, 0.0)
         self.assertEqual(report.citation_validity_precision, 1.0)
         self.assertEqual(report.citation_support_precision, 1.0)
+
+    def test_no_citations_means_unmeasured_not_zero_precision(self):
+        report = evaluate([
+            EvaluationCase("retrieval-only", ("relevant",), ("relevant",), (), False, False, ()),
+        ], k=10)
+        self.assertEqual(report.recall_at_k, 1.0)
+        for name in (
+            "citation_precision", "citation_precision_lower_bound",
+            "citation_validity_precision", "citation_validity_precision_lower_bound",
+            "citation_support_precision", "citation_support_precision_lower_bound",
+        ):
+            with self.subTest(name=name):
+                self.assertIsNone(getattr(report, name))
+
+        serialized = json.loads(json.dumps(asdict(report)))
+        self.assertIsNone(serialized["citation_precision"])
+        self.assertIsNone(serialized["citation_support_precision"])
 
     def test_abstention_precision_and_recall_are_separate(self):
         cases = [
