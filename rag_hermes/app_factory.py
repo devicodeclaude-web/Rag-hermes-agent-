@@ -160,7 +160,7 @@ def build_service(
             f"({_CANONICAL_SCAN_BUDGET})"
         )
 
-    client = QdrantRestClient(qdrant_url)
+    client = QdrantRestClient(qdrant_url, api_key=env.get("RAG_QDRANT_API_KEY", ""))
     schema = verify_collection_ready(client, collection)
     repository = QdrantChunkRepository(
         client,

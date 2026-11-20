@@ -60,6 +60,16 @@ class BuildServiceTests(unittest.TestCase):
         )
         self.assertIs(service._chunker, self.profile.return_value)
 
+    @patch("rag_hermes.app_factory.verify_collection_ready")
+    def test_qdrant_factory_forwards_key_without_logging_it(self, verify) -> None:
+        verify.return_value = _VERIFIED_SCHEMA
+        service = build_service(
+            env=self.qdrant_env(RAG_QDRANT_API_KEY="example-key"),
+            embed=lambda _text: [1.0, 0.0],
+        )
+        client = self.inner_repository(service)._client
+        self.assertEqual(client._api_key, "example-key")
+
     def inner_repository(self, service) -> QdrantChunkRepository:  # noqa: ANN001
         """Dérouler barrière canonique -> write-through -> dépôt Qdrant."""
         barrier = service._repository

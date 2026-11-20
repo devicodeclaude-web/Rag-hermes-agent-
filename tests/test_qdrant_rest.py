@@ -1,8 +1,11 @@
 import json
+import os
 import threading
+import traceback
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
+from unittest.mock import patch
 
 from rag_hermes.acl import AuthorizationContext
 from rag_hermes.qdrant_filter import build_qdrant_filter
@@ -12,6 +15,9 @@ from rag_hermes.qdrant_rest import QdrantAuditRestClient, QdrantRestClient
 class RecordingHandler(BaseHTTPRequestHandler):
     requests = []
     exists_result: Any = True
+    seen_keys: list[str | None] = []
+    redirect_target: str | None = None
+    error_detail: str | None = None
 
     def log_message(self, format, *args):
         return
@@ -20,6 +26,19 @@ class RecordingHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get("content-length", "0"))
         body = json.loads(self.rfile.read(length) or b"{}")
         self.__class__.requests.append((self.command, self.path, body))
+        self.__class__.seen_keys.append(self.headers.get("api-key"))
+        if self.__class__.redirect_target is not None:
+            self.send_response(302)
+            self.send_header("Location", self.__class__.redirect_target)
+            self.end_headers()
+            return
+        if self.__class__.error_detail is not None:
+            detail = self.__class__.error_detail.encode()
+            self.send_response(403, "REMOTE-SENTINEL")
+            self.send_header("content-length", str(len(detail)))
+            self.end_headers()
+            self.wfile.write(detail)
+            return
         result = (
             {"exists": self.__class__.exists_result}
             if self.path.endswith("/exists")
@@ -56,8 +75,72 @@ class QdrantRestClientTests(unittest.TestCase):
 
     def setUp(self):
         RecordingHandler.requests.clear()
+        RecordingHandler.seen_keys.clear()
+        RecordingHandler.redirect_target = None
+        RecordingHandler.error_detail = None
         RecordingHandler.exists_result = True
         self.client = QdrantRestClient(self.base_url)
+
+    def test_endpoint_refuses_remote_cleartext_and_url_credentials(self):
+        invalid = (
+            "http://qdrant.example:6333", "http://user@127.0.0.1:6333",
+            "https://qdrant.example/path", "https://qdrant.example?token=secret",
+            "https://qdrant.example#fragment", "qdrant.example:6333",
+            "http://127.0.0.1:invalid", "http://127.0.0.1:6333\nHost: evil",
+        )
+        for url in invalid:
+            with self.subTest(url=url), self.assertRaises(ValueError):
+                QdrantRestClient(url)
+        self.assertEqual(RecordingHandler.requests, [])
+        self.assertEqual(QdrantRestClient("https://qdrant.example:6333/").base_url,
+                         "https://qdrant.example:6333")
+
+    def test_invalid_url_does_not_echo_embedded_secret_in_traceback(self):
+        with self.assertRaises(ValueError) as caught:
+            QdrantRestClient("http://127.0.0.1:URL-EMBEDDED-SECRET")
+        self.assertNotIn(
+            "URL-EMBEDDED-SECRET", "".join(traceback.format_exception(caught.exception)),
+        )
+
+    def test_api_key_is_sent_and_invalid_key_is_rejected_without_leak(self):
+        client = QdrantRestClient(self.base_url, api_key="example-key")
+        self.assertTrue(client.collection_exists("chunks"))
+        self.assertEqual(RecordingHandler.seen_keys, ["example-key"])
+        for key in ("secret\nInjected: yes", "bad\rkey", "space key", "é"):
+            with self.subTest(key=key), self.assertRaisesRegex(ValueError, "api_key") as caught:
+                QdrantRestClient(self.base_url, api_key=key)
+            self.assertNotIn(key, str(caught.exception))
+
+    def test_redirect_is_not_followed_with_api_key(self):
+        RecordingHandler.redirect_target = self.base_url + "/unexpected"
+        client = QdrantRestClient(self.base_url, api_key="example-key")
+        with self.assertRaises(RuntimeError):
+            client.collection_exists("chunks")
+        self.assertEqual(len(RecordingHandler.requests), 1)
+        self.assertEqual(RecordingHandler.seen_keys, ["example-key"])
+
+    def test_loopback_key_never_goes_to_environment_proxy(self):
+        for host in ("127.0.0.1", "localhost", "[::1]"):
+            with self.subTest(host=host):
+                RecordingHandler.requests.clear()
+                RecordingHandler.seen_keys.clear()
+                with patch.dict(os.environ, {
+                    "http_proxy": self.base_url, "no_proxy": "", "NO_PROXY": "",
+                }, clear=True):
+                    client = QdrantRestClient(
+                        f"http://{host}:1", api_key="example-key", timeout=1,
+                    )
+                    with self.assertRaises(RuntimeError):
+                        client.collection_exists("chunks")
+                self.assertEqual(RecordingHandler.requests, [])
+                self.assertEqual(RecordingHandler.seen_keys, [])
+
+    def test_http_error_does_not_reveal_remote_detail(self):
+        RecordingHandler.error_detail = "CAUSE-DETAIL-MUST-NOT-LEAK"
+        with self.assertRaisesRegex(RuntimeError, "Qdrant HTTP 403") as caught:
+            self.client.collection_exists("chunks")
+        self.assertNotIn("CAUSE-DETAIL-MUST-NOT-LEAK", str(caught.exception))
+        self.assertNotIn("REMOTE-SENTINEL", "".join(traceback.format_exception(caught.exception)))
 
     def test_create_collection_sends_named_dense_vector_config(self):
         self.client.create_collection("chunks", vector_size=4)
