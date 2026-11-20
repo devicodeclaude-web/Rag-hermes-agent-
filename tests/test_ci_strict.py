@@ -230,3 +230,50 @@ class AuditLockCompletenessTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SecretScanHistoryDepthTests(unittest.TestCase):
+    """Le scan de secrets prétend couvrir l'historique : il doit le couvrir.
+
+    `actions/checkout` sans `fetch-depth` ne récupère QU'UN commit, donc
+    `gitleaks git` ne scannait qu'un commit tout en étant présenté comme un
+    contrôle historique. Ces tests verrouillent la profondeur et le mode.
+    """
+
+    ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    def _workflow(self) -> dict:
+        import yaml
+        with open(StrictCiWorkflowCoverageTests.WORKFLOW, encoding="utf-8") as handle:
+            return yaml.safe_load(handle)
+
+    def test_checkout_fetches_the_whole_history(self):
+        steps = self._workflow()["jobs"]["lock-install"]["steps"]
+        checkouts = [
+            step for step in steps
+            if isinstance(step.get("uses"), str)
+            and step["uses"].startswith("actions/checkout@")
+        ]
+        self.assertEqual(len(checkouts), 1)
+        self.assertEqual(checkouts[0].get("with", {}).get("fetch-depth"), 0)
+
+    def test_the_scanner_reads_git_history_not_just_the_working_tree(self):
+        with open(
+            os.path.join(self.ROOT, "scripts", "run_ci_strict.py"), encoding="utf-8"
+        ) as handle:
+            source = handle.read()
+        self.assertIn('binary, "git"', source)
+        self.assertNotIn('binary, "dir"', source)
+
+    def test_allowlist_stays_an_exact_match_list_without_path_exclusions(self):
+        import tomllib
+        with open(os.path.join(self.ROOT, ".gitleaks.toml"), "rb") as handle:
+            config = tomllib.load(handle)
+        allowlists = config["allowlists"]
+        self.assertTrue(allowlists)
+        for entry in allowlists:
+            self.assertEqual(entry.get("regexTarget"), "match")
+            self.assertNotIn("paths", entry)
+            self.assertNotIn("commits", entry)
+            self.assertTrue(entry.get("regexes"))
+            self.assertTrue(entry.get("description", "").strip())
