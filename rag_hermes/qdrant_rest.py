@@ -4,35 +4,74 @@ import json
 import math
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote
-from urllib.request import Request, urlopen
+from urllib.parse import quote, urlsplit
+from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 from .acl import AuthorizationContext
 from .qdrant_filter import build_qdrant_filter
 from .qdrant_store import lexical_weights_to_sparse_vector
 
 
+class _NoRedirectHandler(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def _validate_qdrant_endpoint(base_url: str, api_key: str) -> str:
+    # Never let urlsplit silently discard control characters, or let a
+    # redirect forward the credential to an endpoint we did not configure.
+    if (type(base_url) is not str or not base_url
+        or any(ord(char) <= 32 or ord(char) == 127 for char in base_url)
+        or "\\" in base_url or "?" in base_url or "#" in base_url):
+        raise ValueError("Qdrant URL is invalid")
+    try:
+        parsed = urlsplit(base_url)
+        hostname = parsed.hostname
+        parsed.port
+    except ValueError:
+        # urlsplit/port errors may quote the operator-supplied URL (including
+        # accidental credentials); never surface them in a logged traceback.
+        raise ValueError("Qdrant URL is invalid") from None
+    if (parsed.scheme not in {"http", "https"} or not hostname
+        or parsed.username is not None or parsed.password is not None
+        or parsed.path not in {"", "/"}
+        or parsed.scheme == "http" and hostname.lower() not in
+            {"localhost", "127.0.0.1", "::1"}):
+        raise ValueError("Qdrant URL requires HTTPS or explicit loopback HTTP, without URL credentials or path")
+    if (type(api_key) is not str or any(
+        ord(char) < 33 or ord(char) > 126 for char in api_key
+    )):
+        raise ValueError("api_key must contain visible ASCII characters only")
+    return base_url.rstrip("/")
+
+
 class QdrantRestClient:
-    def __init__(self, base_url: str, *, timeout: float = 30.0):
-        self.base_url = base_url.rstrip("/")
+    def __init__(self, base_url: str, *, timeout: float = 30.0, api_key: str = ""):
+        self.base_url = _validate_qdrant_endpoint(base_url, api_key)
         self.timeout = timeout
+        self._api_key = api_key
+        # Environment proxies can exfiltrate api-key even for a loopback URL.
+        # This client never inherits proxy settings implicitly.
+        self._opener = build_opener(ProxyHandler({}), _NoRedirectHandler())
 
     def _request(self, method: str, path: str, body: dict[str, Any]) -> dict[str, Any]:
         encoded = json.dumps(body, separators=(",", ":")).encode("utf-8")
+        headers = {"content-type": "application/json"}
+        if self._api_key:
+            headers["api-key"] = self._api_key
         request = Request(
             self.base_url + path,
             data=encoded,
             method=method,
-            headers={"content-type": "application/json"},
+            headers=headers,
         )
         try:
-            with urlopen(request, timeout=self.timeout) as response:
+            with self._opener.open(request, timeout=self.timeout) as response:
                 return json.loads(response.read())
         except HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"Qdrant HTTP {exc.code}: {detail}") from exc
+            raise RuntimeError(f"Qdrant HTTP {exc.code}") from None
         except URLError as exc:
-            raise RuntimeError(f"Qdrant unavailable: {exc.reason}") from exc
+            raise RuntimeError("Qdrant unavailable") from None
 
     def collection_exists(self, collection: str) -> bool:
         name = quote(collection, safe="")

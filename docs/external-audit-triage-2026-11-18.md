@@ -71,9 +71,9 @@ Sources auditées :
 ### État d'application (mis à jour à chaque lot livré)
 
 - **Lot 0 : APPLIQUÉ** (PR #84, mergée). Premier run du workflow sur une PR observé vert (`lock-install` + `qa`) : le test d'acceptation de CI-01 est passé.
-- **Lot 1 : APPLIQUÉ** (cette PR). Détail des écarts par rapport au plan : le garde de finitude est partagé par **trois** chemins et non deux (`rag_hermes/reranker_scores.py` est aussi utilisé par `retrieval.score_authorized_pairs`, le runner de campagne, qui convertissait les scores sans refuser `bool` ni les chaînes), et le tenant réservé est désormais une constante unique `acl.GLOBAL_PUBLIC_TENANT` au lieu d'un littéral répété dans `acl.py` et `qdrant_filter.py`.
+- **Lot 1 : APPLIQUÉ (PR #85 fusionnée).** Détail des écarts par rapport au plan : le garde de finitude est partagé par **trois** chemins et non deux (`rag_hermes/reranker_scores.py` est aussi utilisé par `retrieval.score_authorized_pairs`, le runner de campagne, qui convertissait les scores sans refuser `bool` ni les chaînes), et le tenant réservé est désormais une constante unique `acl.GLOBAL_PUBLIC_TENANT` au lieu d'un littéral répété dans `acl.py` et `qdrant_filter.py`.
 - **SEC-01 : APPLIQUÉ** (hors des lots 0-5, qui ne le traitaient pas). `rag_hermes/canonical_registry.py` ajoute l'autorité ACL canonique locale qui manquait au chemin V1 : registre documentaire persisté hors de Qdrant, écriture canonique **avant** l'index, et `build_service` enveloppe désormais le dépôt dans `CanonicalAclSearch` (refus de démarrage si `RAG_QDRANT_URL` est défini sans `RAG_CANONICAL_STORE`, refus d'un `RAG_RETRIEVAL_K` > 128). Conception, comportements observables et limites assumées : `docs/v1-canonical-acl.md`. Deux refus supplémentaires découverts en écrivant la tranche : un `document_id` déjà pris par un autre locataire (l'autorité canonique indexe par `document_id` seul, le service par `(tenant_id, document_id)`) et toute régression de `doc_version`/`acl_version`.
-- **Lot 2 / ARCH-01 : correctif proposé sur branche, non encore fusionné.** Le
+- **Lot 2 / ARCH-01 : APPLIQUÉ (PR #87 fusionnée).** Le
   chemin `build_service` avec Qdrant exige désormais un lock de tokenizer et le
   SHA-256 du `tokenizer.json` local ; l'import V1 utilise le chunker 384/64.
   `tokenizers==0.22.2` est exigé pour retrouver les offsets du pipeline GPU.
@@ -86,6 +86,11 @@ Sources auditées :
   sans `chunker` restent en mots ; une collection existante nécessite une
   réingestion hors ligne (pas de migration automatique). La CI Qdrant teste le
   câblage avec un tokenizer factice, pas le checkpoint BGE réel.
-- **Lots 3 à 5 : NON appliqués.** SEC-03 (transport/privilèges Qdrant),
-  QUAL-01 (non-mesuré rendu `0.0`) et SEC-02 (remplacement non atomique) restent
-  ouverts tels que décrits en section 1.
+- **Lot 3 / SEC-03 : transport en cours (branche dédiée).** Validation de l'URL
+  Qdrant (HTTPS distant, HTTP loopback seulement), clé optionnelle via
+  `RAG_QDRANT_API_KEY`, redirections refusées et détails HTTP masqués. La
+  séparation des privilèges lecture/écriture/audit reste à faire : la classe
+  d'audit hérite encore du client qui peut muter, et le service utilise un
+  client commun. Ne pas classer SEC-03 comme résolu.
+- **Lots 4 à 5 : NON appliqués.** QUAL-01 (non-mesuré rendu `0.0`)
+  et SEC-02 (remplacement non atomique) restent ouverts.

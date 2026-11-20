@@ -86,6 +86,16 @@ valide : seule la valeur exacte est réservée.
 Par défaut, la V1 stocke les segments en mémoire (perdus au redémarrage). Pour
 activer la persistance Qdrant, définir `RAG_QDRANT_URL` (et éventuellement
 `RAG_QDRANT_COLLECTION`, défaut `hermes_chunks_v1`) avant de lancer le serveur.
+Le client refuse HTTP hors des hôtes loopback explicites (`localhost`,
+`127.0.0.1`, `::1`) ; toute connexion distante doit utiliser HTTPS. Les URL
+avec identifiants, chemin, query ou fragment sont refusées. Une clé Qdrant
+facultative peut être fournie par `RAG_QDRANT_API_KEY` (en-tête `api-key`) :
+elle n'est ni mise dans l'URL ni reprise dans les messages d'erreur. Le client
+ne suit pas les redirections HTTP et n'hérite pas des proxys configurés dans
+l'environnement (y compris pour les URL loopback). La séparation des
+identifiants et des privilèges lecture/écriture/audit reste à implémenter : le service V1 utilise
+encore un même client pour chercher et modifier les points. Ce durcissement de
+transport ne clôt donc pas SEC-03. Ne pas exposer la clé au navigateur.
 La collection et ses index de payload doivent exister au préalable
 (voir `qdrant/payload-indexes.json`).
 
