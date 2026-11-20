@@ -131,9 +131,13 @@ révocation valable.
   pas l'origine des octets du document. L'identité du principal vient de
   `rag_hermes/auth.py` (`tenant_id`/`owner_id` forcés depuis le jeton).
 - Ce lot ne traite ni SEC-02 (remplacement non atomique), ni SEC-03 (transport
-  Qdrant), ni ARCH-01 (chunking du service en mots 420/40 alors que le pipeline
-  évalué chunke en tokens 384/64). Le registre enregistre le **document**, pas
-  les chunks : il est donc insensible au chunker utilisé.
+  Qdrant). Le chemin V1 Qdrant exige désormais un profil de tokenizer épinglé
+  (lot ARCH-01) ; le mode mémoire reste découpé en mots. Le registre enregistre
+  le **document**, pas les chunks : il est donc insensible au chunker utilisé.
+  Les candidats renvoyés par Qdrant sont comparés aux passages régénérés depuis
+  ce document avec le profil verrouillé. Un point ancien échoue fermé s'il est
+  observé ; le démarrage n'audite pas exhaustivement la collection et un point
+  caché par le préfiltre reste indétectable. Migrer/réingérer hors ligne.
 - Les tests ciblés du registre sont CPU, avec un dépôt double fidèle ; **les
   tests système HTTP de la CI exercent aussi ce câblage contre un vrai Qdrant**
   (import, redémarrage du service, registre relu du disque, réponse citée,
@@ -147,6 +151,8 @@ install -d -m 700 /srv/hermes/canonical # créé pour l'UID qui exécute le serv
 export RAG_QDRANT_URL=http://127.0.0.1:6333
 export RAG_CANONICAL_STORE=/srv/hermes/canonical
 export RAG_EMBED_LOCK=manifests/locks/bge-m3.lock.json
+export RAG_TOKENIZER_LOCK=manifests/locks/bge-reranker-v2-m3.lock.json
+export RAG_TOKENIZER_FILE=/chemin/local/du-checkpoint/tokenizer.json
 python scripts/serve_v1.py
 ```
 

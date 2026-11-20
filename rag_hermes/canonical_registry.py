@@ -397,6 +397,7 @@ def wrap_repository_with_canonical_barrier(
     registry: CanonicalDocumentRegistry,
     *,
     minimum_score: float,
+    chunker: Callable[[Document], list[Chunk]] | None = None,
 ) -> CanonicalAclSearch:
     """Câbler écriture canonique + barrière de lecture autour d'un dépôt.
 
@@ -413,4 +414,5 @@ def wrap_repository_with_canonical_barrier(
         registry.authority,
         minimum_score=minimum_score,
         source=registry.source,
+        chunker=chunker,
     )

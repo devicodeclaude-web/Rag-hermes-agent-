@@ -121,6 +121,32 @@ pas d'`embed`. Deux options explicites pour la persistance Qdrant :
   différé) ; l'installation GPU se fait via `pip install -e '.[gpu]'`. Démarrer
   avec `RAG_QDRANT_URL` sans l'une de ces deux options est refusé explicitement.
 
+Pour le service V1 avec Qdrant, le découpage est maintenant **également**
+obligatoirement tokenisé (384 tokens de passage, 64 de recouvrement). Définir
+`RAG_TOKENIZER_LOCK=manifests/locks/bge-reranker-v2-m3.lock.json` et
+`RAG_TOKENIZER_FILE=<chemin absolu vers tokenizer.json>` du même checkpoint ;
+le SHA-256 du fichier local est vérifié contre le lock avant le démarrage.
+En démarrage normal (sans tokenizer injecté), le nom, la révision et le SHA
+sont aussi comparés aux constantes BGE approuvées dans le code : un lock local
+réécrit ne peut pas déclarer une autre identité de checkpoint.
+Installer le profil CPU avec `pip install -e '.[tokenizer]'` (ou le profil GPU
+`pip install -e '.[gpu]'`) : les deux épinglent `tokenizers==0.22.2`. Cette version
+est celle du pipeline GPU évalué ; une autre version est refusée, car les
+offsets peuvent différer. Aucune récupération réseau du tokenizer au démarrage.
+Sur un nouvel index, réingérer les documents après le changement de chunker :
+les anciens points découpés en mots ne sont pas convertis automatiquement.
+Un ancien point **effectivement renvoyé** par Qdrant est confronté aux chunks
+régénérés depuis le document canonique et échoue fermé avant citation. Cette
+garde par candidat ne scanne pas la collection entière au démarrage et ne
+détecte pas les points cachés par le préfiltre : migrer hors ligne reste une
+obligation de l'opérateur ; une collection mixte n'est pas certifiée conforme.
+Le mode lexical en mémoire de développement conserve son ancien découpage par
+mots ; de même, construire directement `RagService(repository=...)` sans
+`chunker` explicite ne constitue **pas** le profil V1 Qdrant ci-dessus.
+Un tokenizer factice injecté dans les tests de CI prouve le câblage Qdrant, pas
+la fidélité du checkpoint réel ; celle-ci se vérifie séparément sur les octets
+du tokenizer épinglé.
+
 La barrière ACL pré-filtrage/post-filtrage est déjà prouvée contre un vrai
 Qdrant 1.19.0.
 
@@ -498,7 +524,13 @@ Markdown/MDX officiel + fixtures privées/synthétiques
   -> harnais d’évaluation
 ```
 
-Le découpage est désormais piloté par le tokenizer exact (`chunk_document_tokens` : question 96 / passage 384 / overlap 64 / réserve 32 tokens), et non plus une approximation par mots. Avant le reranking, le code mesure `requête + passage + tokens spéciaux` avec le tokenizer réel et refuse toute paire au-dessus de 512 tokens (rejet, jamais de troncature silencieuse — voir `rag_hermes/reranker_budget.py`).
+Le pipeline GPU et le chemin V1 Qdrant configuré avec le lock et le tokenizer
+local utilisent `chunk_document_tokens` (question 96 / passage 384 / overlap 64 /
+réserve 32 tokens) ; le chemin mémoire de développement reste en mots. Avant le
+reranking dans le pipeline évalué, le code mesure `requête + passage + tokens
+spéciaux` avec le tokenizer réel et refuse toute paire au-dessus de 512 tokens
+(rejet, jamais de troncature silencieuse — voir `rag_hermes/reranker_budget.py`).
+La V1 n'active pas automatiquement ce reranker ni cette garde de budget.
 
 ## Inférence : deux livraisons distinctes
 
@@ -573,7 +605,7 @@ Voir `docs/acceptance-criteria.md`.
 
 ## Prochain jalon
 
-1. Remplacer le chunking provisoire à 420 mots par un chunking piloté par le tokenizer exact, afin que `question + passage + tokens spéciaux <= 512`. **Fait** : `chunk_document_tokens` (question 96 / passage 384 / overlap 64 / réserve 32), avec test rouge d’abord.
+1. Remplacer le chunking provisoire à 420 mots par un chunking piloté par le tokenizer exact, afin que `question + passage + tokens spéciaux <= 512`. **Fait pour le pipeline GPU ; activé sur la V1 Qdrant seulement avec un profil local épinglé**. Le chemin mémoire reste en mots ; la garde de 512 tokens n'est pas automatiquement appliquée à la V1.
 2. Réexécuter le smoke GPU et exiger zéro paire rejetée avant de retenir le reranker.
 3. Persister les sorties dense+sparse réelles dans Qdrant tout en conservant les mêmes filtres ACL pré-scoring. **Barrière ACL Qdrant réelle déjà validée** (`docs/smoke-gpu-runbook.md`, porte 2).
 4. Étendre et geler le corpus à 300 questions avant comparaison des modèles, en passant d’abord par un jeu intermédiaire de 100 questions dont au moins 30 écrites à la main.

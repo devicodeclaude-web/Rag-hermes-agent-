@@ -25,14 +25,40 @@ class BuildServiceTests(unittest.TestCase):
         self._store = tempfile.TemporaryDirectory()
         self.addCleanup(self._store.cleanup)
         self.store_dir = self._store.name
+        # Les tests de factory vérifient le câblage ; les octets du tokenizer
+        # et son hash sont contrôlés séparément dans test_token_chunking_profile.
+        profile = patch("rag_hermes.app_factory.LockedTokenChunker")
+        self.profile = profile.start()
+        self.addCleanup(profile.stop)
+        self.profile.return_value = lambda document: []
 
     def qdrant_env(self, **extra: str) -> dict[str, str]:
         env = {
             "RAG_QDRANT_URL": "http://127.0.0.1:6333",
             "RAG_CANONICAL_STORE": self.store_dir,
+            "RAG_TOKENIZER_LOCK": "locked-reranker.json",
+            "RAG_TOKENIZER_FILE": "tokenizer.json",
         }
         env.update(extra)
         return env
+
+    def test_qdrant_requires_a_pinned_tokenizer_profile(self) -> None:
+        with patch("rag_hermes.app_factory.verify_collection_ready") as verify:
+            verify.return_value = _VERIFIED_SCHEMA
+            with self.assertRaisesRegex(ValueError, "RAG_TOKENIZER_LOCK"):
+                build_service(env=self.qdrant_env(RAG_TOKENIZER_LOCK=""),
+                              embed=lambda _text: [1.0, 0.0])
+            verify.assert_not_called()
+
+    @patch("rag_hermes.app_factory.verify_collection_ready")
+    def test_qdrant_factory_forwards_pinned_profile_to_service(self, verify) -> None:
+        verify.return_value = _VERIFIED_SCHEMA
+        service = build_service(env=self.qdrant_env(), embed=lambda _text: [1.0, 0.0])
+        self.profile.assert_called_once_with(
+            lock_path="locked-reranker.json", tokenizer_path="tokenizer.json",
+            tokenizer=None,
+        )
+        self.assertIs(service._chunker, self.profile.return_value)
 
     def inner_repository(self, service) -> QdrantChunkRepository:  # noqa: ANN001
         """Dérouler barrière canonique -> write-through -> dépôt Qdrant."""

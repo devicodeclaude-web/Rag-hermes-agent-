@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 import hashlib
 import math
 import re
@@ -40,12 +40,14 @@ class CanonicalAclSearch:
         self, ranked_search: Any, authority: CanonicalAclAuthority, *,
         minimum_score: float = 0.2,
         source: Callable[[str], Document | None] | None = None,
+        chunker: Callable[[Document], list[Chunk]] | None = None,
     ) -> None:
         if not 0.0 < minimum_score <= 1.0:
             raise ValueError("minimum_score must be between 0 and 1")
         self._ranked_search = ranked_search
         self._authority = authority
         self._source = source
+        self._chunker = chunker
         self.minimum_score = minimum_score
 
     def replace_document(self, document: Any, chunks: Iterable[Chunk]) -> Any:
@@ -84,6 +86,7 @@ class CanonicalAclSearch:
     ) -> tuple[list[SearchResult], bool]:
         accepted: list[SearchResult] = []
         stale_authorized = False
+        expected_chunks: dict[str, list[Chunk]] = {}
         for result in results:
             chunk = result.chunk
             policy = self._authority.policy_for(chunk.document_id)
@@ -126,6 +129,25 @@ class CanonicalAclSearch:
                     or document.content[chunk.start_offset:chunk.end_offset] != chunk.text
                 ):
                     raise CanonicalAclError("candidate provenance conflicts with canonical document")
+                if self._chunker is not None:
+                    # The canonical document is independent of Qdrant. Compare
+                    # the candidate against chunks regenerated from its bytes,
+                    # not merely tokenizer metadata supplied by the index.
+                    if document.document_id not in expected_chunks:
+                        try:
+                            expected_chunks[document.document_id] = self._chunker(document)
+                        except Exception as exc:
+                            raise CanonicalAclError("canonical tokenizer profile unavailable") from exc
+                    if not any(
+                        type(chunk) is type(expected) is Chunk
+                        and all(
+                            type(getattr(chunk, field.name)) is type(getattr(expected, field.name))
+                            and getattr(chunk, field.name) == getattr(expected, field.name)
+                            for field in fields(Chunk)
+                        )
+                        for expected in expected_chunks[document.document_id]
+                    ):
+                        raise CanonicalAclError("candidate does not match canonical tokenizer profile")
                 if filter_authorized([chunk], context):
                     accepted.append(result)
             elif reason == "stale_acl_version" and policy is not None and policy.allows(context):
