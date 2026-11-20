@@ -86,13 +86,23 @@ Sources auditées :
   sans `chunker` restent en mots ; une collection existante nécessite une
   réingestion hors ligne (pas de migration automatique). La CI Qdrant teste le
   câblage avec un tokenizer factice, pas le checkpoint BGE réel.
-- **Lot 3 / SEC-03 : transport appliqué (PR #88 fusionnée), privilèges ouverts.** Validation de l'URL
-  Qdrant (HTTPS distant, HTTP loopback seulement), clé optionnelle via
-  `RAG_QDRANT_API_KEY`, redirections refusées et détails HTTP masqués. La
-  séparation des privilèges lecture/écriture/audit reste à faire : la classe
-  d'audit hérite encore du client qui peut muter, et le service utilise un
-  client commun. Ne pas classer SEC-03 comme résolu.
-- **Lot 4 / QUAL-01 : correctif proposé sur branche, non encore fusionné.**
+- **Lot 3 / SEC-03 : transport appliqué (PR #88 fusionnée), privilèges en cours.** Validation de l'URL
+  Qdrant (HTTPS distant, HTTP loopback seulement), en-tête `api-key`,
+  redirections refusées et détails HTTP masqués. Une deuxième tranche, sur
+  branche, sépare les identités du service : `RAG_QDRANT_QUERY_API_KEY` et
+  `RAG_QDRANT_WRITE_API_KEY` sont décodées au démarrage et refusées si leur
+  claim `access` n'est pas exactement `r` et `prw` sur la collection
+  configurée (clé admin brute, jeton global, claim absent, autre collection et
+  jeton expiré rejetés) ; `rag_hermes/qdrant_service_clients.py` route la
+  recherche et les métadonnées sur l'identité de lecture, le remplacement sur
+  celle d'écriture, et n'expose aucune méthode d'administration. Les refus sont
+  prouvés contre un Qdrant 1.19.0 authentifié (`jwt_rbac`), y compris sur les
+  clients réellement câblés par `build_service`, et la CI démarre une seconde
+  instance authentifiée. Ne pas compter cette tranche livrée avant la CI
+  distante. La classe d'audit hérite encore des méthodes de mutation, les deux
+  jetons vivent dans le même processus et le RBAC Qdrant ignore le filtre
+  tenant : SEC-03 reste ouvert.
+- **Lot 4 / QUAL-01 : PR #89 fusionnée.**
   Le scoreur publie désormais `null` si aucune citation n'est émise (précision
   historique, validité et support, ainsi que leurs bornes) ; un zéro mesuré sur
   des citations effectivement émises reste `0.0`. Le runner GPU sérialise

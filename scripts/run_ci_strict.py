@@ -24,6 +24,20 @@ TESTS_DIR = os.path.join(ROOT, "tests")
 
 
 GITLEAKS_BIN_ENV = "GITLEAKS_BIN"
+# Fixtures the strict suite cannot run without. A missing one used to surface
+# late and opaquely as "integration tests skipped"; name it up front instead.
+REQUIRED_FIXTURE_ENV = (
+    "QDRANT_INTEGRATION_URL",
+    "QDRANT_AUTH_INTEGRATION_URL",
+    "QDRANT_AUTH_ADMIN_KEY",
+)
+
+
+def missing_fixture_env() -> list[str]:
+    return [
+        name for name in REQUIRED_FIXTURE_ENV
+        if not os.environ.get(name, "").strip()
+    ]
 
 
 def resolve_gitleaks() -> str | None:
@@ -65,9 +79,14 @@ def run_gitleaks() -> int:
 
 
 def main() -> int:
-    if not os.environ.get("QDRANT_INTEGRATION_URL"):
+    missing = missing_fixture_env()
+    if missing:
         sys.stderr.write(
-            "ECHEC CI : QDRANT_INTEGRATION_URL doit pointer vers un Qdrant reel.\n"
+            "ECHEC CI : variables de fixture manquantes : "
+            + ", ".join(missing)
+            + ".\nQDRANT_INTEGRATION_URL doit pointer vers un Qdrant reel ; "
+            "QDRANT_AUTH_INTEGRATION_URL et QDRANT_AUTH_ADMIN_KEY vers une "
+            "instance avec authentification et jwt_rbac (tests SEC-03).\n"
         )
         return 2
     gitleaks_rc = run_gitleaks()

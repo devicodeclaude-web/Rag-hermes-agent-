@@ -9,8 +9,10 @@ from .canonical_registry import (
 )
 from .generator import OpenAICompatibleGenerator
 from .qdrant_preflight import verify_collection_ready
+from .qdrant_identity import validate_service_tokens
 from .qdrant_repository import QdrantChunkRepository
 from .qdrant_rest import QdrantRestClient
+from .qdrant_service_clients import QdrantRepositoryClients
 from .service import RagService
 from .token_chunking_profile import LockedTokenChunker
 
@@ -160,8 +162,25 @@ def build_service(
             f"({_CANONICAL_SCAN_BUDGET})"
         )
 
-    client = QdrantRestClient(qdrant_url, api_key=env.get("RAG_QDRANT_API_KEY", ""))
-    schema = verify_collection_ready(client, collection)
+    if env.get("RAG_QDRANT_API_KEY", "").strip():
+        raise ValueError(
+            "RAG_QDRANT_API_KEY is refused: the service must not hold a Qdrant "
+            "admin key. Set RAG_QDRANT_QUERY_API_KEY and RAG_QDRANT_WRITE_API_KEY "
+            "to collection-scoped JWTs instead"
+        )
+    query_key = env.get("RAG_QDRANT_QUERY_API_KEY", "").strip()
+    write_key = env.get("RAG_QDRANT_WRITE_API_KEY", "").strip()
+    # Two differing strings are not two privilege levels: the tokens are parsed
+    # and refused unless Qdrant will read them as read-only and points-write on
+    # THIS collection. Qdrant still enforces them; this only bounds what the
+    # service is willing to carry.
+    validate_service_tokens(
+        query_key=query_key, write_key=write_key, collection=collection
+    )
+    read_client = QdrantRestClient(qdrant_url, api_key=query_key)
+    write_client = QdrantRestClient(qdrant_url, api_key=write_key)
+    schema = verify_collection_ready(read_client, collection)
+    client = QdrantRepositoryClients(read_client, write_client)
     repository = QdrantChunkRepository(
         client,
         collection=collection,

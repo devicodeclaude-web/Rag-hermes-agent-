@@ -18,6 +18,8 @@ jobs:
     timeout-minutes: 45
     env:
       QDRANT_INTEGRATION_URL: http://127.0.0.1:6333
+      QDRANT_AUTH_INTEGRATION_URL: http://127.0.0.1:6336
+      QDRANT_AUTH_ADMIN_KEY: ci-only-qdrant-auth-fixture
       QDRANT_VERSION: "1.19.0"
       QDRANT_ARCHIVE_SHA256: 9ec667456443463eee390e43cd36988af6b730c6db807b4e39f57c303d0264a3
       GITLEAKS_VERSION: "8.30.1"
@@ -36,11 +38,30 @@ jobs:
           url="https://github.com/qdrant/qdrant/releases/download/v${QDRANT_VERSION}/qdrant-x86_64-unknown-linux-musl.tar.gz"
           curl -fL "$url" -o /tmp/qdrant.tar.gz
           printf '%s  %s\n' "$QDRANT_ARCHIVE_SHA256" /tmp/qdrant.tar.gz | sha256sum -c -
-          mkdir -p /tmp/qdrant-bin /tmp/qdrant-storage
+          mkdir -p /tmp/qdrant-bin /tmp/qdrant-storage /tmp/qdrant-auth-storage \
+            /tmp/qdrant-auth-snapshots
           tar -xzf /tmp/qdrant.tar.gz -C /tmp/qdrant-bin
           QDRANT__STORAGE__STORAGE_PATH=/tmp/qdrant-storage /tmp/qdrant-bin/qdrant >/tmp/qdrant.log 2>&1 &
           echo $! >/tmp/qdrant.pid
           curl --retry 20 --retry-connrefused --retry-delay 1 -fsS http://127.0.0.1:6333/healthz
+          QDRANT__STORAGE__STORAGE_PATH=/tmp/qdrant-auth-storage \
+            QDRANT__STORAGE__SNAPSHOTS_PATH=/tmp/qdrant-auth-snapshots \
+            QDRANT__SERVICE__HTTP_PORT=6336 QDRANT__SERVICE__GRPC_PORT=6337 \
+            QDRANT__SERVICE__API_KEY="$QDRANT_AUTH_ADMIN_KEY" \
+            QDRANT__SERVICE__JWT_RBAC=true \
+            /tmp/qdrant-bin/qdrant >/tmp/qdrant-auth.log 2>&1 &
+          # Readiness without any credential: /readyz is exempt from auth.
+          curl --retry 20 --retry-connrefused --retry-delay 1 -fsS \
+            http://127.0.0.1:6336/readyz >/dev/null
+          # Prove authentication is actually ON before the RBAC tests run: an
+          # anonymous data request must be rejected. No secret on any command
+          # line, so nothing can be captured from the CI logs.
+          anonymous=$(curl -s -o /dev/null -w '%{http_code}' \
+            http://127.0.0.1:6336/collections)
+          if [ "$anonymous" != "401" ]; then
+            echo "Qdrant auth instance is not enforcing authentication ($anonymous)" >&2
+            exit 1
+          fi
 
       - name: Install hash-verified gitleaks
         shell: bash

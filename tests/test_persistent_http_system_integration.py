@@ -14,6 +14,7 @@ from rag_hermes.ingestion import Document, chunk_document
 from rag_hermes.qdrant_store import chunk_to_point
 from rag_hermes.http_api import make_app
 from rag_hermes.qdrant_provision import provision_collection
+from rag_hermes.qdrant_identity import mint_collection_token
 from rag_hermes.qdrant_rest import QdrantRestClient
 from tests.test_http_api import (
     ALPHA_ALICE_TOKEN,
@@ -58,6 +59,18 @@ class PersistentHttpSystemIntegrationTests(unittest.TestCase):
         self.env = {
             "RAG_QDRANT_URL": self.url,
             "RAG_QDRANT_COLLECTION": self.collection,
+            # This instance has no api_key, so it ignores the header; the
+            # tokens are still real collection-scoped JWTs because
+            # build_service refuses anything else. Qdrant's enforcement of
+            # these rights is proven in test_qdrant_auth_integration.
+            "RAG_QDRANT_QUERY_API_KEY": mint_collection_token(
+                "ci-fixture-secret", collection=self.collection, access="r",
+                ttl_seconds=3600,
+            ),
+            "RAG_QDRANT_WRITE_API_KEY": mint_collection_token(
+                "ci-fixture-secret", collection=self.collection, access="prw",
+                ttl_seconds=3600,
+            ),
         }
         # SEC-01 : un service adossé à Qdrant exige une autorité ACL canonique
         # locale. Le répertoire survit aux deux démarrages du test, donc le
