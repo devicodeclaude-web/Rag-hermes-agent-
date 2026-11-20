@@ -277,3 +277,50 @@ class SecretScanHistoryDepthTests(unittest.TestCase):
             self.assertNotIn("commits", entry)
             self.assertTrue(entry.get("regexes"))
             self.assertTrue(entry.get("description", "").strip())
+
+
+class SecretScanEvidenceTests(unittest.TestCase):
+    """La portée du scan doit être PROUVÉE par l'artefact, pas supposée.
+
+    Sur succès, la sortie de gitleaks était capturée puis jetée : rien dans la
+    preuve CI ne distinguait « 266 commits scannés » de « 1 commit scanné ».
+    Et sur échec, les résultats bruts étaient recopiés dans le journal, ce qui
+    y aurait écrit le secret trouvé.
+    """
+
+    class _Completed:
+        def __init__(self, returncode=0):
+            self.returncode = returncode
+            self.stdout = ""
+            self.stderr = "INF 266 commits scanned.\nINF no leaks found\n"
+
+    def _run(self, returncode=0):
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with (
+            patch.object(run_ci_strict.shutil, "which", return_value="/usr/bin/gitleaks"),
+            patch.dict(run_ci_strict.os.environ, {}, clear=True),
+            patch.object(
+                run_ci_strict.subprocess, "run",
+                return_value=self._Completed(returncode),
+            ) as runner,
+            patch.object(run_ci_strict.sys, "stdout", stdout),
+            patch.object(run_ci_strict.sys, "stderr", stderr),
+        ):
+            code = run_ci_strict.run_gitleaks()
+        return code, stdout.getvalue(), stderr.getvalue(), runner
+
+    def test_the_scanned_commit_count_is_recorded_on_success(self):
+        code, out, _, _ = self._run()
+        self.assertEqual(code, 0)
+        self.assertIn("266 commits scanned", out)
+
+    def test_findings_are_redacted_so_a_leak_never_reaches_the_log(self):
+        _, _, _, runner = self._run()
+        command = runner.call_args[0][0]
+        self.assertIn("--redact", command)
+
+    def test_a_failure_reports_the_summary_without_dumping_raw_findings(self):
+        code, _, err, _ = self._run(returncode=1)
+        self.assertNotEqual(code, 0)
+        self.assertIn("ECHEC CI", err)
+        self.assertIn("266 commits scanned", err)

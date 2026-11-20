@@ -68,13 +68,27 @@ def run_gitleaks() -> int:
         return 5
     config = os.path.join(ROOT, ".gitleaks.toml")
     result = subprocess.run(
-        [binary, "git", "--no-banner", f"--config={config}", ROOT],
+        # --redact : un vrai secret trouve ne doit JAMAIS etre recopie dans le
+        # journal CI, qui peut etre public.
+        [binary, "git", "--no-banner", "--redact", f"--config={config}", ROOT],
         capture_output=True,
         text=True,
     )
+    # Le resume (nombre de commits scannes) est la SEULE preuve que le scan a
+    # couvert l'historique et non un clone superficiel d'un seul commit : il
+    # est donc toujours consigne, succes ou echec.
+    summary = "\n".join(
+        line for line in result.stderr.splitlines()
+        if "commits scanned" in line or "leaks found" in line or "no leaks found" in line
+    )
     if result.returncode != 0:
-        sys.stderr.write(result.stdout + result.stderr)
-        sys.stderr.write("ECHEC CI : gitleaks a trouve des secrets.\n")
+        sys.stderr.write(summary + "\n")
+        sys.stderr.write(
+            "ECHEC CI : gitleaks a trouve des secrets. Resultats non recopies "
+            "ici pour ne pas divulguer la valeur ; rejoue le scan en local.\n"
+        )
+    else:
+        sys.stdout.write(summary + "\n")
     return result.returncode
 
 
