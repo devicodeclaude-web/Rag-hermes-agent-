@@ -91,14 +91,54 @@ activer la persistance Qdrant, définir `RAG_QDRANT_URL` (et éventuellement
 `RAG_QDRANT_COLLECTION`, défaut `hermes_chunks_v1`) avant de lancer le serveur.
 Le client refuse HTTP hors des hôtes loopback explicites (`localhost`,
 `127.0.0.1`, `::1`) ; toute connexion distante doit utiliser HTTPS. Les URL
-avec identifiants, chemin, query ou fragment sont refusées. Une clé Qdrant
-facultative peut être fournie par `RAG_QDRANT_API_KEY` (en-tête `api-key`) :
-elle n'est ni mise dans l'URL ni reprise dans les messages d'erreur. Le client
-ne suit pas les redirections HTTP et n'hérite pas des proxys configurés dans
-l'environnement (y compris pour les URL loopback). La séparation des
-identifiants et des privilèges lecture/écriture/audit reste à implémenter : le service V1 utilise
-encore un même client pour chercher et modifier les points. Ce durcissement de
-transport ne clôt donc pas SEC-03. Ne pas exposer la clé au navigateur.
+avec identifiants, chemin, query ou fragment sont refusées. Le client
+n'envoie les identifiants que dans l'en-tête `api-key`, jamais dans l'URL ni
+dans un message d'erreur ; il ne suit pas les redirections HTTP et n'hérite pas
+des proxys de l'environnement (y compris pour les URL loopback).
+
+**Deux identités Qdrant, imposées au démarrage.** Le service persistant exige
+`RAG_QDRANT_QUERY_API_KEY` (recherche) et `RAG_QDRANT_WRITE_API_KEY`
+(remplacement des points). L'ancienne variable `RAG_QDRANT_API_KEY` est
+refusée. Ces deux valeurs ne sont pas de simples chaînes différentes : chacune
+est décodée et refusée si son claim `access` n'est pas exactement le droit
+attendu sur la collection configurée — `r` pour la requête, `prw` (points
+read/write) pour l'écriture. Une clé administrateur brute, un jeton global
+(`access: "r"` ou `"m"`), un jeton sans claim `access` (que Qdrant lit comme
+`manage`), un jeton portant une autre collection ou une collection
+supplémentaire, et un jeton expiré sont tous rejetés au démarrage, en nommant
+la variable fautive sans jamais afficher sa valeur. Les deux jetons doivent
+être distincts.
+
+Frapper la paire avec la clé opérateur, qui ne doit jamais être donnée au
+service :
+
+```bash
+QDRANT_ADMIN_API_KEY=<service.api_key> python scripts/mint_qdrant_jwt.py \
+    --collection hermes_chunks_v1 --ttl-days 30
+```
+
+Côté serveur, Qdrant 1.19 doit tourner avec `service.api_key` et
+`service.jwt_rbac: true` ; la clé administrateur reste réservée au
+provisionnement, hors du service, et aucune clé n'est exposée au navigateur.
+
+**Ce que cela ne prouve pas.** La validation au démarrage borne ce que le
+service accepte de porter ; l'autorisation réelle est celle de Qdrant. Les
+refus sont donc éprouvés contre un Qdrant 1.19.0 authentifié :
+`tests/test_qdrant_auth_integration.py` (le jeton `r` échoue sur upsert et
+delete ; le jeton `prw` échoue sur index de payload, création et suppression de
+collection ; aucune des deux identités n'atteint une autre collection) et
+`tests/test_qdrant_least_privilege_integration.py` (import, remplacement et
+citation de bout en bout sans identifiant admin, puis refus serveur vérifiés
+sur les clients réellement câblés par `build_service`). Ces tests exigent
+`QDRANT_AUTH_INTEGRATION_URL` et `QDRANT_AUTH_ADMIN_KEY` ; en CI un test ignoré
+est un échec dur, donc ils s'exécutent réellement.
+
+Limites assumées : les deux jetons vivent dans le même processus, donc une
+compromission du service les expose tous les deux ; le RBAC de Qdrant porte sur
+une collection et non sur le filtre tenant, donc le jeton de requête pourrait
+lire toute la collection V1 — l'isolation par tenant reste garantie côté
+application (barrière ACL canonique), pas côté serveur. Le client d'audit
+hérite encore de méthodes de mutation. SEC-03 n'est donc pas clos.
 La collection et ses index de payload doivent exister au préalable
 (voir `qdrant/payload-indexes.json`).
 

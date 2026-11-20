@@ -92,6 +92,49 @@ class StrictCiSecretScannerTests(unittest.TestCase):
         self.assertIn("ECHEC CI", stderr.getvalue())
 
 
+class StrictCiFixtureGateTests(unittest.TestCase):
+    """Un test d'intégration ignoré fait échouer la CI : l'absence de fixture
+    doit donc être nommée AVANT la suite, pas découverte via un `skip`."""
+
+    def test_every_required_fixture_variable_is_reported_when_missing(self):
+        with patch.dict(run_ci_strict.os.environ, {}, clear=True):
+            self.assertEqual(
+                run_ci_strict.missing_fixture_env(),
+                list(run_ci_strict.REQUIRED_FIXTURE_ENV),
+            )
+
+    def test_blank_values_count_as_missing(self):
+        blank = {name: "   " for name in run_ci_strict.REQUIRED_FIXTURE_ENV}
+        with patch.dict(run_ci_strict.os.environ, blank, clear=True):
+            self.assertEqual(
+                run_ci_strict.missing_fixture_env(),
+                list(run_ci_strict.REQUIRED_FIXTURE_ENV),
+            )
+
+    def test_auth_fixture_alone_missing_is_a_hard_failure_before_any_test(self):
+        stderr = io.StringIO()
+        partial = {"QDRANT_INTEGRATION_URL": "http://127.0.0.1:6333"}
+        with (
+            patch.dict(run_ci_strict.os.environ, partial, clear=True),
+            patch.object(run_ci_strict, "run_gitleaks") as gitleaks,
+            patch.object(run_ci_strict.unittest, "TestLoader") as loader,
+            patch.object(run_ci_strict.sys, "stderr", stderr),
+        ):
+            code = run_ci_strict.main()
+        self.assertEqual(code, 2)
+        gitleaks.assert_not_called()
+        loader.assert_not_called()
+        self.assertIn("QDRANT_AUTH_INTEGRATION_URL", stderr.getvalue())
+        self.assertIn("QDRANT_AUTH_ADMIN_KEY", stderr.getvalue())
+        self.assertNotIn("QDRANT_INTEGRATION_URL,", stderr.getvalue())
+
+    def test_the_workflow_supplies_every_required_fixture_variable(self):
+        with open(StrictCiWorkflowCoverageTests.WORKFLOW, encoding="utf-8") as handle:
+            workflow = handle.read()
+        for name in run_ci_strict.REQUIRED_FIXTURE_ENV:
+            self.assertIn(f"{name}:", workflow)
+
+
 class StrictCiWorkflowCoverageTests(unittest.TestCase):
     """La suite stricte doit être un contrôle de PR universel (constat CI-01 des
     audits externes du 18/11/2026) : sans trigger `pull_request` et sans filtre

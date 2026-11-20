@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from rag_hermes.app_factory import build_service
 from rag_hermes.canonical_registry import CanonicalDocumentRegistry, CanonicalWriteThrough
+from rag_hermes.qdrant_identity import mint_collection_token
 from rag_hermes.qdrant_preflight import QdrantPreflightError
 from rag_hermes.qdrant_repository import QdrantChunkRepository
 from rag_hermes.retrieval import CanonicalAclSearch
@@ -18,6 +19,15 @@ _VERIFIED_SCHEMA = {
     "tenant_index": True,
     "verified_indexes": ["tenant_id"],
 }
+# Signed with a throwaway secret: no Qdrant is contacted in these tests, and
+# the signature is only ever checked by the server.
+_SECRET = "unit-test-signing-secret"
+_QUERY_TOKEN = mint_collection_token(
+    _SECRET, collection="hermes_chunks_v1", access="r", ttl_seconds=3600
+)
+_WRITE_TOKEN = mint_collection_token(
+    _SECRET, collection="hermes_chunks_v1", access="prw", ttl_seconds=3600
+)
 
 
 class BuildServiceTests(unittest.TestCase):
@@ -33,8 +43,12 @@ class BuildServiceTests(unittest.TestCase):
         self.profile.return_value = lambda document: []
 
     def qdrant_env(self, **extra: str) -> dict[str, str]:
+        # Real collection-scoped JWTs: build_service refuses anything else, so
+        # a fixture cannot accidentally wire an over-privileged credential.
         env = {
             "RAG_QDRANT_URL": "http://127.0.0.1:6333",
+            "RAG_QDRANT_QUERY_API_KEY": _QUERY_TOKEN,
+            "RAG_QDRANT_WRITE_API_KEY": _WRITE_TOKEN,
             "RAG_CANONICAL_STORE": self.store_dir,
             "RAG_TOKENIZER_LOCK": "locked-reranker.json",
             "RAG_TOKENIZER_FILE": "tokenizer.json",
@@ -61,14 +75,57 @@ class BuildServiceTests(unittest.TestCase):
         self.assertIs(service._chunker, self.profile.return_value)
 
     @patch("rag_hermes.app_factory.verify_collection_ready")
-    def test_qdrant_factory_forwards_key_without_logging_it(self, verify) -> None:
+    def test_qdrant_factory_uses_distinct_query_and_write_keys(self, verify) -> None:
         verify.return_value = _VERIFIED_SCHEMA
         service = build_service(
-            env=self.qdrant_env(RAG_QDRANT_API_KEY="example-key"),
+            env=self.qdrant_env(),
             embed=lambda _text: [1.0, 0.0],
         )
         client = self.inner_repository(service)._client
-        self.assertEqual(client._api_key, "example-key")
+        self.assertEqual(client._read._api_key, _QUERY_TOKEN)
+        self.assertEqual(client._write._api_key, _WRITE_TOKEN)
+        self.assertIsNot(client._read, client._write)
+        verify.assert_called_once_with(client._read, "hermes_chunks_v1")
+
+    @patch("rag_hermes.app_factory.verify_collection_ready")
+    def test_qdrant_factory_refuses_over_privileged_or_mismatched_tokens(self, verify) -> None:
+        verify.return_value = _VERIFIED_SCHEMA
+        admin = "raw-admin-api-key-value"
+        foreign = mint_collection_token(
+            _SECRET, collection="other_collection", access="r", ttl_seconds=600
+        )
+        for extra, expected in (
+            ({"RAG_QDRANT_QUERY_API_KEY": admin}, "RAG_QDRANT_QUERY_API_KEY"),
+            ({"RAG_QDRANT_WRITE_API_KEY": admin}, "RAG_QDRANT_WRITE_API_KEY"),
+            ({"RAG_QDRANT_QUERY_API_KEY": _WRITE_TOKEN}, "RAG_QDRANT_QUERY_API_KEY"),
+            ({"RAG_QDRANT_WRITE_API_KEY": _QUERY_TOKEN}, "RAG_QDRANT_WRITE_API_KEY"),
+            ({"RAG_QDRANT_QUERY_API_KEY": foreign}, "RAG_QDRANT_QUERY_API_KEY"),
+            ({"RAG_QDRANT_QUERY_API_KEY": ""}, "RAG_QDRANT_QUERY_API_KEY"),
+            ({"RAG_QDRANT_WRITE_API_KEY": "  "}, "RAG_QDRANT_WRITE_API_KEY"),
+            ({"RAG_QDRANT_API_KEY": admin}, "RAG_QDRANT_API_KEY"),
+        ):
+            with self.subTest(extra=sorted(extra)):
+                with self.assertRaises(ValueError) as caught:
+                    build_service(env=self.qdrant_env(**extra), embed=lambda _text: [1.0, 0.0])
+                message = str(caught.exception)
+                self.assertIn(expected, message)
+                for secret in (admin, _QUERY_TOKEN, _WRITE_TOKEN, _SECRET):
+                    self.assertNotIn(secret, message)
+        verify.assert_not_called()
+
+    @patch("rag_hermes.app_factory.verify_collection_ready")
+    def test_qdrant_tokens_are_accepted_with_surrounding_whitespace(self, verify) -> None:
+        verify.return_value = _VERIFIED_SCHEMA
+        service = build_service(
+            env=self.qdrant_env(
+                RAG_QDRANT_QUERY_API_KEY=f"\n{_QUERY_TOKEN} ",
+                RAG_QDRANT_WRITE_API_KEY=f" {_WRITE_TOKEN}\n",
+            ),
+            embed=lambda _text: [1.0, 0.0],
+        )
+        client = self.inner_repository(service)._client
+        self.assertEqual(client._read._api_key, _QUERY_TOKEN)
+        self.assertEqual(client._write._api_key, _WRITE_TOKEN)
 
     def inner_repository(self, service) -> QdrantChunkRepository:  # noqa: ANN001
         """Dérouler barrière canonique -> write-through -> dépôt Qdrant."""
