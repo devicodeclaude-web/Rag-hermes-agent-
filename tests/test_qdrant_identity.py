@@ -8,6 +8,7 @@ from unittest import TestCase
 from rag_hermes.qdrant_identity import (
     collection_access_claims,
     mint_collection_token,
+    validate_audit_tokens,
     validate_service_tokens,
 )
 
@@ -127,3 +128,63 @@ class ValidateServiceTokensTests(TestCase):
         stale = _token({"access": [{"collection": COLLECTION, "access": "r"}],
                         "exp": int(time.time()) - 1})
         self.assertIn("RAG_QDRANT_QUERY_API_KEY", self.reject(query_key=stale))
+
+
+class ValidateAuditTokensTests(TestCase):
+    """The G1 audit window needs two READ identities, never a shared one."""
+
+    def setUp(self) -> None:
+        self.audit = mint_collection_token(
+            SECRET, collection=COLLECTION, access="r", ttl_seconds=3600
+        )
+        self.query = mint_collection_token(
+            SECRET, collection=COLLECTION, access="r", ttl_seconds=7200
+        )
+        self.assertNotEqual(self.audit, self.query)
+
+    def test_accepts_two_distinct_read_tokens(self) -> None:
+        validate_audit_tokens(
+            audit_key=self.audit, query_key=self.query, collection=COLLECTION
+        )
+
+    def test_accepts_an_unauthenticated_pair_only_when_both_are_empty(self) -> None:
+        validate_audit_tokens(audit_key="", query_key="", collection=COLLECTION)
+        for audit_key, query_key, expected in (
+            (self.audit, "", "RAG_QDRANT_G1_QUERY_API_KEY"),
+            ("", self.query, "RAG_QDRANT_G1_AUDIT_API_KEY"),
+        ):
+            with self.subTest(expected=expected):
+                with self.assertRaises(ValueError) as caught:
+                    validate_audit_tokens(
+                        audit_key=audit_key,
+                        query_key=query_key,
+                        collection=COLLECTION,
+                    )
+                self.assertIn(expected, str(caught.exception))
+
+    def test_refuses_one_credential_used_for_both_roles(self) -> None:
+        with self.assertRaisesRegex(ValueError, "distinct"):
+            validate_audit_tokens(
+                audit_key=self.audit, query_key=self.audit, collection=COLLECTION
+            )
+
+    def test_refuses_a_write_capable_or_admin_credential(self) -> None:
+        write = mint_collection_token(
+            SECRET, collection=COLLECTION, access="prw", ttl_seconds=3600
+        )
+        for audit_key, query_key, expected in (
+            (write, self.query, "RAG_QDRANT_G1_AUDIT_API_KEY"),
+            (self.audit, write, "RAG_QDRANT_G1_QUERY_API_KEY"),
+            ("raw-admin-key", self.query, "RAG_QDRANT_G1_AUDIT_API_KEY"),
+        ):
+            with self.subTest(expected=expected):
+                with self.assertRaises(ValueError) as caught:
+                    validate_audit_tokens(
+                        audit_key=audit_key,
+                        query_key=query_key,
+                        collection=COLLECTION,
+                    )
+                message = str(caught.exception)
+                self.assertIn(expected, message)
+                for value in (write, "raw-admin-key", SECRET):
+                    self.assertNotIn(value, message)

@@ -17,7 +17,7 @@ from rag_hermes.index_integrity import AuditedIndexSessionError, verify_index_sn
 from rag_hermes.ingestion import Document, chunk_document
 import rag_hermes.qdrant_repository as repository_module
 from rag_hermes.qdrant_repository import QdrantChunkRepository
-from rag_hermes.qdrant_rest import QdrantAuditRestClient, QdrantRestClient
+from rag_hermes.qdrant_rest import QdrantAuditClient, QdrantRestClient
 from rag_hermes.qdrant_store import chunk_to_point
 
 INDEX_SPEC = Path("qdrant/payload-indexes.json")
@@ -211,7 +211,7 @@ class QdrantRepositoryIntegrationTests(unittest.TestCase):
                 )
                 # Le deuxième scroll est réellement rejoué : simuler une
                 # divergence de payload dans SA réponse doit bloquer la sortie.
-                original_scroll = QdrantAuditRestClient.scroll_page
+                original_scroll = QdrantAuditClient.scroll_page
                 scroll_calls = []
                 def changed_at_close(client, name, *, limit, offset=None):
                     page, cursor = original_scroll(client, name, limit=limit, offset=offset)
@@ -221,7 +221,7 @@ class QdrantRepositoryIntegrationTests(unittest.TestCase):
                             **point["payload"], "owner_id": "intrus",
                         }} for point in page]
                     return page, cursor
-                with patch.object(QdrantAuditRestClient, "scroll_page", new=changed_at_close):
+                with patch.object(QdrantAuditClient, "scroll_page", new=changed_at_close):
                     with self.assertRaisesRegex(AuditedIndexSessionError, "closing audit failed"):
                         run_audited_g1_candidate_window(
                             base_url=os.environ["QDRANT_INTEGRATION_URL"],

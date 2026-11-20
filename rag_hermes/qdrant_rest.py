@@ -45,16 +45,22 @@ def _validate_qdrant_endpoint(base_url: str, api_key: str) -> str:
     return base_url.rstrip("/")
 
 
-class QdrantRestClient:
+class QdrantHttpTransport:
+    """Credential-carrying HTTP plumbing, with no Qdrant operation on it.
+
+    Separated from the read/write client so that an audit reader can hold a
+    transport without holding any mutation method (SEC-03).
+    """
+
     def __init__(self, base_url: str, *, timeout: float = 30.0, api_key: str = ""):
         self.base_url = _validate_qdrant_endpoint(base_url, api_key)
         self.timeout = timeout
         self._api_key = api_key
         # Environment proxies can exfiltrate api-key even for a loopback URL.
-        # This client never inherits proxy settings implicitly.
+        # This transport never inherits proxy settings implicitly.
         self._opener = build_opener(ProxyHandler({}), _NoRedirectHandler())
 
-    def _request(self, method: str, path: str, body: dict[str, Any]) -> dict[str, Any]:
+    def request(self, method: str, path: str, body: dict[str, Any]) -> dict[str, Any]:
         encoded = json.dumps(body, separators=(",", ":")).encode("utf-8")
         headers = {"content-type": "application/json"}
         if self._api_key:
@@ -72,6 +78,17 @@ class QdrantRestClient:
             raise RuntimeError(f"Qdrant HTTP {exc.code}") from None
         except URLError as exc:
             raise RuntimeError("Qdrant unavailable") from None
+
+
+class QdrantRestClient:
+    def __init__(self, base_url: str, *, timeout: float = 30.0, api_key: str = ""):
+        self._transport = QdrantHttpTransport(base_url, timeout=timeout, api_key=api_key)
+        self.base_url = self._transport.base_url
+        self.timeout = self._transport.timeout
+        self._api_key = api_key
+
+    def _request(self, method: str, path: str, body: dict[str, Any]) -> dict[str, Any]:
+        return self._transport.request(method, path, body)
 
     def collection_exists(self, collection: str) -> bool:
         name = quote(collection, safe="")
@@ -320,12 +337,22 @@ class QdrantRestClient:
         return list(result["points"])
 
 
-class QdrantAuditRestClient(QdrantRestClient):
-    """Audit-operator client; only this variant exposes unfiltered scrolling.
+class QdrantAuditClient:
+    """Audit-operator reader: unfiltered scrolling, and nothing else.
 
-    Use separate operator credentials and never inject this class into a user
-    request handler. Python class separation is not an authorization boundary.
+    It holds a transport, not a read/write client, so no mutation method
+    exists anywhere in its object graph. Give it its own read-only operator
+    credential and never inject it into a user request handler. Python object
+    composition is still not an authorization boundary: Qdrant must enforce
+    the credential's rights.
     """
+
+    def __init__(self, base_url: str, *, timeout: float = 30.0, api_key: str = ""):
+        self._transport = QdrantHttpTransport(base_url, timeout=timeout, api_key=api_key)
+
+    @property
+    def base_url(self) -> str:
+        return self._transport.base_url
 
     def scroll_page(
         self, collection: str, *, limit: int = 100, offset: str | int | None = None
@@ -340,7 +367,7 @@ class QdrantAuditRestClient(QdrantRestClient):
         }
         if offset is not None:
             body["offset"] = offset
-        response = self._request("POST", f"/collections/{name}/points/scroll", body)
+        response = self._transport.request("POST", f"/collections/{name}/points/scroll", body)
         result = response.get("result")
         if not isinstance(result, dict) or not isinstance(result.get("points"), list) or "next_page_offset" not in result:
             raise RuntimeError("Qdrant returned malformed paginated scroll result")

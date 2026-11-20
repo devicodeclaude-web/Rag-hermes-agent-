@@ -26,7 +26,7 @@ from rag_hermes.index_integrity import (
     audit_qdrant_index, verify_index_snapshot,
 )
 from rag_hermes.ingestion import Document, chunk_document
-from rag_hermes.qdrant_rest import QdrantAuditRestClient, QdrantRestClient
+from rag_hermes.qdrant_rest import QdrantAuditClient, QdrantRestClient
 from rag_hermes.qdrant_store import chunk_to_point
 
 
@@ -43,7 +43,7 @@ def main() -> None:
     url = "http://127.0.0.1:16333"
     collection = f"hermes_g1_audit_smoke_{uuid4().hex}"
     client = QdrantRestClient(url)
-    auditor = QdrantAuditRestClient(url)
+    auditor = QdrantAuditClient(url)
     chunks = [
         chunk_document(document("a", "Source A"))[0],
         chunk_document(document("b", "Source B"))[0],

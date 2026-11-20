@@ -104,11 +104,11 @@ class AuditedG1CandidateWindowTests(unittest.TestCase):
 
     def run_window(self, **overrides):
         from rag_hermes.g1_audited_candidates import run_audited_g1_candidate_window
-        def make_audit(url):
-            self.urls.append(("audit", url))
+        def make_audit(url, *, api_key=""):
+            self.urls.append(("audit", url, api_key))
             return self.audit
-        def make_query(url):
-            self.urls.append(("query", url))
+        def make_query(url, *, api_key=""):
+            self.urls.append(("query", url, api_key))
             return self.query
         parameters = dict(
             base_url="http://localhost:6333", collection="audited_chunks",
@@ -120,7 +120,7 @@ class AuditedG1CandidateWindowTests(unittest.TestCase):
             question="comment installer ?", context=self.context,
         )
         parameters.update(overrides)
-        with patch("rag_hermes.g1_audited_candidates.QdrantAuditRestClient", side_effect=make_audit), patch(
+        with patch("rag_hermes.g1_audited_candidates.QdrantAuditClient", side_effect=make_audit), patch(
             "rag_hermes.g1_audited_candidates.QdrantRestClient", side_effect=make_query
         ):
             return run_audited_g1_candidate_window(**parameters)
@@ -131,8 +131,8 @@ class AuditedG1CandidateWindowTests(unittest.TestCase):
         self.assertEqual(window.opening.point_count, 1)
         self.assertEqual(window.closing.point_count, 1)
         self.assertEqual(self.urls, [
-            ("audit", "http://localhost:6333"),
-            ("query", "http://localhost:6333"),
+            ("audit", "http://localhost:6333", ""),
+            ("query", "http://localhost:6333", ""),
         ])
         self.assertEqual(self.events, [
             ("schema", "audited_chunks"),
@@ -267,6 +267,51 @@ class AuditedG1CandidateWindowTests(unittest.TestCase):
             self.run_window(chunker=lambda document: [])
         self.assertEqual(self.events, [])
 
+
+
+class AuditedWindowCredentialTests(AuditedG1CandidateWindowTests):
+    """SEC-03 : la fenêtre G1 porte deux identités de LECTURE distinctes."""
+
+    def test_distinct_read_credentials_reach_their_own_client(self):
+        from rag_hermes.qdrant_identity import mint_collection_token
+        audit_key = mint_collection_token(
+            "g1-secret", collection="audited_chunks", access="r", ttl_seconds=600
+        )
+        query_key = mint_collection_token(
+            "g1-secret", collection="audited_chunks", access="r", ttl_seconds=1200
+        )
+        self.assertNotEqual(audit_key, query_key)
+        self.run_window(audit_api_key=audit_key, query_api_key=query_key)
+        self.assertEqual(self.urls, [
+            ("audit", "http://localhost:6333", audit_key),
+            ("query", "http://localhost:6333", query_key),
+        ])
+
+    def test_a_shared_or_write_capable_credential_is_refused_before_any_read(self):
+        from rag_hermes.qdrant_identity import mint_collection_token
+        read_key = mint_collection_token(
+            "g1-secret", collection="audited_chunks", access="r", ttl_seconds=600
+        )
+        write_key = mint_collection_token(
+            "g1-secret", collection="audited_chunks", access="prw", ttl_seconds=600
+        )
+        for audit_api_key, query_api_key, expected in (
+            (read_key, read_key, "distinct"),
+            (write_key, read_key, "RAG_QDRANT_G1_AUDIT_API_KEY"),
+            (read_key, "", "RAG_QDRANT_G1_QUERY_API_KEY"),
+            ("raw-admin-key", read_key, "RAG_QDRANT_G1_AUDIT_API_KEY"),
+        ):
+            with self.subTest(expected=expected):
+                with self.assertRaises(ValueError) as caught:
+                    self.run_window(
+                        audit_api_key=audit_api_key, query_api_key=query_api_key
+                    )
+                message = str(caught.exception)
+                self.assertIn(expected, message)
+                self.assertNotIn(write_key, message)
+                self.assertNotIn("raw-admin-key", message)
+                self.assertEqual(self.urls, [], "aucun client ne doit être construit")
+                self.assertEqual(self.events, [], "aucune lecture ne doit avoir lieu")
 
 if __name__ == "__main__":
     unittest.main()
