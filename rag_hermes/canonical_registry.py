@@ -18,8 +18,9 @@ Limites assumées (ne pas sur-promettre) :
   alors que le service indexe par `(tenant_id, document_id)`. Deux locataires
   utilisant le même `document_id` sont donc refusés à l'enregistrement, faute
   de quoi la politique de l'un remplacerait celle de l'autre.
-- Le verrou est un `threading.Lock` **intra-processus** : il ne sérialise pas
-  deux serveurs V1 écrivant dans le même répertoire.
+- Le verrou `flock` sérialise les accès au registre partagé sur un hôte et
+  un système de fichiers qui garantit ces verrous ; il ne verrouille PAS la
+  recherche Qdrant ni la réponse en cours de génération.
 - Une désynchronisation registre/index se lit en abstention (document inconnu
   = non autorisé), pas en erreur : direction sûre, mais non diagnostique.
 - Ce registre atteste ce qu'un import authentifié a déclaré ; il ne prouve pas
@@ -30,6 +31,7 @@ from __future__ import annotations
 
 import json
 import errno
+import fcntl
 import os
 from pathlib import Path
 import stat
@@ -87,7 +89,7 @@ def _open_private_file(dir_fd: int, *, write: bool) -> int:
     éventuelle a déjà eu lieu et exige une décision de l'opérateur).
     """
     flags = os.O_NOFOLLOW | os.O_CLOEXEC
-    flags |= (os.O_WRONLY | os.O_APPEND | os.O_CREAT) if write else os.O_RDONLY
+    flags |= (os.O_RDWR | os.O_APPEND | os.O_CREAT) if write else os.O_RDONLY
     try:
         fd = os.open(_STORE_FILENAME, flags, 0o600, dir_fd=dir_fd)
     except OSError as exc:
@@ -238,7 +240,9 @@ class CanonicalDocumentRegistry:
     Fichier `canonical_documents.jsonl` en APPEND seul : la dernière ligne d'un
     `document_id` fait foi. Les invariants (collision de locataire, monotonie
     des versions) sont rejoués à la relecture, donc un fichier trafiqué refuse
-    le démarrage au lieu de servir une politique affaiblie.
+    du démarrage au lieu de servir une politique affaiblie. Les lectures
+    rejouent le fichier sous verrou partagé ; les écritures le rejouent sous
+    verrou exclusif avant de vérifier les versions et d'ajouter la ligne.
     """
 
     def __init__(self, store_dir: str | Path) -> None:
@@ -255,6 +259,7 @@ class CanonicalDocumentRegistry:
         self._path = path / _STORE_FILENAME
         self._lock = threading.Lock()
         self._documents: dict[str, Document] = {}
+        self._authority = _LiveCanonicalAclAuthority(self)
         self._load()
 
     @property
@@ -266,33 +271,48 @@ class CanonicalDocumentRegistry:
         return self._authority
 
     def _load(self) -> None:
-        self._authority = _LiveCanonicalAclAuthority(self)
         dir_fd = _open_private_dir(self._store_dir)
         try:
             try:
                 file_fd = _open_private_file(dir_fd, write=False)
             except FileNotFoundError:
+                if self._documents:
+                    raise ValueError("canonical store file disappeared")
                 return
-            with os.fdopen(file_fd, "rb") as handle:
-                payload = handle.read().decode("utf-8")
+            try:
+                fcntl.flock(file_fd, fcntl.LOCK_SH)
+                self._documents = self._read_documents(file_fd)
+            finally:
+                os.close(file_fd)
         finally:
             os.close(dir_fd)
+
+    def _read_documents(self, file_fd: int) -> dict[str, Document]:
+        # Relire depuis le descripteur vérifié, sans publier de demi-rejeu si
+        # une ligne est corrompue ou si un invariant de version est violé.
+        with os.fdopen(os.dup(file_fd), "rb") as handle:
+            handle.seek(0)
+            payload = handle.read().decode("utf-8")
+        documents: dict[str, Document] = {}
         for number, line in enumerate(payload.splitlines(), 1):
             if not line.strip():
                 continue
             try:
                 document = _document_from_record(json.loads(line))
-                self._check_against_previous(document)
+                self._check_against_previous(document, documents)
             except (ValueError, PermissionError) as exc:
                 # Au démarrage, toute violation d'invariant est un refus de
                 # démarrage : on uniformise en ValueError.
                 raise ValueError(
                     f"invalid canonical document record at line {number}: {exc}"
                 ) from exc
-            self._documents[document.document_id] = document
+            documents[document.document_id] = document
+        return documents
 
-    def _check_against_previous(self, document: Document) -> None:
-        previous = self._documents.get(document.document_id)
+    def _check_against_previous(
+        self, document: Document, documents: Mapping[str, Document] | None = None
+    ) -> None:
+        previous = (self._documents if documents is None else documents).get(document.document_id)
         if previous is None:
             return
         if previous.tenant_id != document.tenant_id:
@@ -326,10 +346,14 @@ class CanonicalDocumentRegistry:
     def source(self, document_id: str) -> Document | None:
         if type(document_id) is not str:
             return None
-        return self._documents.get(document_id)
+        with self._lock:
+            self._load()
+            return self._documents.get(document_id)
 
     def documents(self) -> Mapping[str, Document]:
-        return dict(self._documents)
+        with self._lock:
+            self._load()
+            return dict(self._documents)
 
     def register(self, document: Any) -> Document:
         """Enregistrer la révision canonique AVANT toute écriture d'index.
@@ -350,18 +374,26 @@ class CanonicalDocumentRegistry:
         if _document_from_record(json.loads(line)) != validated:
             raise ValueError("canonical record does not round-trip")
         with self._lock:
-            self._check_against_previous(validated)
             dir_fd = _open_private_dir(self._store_dir)
             try:
                 file_fd = _open_private_file(dir_fd, write=True)
-                with os.fdopen(file_fd, "ab") as handle:
-                    handle.write(line.encode("ascii") + b"\n")
-                    handle.flush()
-                    os.fsync(handle.fileno())
-                os.fsync(dir_fd)
+                try:
+                    # Le verrou sur l'inode partagé couvre relecture, contrôle
+                    # monotone et append, y compris entre processus distincts.
+                    fcntl.flock(file_fd, fcntl.LOCK_EX)
+                    fresh = self._read_documents(file_fd)
+                    self._documents = fresh
+                    self._check_against_previous(validated)
+                    with os.fdopen(os.dup(file_fd), "ab") as handle:
+                        handle.write(line.encode("ascii") + b"\n")
+                        handle.flush()
+                        os.fsync(handle.fileno())
+                    os.fsync(dir_fd)
+                    self._documents = {**fresh, validated.document_id: validated}
+                finally:
+                    os.close(file_fd)
             finally:
                 os.close(dir_fd)
-            self._documents[validated.document_id] = validated
         return validated
 
 

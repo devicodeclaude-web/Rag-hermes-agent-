@@ -124,4 +124,4 @@ Sources auditées :
   `EvaluationReport` avec `asdict` : les futurs reçus refléteront cette
   convention, sans modifier ni requalifier les reçus historiques committés.
   Le contrôle sémantique des citations et les portes de qualité restent ouverts.
-- **Lot 5 / SEC-02 : NON appliqué.** Le remplacement non atomique reste ouvert.
+- **Lot 5 / SEC-02 : NON appliqué dans son ensemble.** Une tranche préparatoire sérialise le registre canonique sur un fichier local partagé (`flock`, relecture avant écriture et à chaque lecture) : elle bloque les rejeux interprocessus d'ACL et rafraîchit les politiques des lecteurs déjà démarrés. Le remplacement Qdrant demeure non atomique ; les réponses déjà en vol et un déploiement multi-hôte ne sont pas couverts.

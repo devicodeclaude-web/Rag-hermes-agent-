@@ -125,13 +125,23 @@ révocation valable.
 - **Déni de service après révocation sans réindexation.** Tant que l'index
   porte l'ancien payload, le passage n'est plus servi à personne. C'est le prix
   du fail-closed ; la réindexation du document rétablit le service.
-- **Verrou intra-processus seulement** (`threading.Lock`) : deux serveurs V1
-  écrivant dans le même répertoire ne sont pas sérialisés.
+- **Registre partagé local** : les lectures relisent le fichier sous `flock`
+  partagé et les écritures sous `flock` exclusif, en rejouant toutes les lignes
+  avant le contrôle monotone. Deux processus partageant le même inode sur un
+  système de fichiers qui respecte `flock` ne peuvent plus rejouer une ancienne
+  ACL à partir d'un cache obsolète ; un lecteur déjà démarré voit une révocation
+  au prochain accès. Cette relecture intégrale a un coût proportionnel à
+  l'historique à chaque accès ; ce n'est pas un registre distribué scalable.
+  Un montage réseau sans garantie de verrouillage équivalente est hors champ.
+- **SEC-02 demeure ouvert** : le verrou du registre ne couvre ni Qdrant ni la
+  génération ni la publication atomique de la révision active. Un lecteur
+  déjà en cours de réponse peut avoir capturé un passage avant une révocation ;
+  l'upsert et la suppression restent deux opérations observables séparément.
 - **Le registre atteste ce qu'un import authentifié a déclaré** ; il ne prouve
   pas l'origine des octets du document. L'identité du principal vient de
   `rag_hermes/auth.py` (`tenant_id`/`owner_id` forcés depuis le jeton).
-- Ce lot ne traite ni SEC-02 (remplacement non atomique), ni SEC-03 (transport
-  Qdrant). Le chemin V1 Qdrant exige désormais un profil de tokenizer épinglé
+- Ce lot ne clôt ni SEC-02 (remplacement non atomique), ni les limites de SEC-03
+  (privilèges Qdrant). Le chemin V1 Qdrant exige un profil de tokenizer épinglé
   (lot ARCH-01) ; le mode mémoire reste découpé en mots. Le registre enregistre
   le **document**, pas les chunks : il est donc insensible au chunker utilisé.
   Les candidats renvoyés par Qdrant sont comparés aux passages régénérés depuis
