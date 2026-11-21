@@ -30,6 +30,8 @@ Limites assumées (ne pas sur-promettre) :
 from __future__ import annotations
 
 from contextlib import contextmanager
+import contextlib
+import hashlib
 import json
 import errno
 import fcntl
@@ -46,6 +48,7 @@ from .retrieval import CanonicalAclSearch
 
 _STORE_FILENAME = "canonical_documents.jsonl"
 _TRANSACTION_LOCK_FILENAME = "canonical_transaction.lock"
+_ANCHOR_FILENAME = "canonical_anchor.json"
 _TRANSACTION_LEASES = threading.local()
 _ACTIVE_TRANSACTION_FDS_LOCK = threading.Lock()
 # token -> descriptor for every open file description carrying an flock lease.
@@ -133,8 +136,14 @@ def _open_private_file(
     La validation par fstat précède TOUTE lecture/écriture ; une vieille
     installation en 0644 n'est jamais réparée silencieusement (la divulgation
     éventuelle a déjà eu lieu et exige une décision de l'opérateur).
+
+    `O_NONBLOCK` est indispensable AVANT la validation : `O_NOFOLLOW` n'arrête
+    pas un FIFO, et l'ouverture d'un FIFO sans lecteur bloquerait pour
+    toujours — y compris en tenant les verrous — au lieu d'échouer fermé. Le
+    drapeau est retiré après le contrôle `S_ISREG`, pour ne pas changer la
+    sémantique des lectures/écritures sur un fichier régulier.
     """
-    flags = os.O_NOFOLLOW | os.O_CLOEXEC
+    flags = os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK
     flags |= (
         (os.O_RDWR | os.O_APPEND | (os.O_CREAT if create else 0))
         if write else os.O_RDONLY
@@ -144,6 +153,9 @@ def _open_private_file(
     except OSError as exc:
         if exc.errno in (errno.ELOOP, errno.ENOTDIR):
             raise ValueError("canonical store file must not be a symlink") from exc
+        if exc.errno == errno.ENXIO:
+            # FIFO sans lecteur, ouvert en écriture non bloquante.
+            raise ValueError("canonical store file must be a regular file") from exc
         raise
     try:
         info = os.fstat(fd)
@@ -151,6 +163,8 @@ def _open_private_file(
             raise ValueError("canonical store file must be a regular file")
         if info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) & 0o7077:
             raise ValueError("canonical store file has unsafe owner or permissions")
+        current = fcntl.fcntl(fd, fcntl.F_GETFL)
+        fcntl.fcntl(fd, fcntl.F_SETFL, current & ~os.O_NONBLOCK)
         return fd
     except BaseException:
         os.close(fd)
@@ -185,6 +199,52 @@ def _close_tracked_private_file(token: int) -> None:
             # Already closed by the at-fork handler in this child process.
             return
         os.close(file_fd)
+
+
+def _anchor_from_documents(
+    documents: Mapping[str, Document], *, records: int, digest: str
+) -> dict[str, Any]:
+    return {
+        "records": records,
+        "digest": digest,
+        "documents": {
+            document_id: {
+                "doc_version": document.doc_version,
+                "acl_version": document.acl_version,
+            }
+            for document_id, document in documents.items()
+        },
+    }
+
+
+def _validated_anchor(payload: Any) -> tuple[int, str, dict[str, tuple[int, int]]]:
+    """Relire l'ancre aussi strictement que le registre : aucune coercition."""
+    if type(payload) is not dict or set(payload) != {"records", "digest", "documents"}:
+        raise ValueError(
+            "canonical anchor must carry exactly records, digest and documents"
+        )
+    records = payload["records"]
+    if type(records) is not int or records < 0:
+        raise ValueError("canonical anchor records must be a non-negative exact int")
+    digest = payload["digest"]
+    if type(digest) is not str or len(digest) != 64 or any(
+        character not in "0123456789abcdef" for character in digest
+    ):
+        raise ValueError("canonical anchor digest must be a lowercase sha256 hex digest")
+    entries = payload["documents"]
+    if type(entries) is not dict:
+        raise ValueError("canonical anchor documents must be a JSON object")
+    marks: dict[str, tuple[int, int]] = {}
+    for document_id, mark in entries.items():
+        if type(document_id) is not str or not document_id:
+            raise ValueError("canonical anchor document_id must be a non-empty str")
+        if type(mark) is not dict or set(mark) != {"doc_version", "acl_version"}:
+            raise ValueError("canonical anchor mark must carry exactly both versions")
+        # `type(x) is int` exclut bool, que isinstance() accepterait.
+        if any(type(mark[field]) is not int or mark[field] < 0 for field in mark):
+            raise ValueError("canonical anchor versions must be non-negative exact ints")
+        marks[document_id] = (mark["doc_version"], mark["acl_version"])
+    return records, digest, marks
 
 
 def _check_exact_str(value: object, field: str) -> str:
@@ -338,7 +398,11 @@ class CanonicalDocumentRegistry:
         self._path = path / _STORE_FILENAME
         self._lock = threading.Lock()
         self._documents: dict[str, Document] = {}
+        self._records = 0
+        self._running = hashlib.sha256()
+        self._broken: str | None = None
         self._signature: tuple[int, int, int, int, int] | None = None
+        self._anchor_path = path / _ANCHOR_FILENAME
         self._authority = _LiveCanonicalAclAuthority(self)
         with _ACTIVE_TRANSACTION_FDS_LOCK:
             # Registered under the fork `before` lock: a child must never see
@@ -349,6 +413,98 @@ class CanonicalDocumentRegistry:
     @property
     def path(self) -> Path:
         return self._path
+
+    @property
+    def anchor_path(self) -> Path:
+        return self._anchor_path
+
+    def _read_anchor(
+        self, dir_fd: int
+    ) -> tuple[int, str, dict[str, tuple[int, int]]] | None:
+        """Lire le repère persisté hors du JSONL, ou `None` s'il n'existe pas.
+
+        Le descripteur de répertoire DÉJÀ validé par l'appelant est réutilisé :
+        résoudre le chemin une seconde fois validerait l'ancre à travers une
+        autre résolution que le JSONL auquel on la compare.
+
+        Un fichier illisible, exposé, symbolique ou malformé échoue FERMÉ :
+        l'absence d'ancre est une installation d'avant ce lot, pas une ancre
+        vide (qui, elle, autoriserait la remise à zéro de l'historique).
+        """
+        try:
+            try:
+                file_fd = _open_private_file(
+                    dir_fd, write=False, name=_ANCHOR_FILENAME
+                )
+            except FileNotFoundError:
+                return None
+            try:
+                with os.fdopen(file_fd, "rb", closefd=False) as handle:
+                    payload = handle.read().decode("utf-8")
+            finally:
+                os.close(file_fd)
+            return _validated_anchor(json.loads(payload))
+        except (OSError, ValueError, UnicodeError) as exc:
+            raise CanonicalStoreError("canonical anchor is unusable") from exc
+
+    def _write_anchor(self, dir_fd: int, anchor: Mapping[str, Any]) -> None:
+        """Publier le repère par remplacement atomique, sous le verrou exclusif.
+
+        Écrit AVANT l'append : l'ancre ne doit jamais être en retard sur le
+        fichier, sinon un retour en arrière vers l'état qu'elle décrit
+        redeviendrait acceptable. La conséquence assumée est qu'un crash entre
+        les deux laisse l'ancre en avance, donc un refus de démarrage qui
+        exige une reprise hors ligne.
+        """
+        payload = json.dumps(
+            anchor, sort_keys=True, separators=(",", ":"), allow_nan=False,
+            ensure_ascii=True,
+        ).encode("ascii")
+        if _validated_anchor(json.loads(payload)) != _validated_anchor(dict(anchor)):
+            raise ValueError("canonical anchor does not round-trip")
+        temporary = f"{_ANCHOR_FILENAME}.new"
+        # O_EXCL sur un temporaire neuf : jamais de réutilisation d'un inode
+        # laissé en place, et O_NONBLOCK pour qu'un FIFO échoue au lieu de
+        # bloquer en tenant le verrou exclusif. Le descripteur est validé
+        # (fichier régulier, propriétaire, droits) avant toute écriture.
+        flags = (
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL
+            | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK
+        )
+        try:
+            try:
+                os.unlink(temporary, dir_fd=dir_fd)
+            except FileNotFoundError:
+                pass
+            file_fd = os.open(temporary, flags, 0o600, dir_fd=dir_fd)
+            try:
+                info = os.fstat(file_fd)
+                if not stat.S_ISREG(info.st_mode):
+                    raise CanonicalStoreError("canonical anchor must be a regular file")
+                if info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) & 0o7077:
+                    raise CanonicalStoreError("canonical anchor has unsafe permissions")
+                with os.fdopen(file_fd, "wb", closefd=False) as handle:
+                    handle.write(payload)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+            finally:
+                os.close(file_fd)
+            os.rename(temporary, _ANCHOR_FILENAME, src_dir_fd=dir_fd, dst_dir_fd=dir_fd)
+            os.fsync(dir_fd)
+        except BaseException as exc:
+            # Le nettoyage doit couvrir le cas ATTENDU (écriture ou rename en
+            # échec) : un `except OSError` suivi d'un `except BaseException`
+            # frère ne l'attrape pas, le second ne voyant pas ce que lève le
+            # premier. Un seul gestionnaire, puis reclassement.
+            with contextlib.suppress(OSError):
+                os.unlink(temporary, dir_fd=dir_fd)
+            if isinstance(exc, OSError):
+                # Sans ancre publiée, l'append ne doit PAS avoir lieu : un
+                # fichier en avance sur son repère rouvrirait la fenêtre de recul.
+                raise CanonicalStoreError(
+                    "canonical anchor cannot be published"
+                ) from exc
+            raise
 
     @property
     def authority(self) -> CanonicalAclAuthority:
@@ -411,32 +567,60 @@ class CanonicalDocumentRegistry:
         return self._transaction_guard(write=True)
 
     def _load(self) -> None:
+        if self._broken is not None:
+            # Défense en profondeur (non épinglée par un test) : l'invalidation
+            # de la signature force déjà un rejeu, que l'état disque incohérent
+            # fait refuser. Ce drapeau rend l'échec immédiat et explicite.
+            raise CanonicalStoreError(self._broken)
         try:
             dir_fd = _open_private_dir(self._store_dir)
             try:
-                try:
-                    file_fd, lease_token = _open_tracked_private_file(dir_fd, write=False)
-                except FileNotFoundError:
-                    if self._documents:
-                        raise CanonicalStoreError("canonical store file disappeared")
-                    return
-                try:
-                    fcntl.flock(file_fd, fcntl.LOCK_SH)
-                    signature = _file_identity(file_fd)
-                    if signature != self._signature:
-                        fresh = self._fresh_verified(file_fd)
-                        self._documents = fresh
-                        self._signature = signature
-                finally:
-                    _close_tracked_private_file(lease_token)
+                # Deux tentatives : « fichier absent » peut simplement signifier
+                # que le tout premier écrivain ne l'a pas encore créé. On ne
+                # conclut à une disparition qu'après une seconde observation,
+                # l'historique ne pouvant que croître. Prendre un verrou ici
+                # serait pire : la lecture tient déjà `self._lock`, alors que
+                # l'écriture prend le bail AVANT lui — donc un ABBA.
+                for attempt in (0, 1):
+                    try:
+                        file_fd, lease_token = _open_tracked_private_file(
+                            dir_fd, write=False
+                        )
+                    except FileNotFoundError:
+                        if self._documents:
+                            raise CanonicalStoreError(
+                                "canonical store file disappeared"
+                            )
+                        self._records = 0
+                        self._running = hashlib.sha256()
+                        anchor = self._read_anchor(dir_fd)
+                        if anchor is None or anchor[0] == 0:
+                            return
+                        if attempt == 0:
+                            continue
+                        raise CanonicalStoreError("canonical store lost records")
+                    try:
+                        fcntl.flock(file_fd, fcntl.LOCK_SH)
+                        signature = _file_identity(file_fd)
+                        if signature != self._signature:
+                            fresh = self._fresh_verified(file_fd, dir_fd)
+                            self._documents = fresh
+                            self._signature = signature
+                        return
+                    finally:
+                        _close_tracked_private_file(lease_token)
             finally:
                 os.close(dir_fd)
         except (OSError, ValueError, UnicodeError):
             raise CanonicalStoreError("canonical store unavailable") from None
 
-    def _fresh_verified(self, file_fd: int) -> dict[str, Document]:
+    def _fresh_verified(self, file_fd: int, dir_fd: int) -> dict[str, Document]:
         try:
-            fresh = self._read_documents(file_fd)
+            anchor = self._read_anchor(dir_fd)
+            boundary = 0 if anchor is None else anchor[0]
+            fresh, records, prefix_digest, running = self._read_documents(
+                file_fd, digest_at=boundary
+            )
             # The file may be truncated or restored from a valid old backup.
             # Replaying it internally is not enough: compare against every
             # revision already observed by THIS running process, including
@@ -446,17 +630,65 @@ class CanonicalDocumentRegistry:
                 if current is None:
                     raise CanonicalStoreError("canonical store lost a document")
                 self._check_against_previous(current, {document_id: previous})
+            self._check_against_anchor(anchor, fresh, records, prefix_digest)
+            self._records = records
+            self._running = running
             return fresh
         except (OSError, ValueError, UnicodeError, PermissionError):
             raise CanonicalStoreError("canonical store history is invalid") from None
 
-    def _read_documents(self, file_fd: int) -> dict[str, Document]:
+    def _check_against_anchor(
+        self,
+        anchor: tuple[int, str, dict[str, tuple[int, int]]] | None,
+        fresh: Mapping[str, Document],
+        records: int,
+        prefix_digest: str | None,
+    ) -> None:
+        """Repère PERSISTÉ : couvre le redémarrage, que le cache ne voit pas.
+
+        Un processus neuf n'a rien observé ; sans ce contrôle, une sauvegarde
+        antérieure (ou un fichier tronqué) lui paraît légitime et réautorise
+        un utilisateur révoqué. Le repère vit hors du JSONL, donc une
+        restauration du seul JSONL est détectée.
+
+        Trois liens, du plus fort au plus faible : l'empreinte SHA-256 du
+        PRÉFIXE ancré (toute réécriture d'une ligne déjà ancrée est détectée,
+        même à compte et versions constants), le nombre de lignes, puis les
+        versions atteintes par document.
+        """
+        if anchor is None:
+            # Installation antérieure à ce lot : rien à comparer. Équivalent à
+            # une ancre vide, écrit explicitement pour que la raison soit lue.
+            return
+        anchored_records, anchored_digest, marks = anchor
+        # L'ancre est publiée AVANT l'append, donc le fichier n'est jamais
+        # légitimement en avance : l'égalité STRICTE est la bonne borne. Un
+        # `>=` permissif laisserait ajouter une révision forgée à version
+        # supérieure sans toucher à l'ancre, et une ancre remise à zéro
+        # vaudrait « pas d'ancre ».
+        if records != anchored_records:
+            raise CanonicalStoreError("canonical store record count differs from its anchor")
+        if prefix_digest != anchored_digest:
+            raise CanonicalStoreError("canonical store prefix does not match its anchor")
+        for document_id, (doc_version, acl_version) in marks.items():
+            current = fresh.get(document_id)
+            if current is None:
+                raise CanonicalStoreError("canonical store lost an anchored document")
+            if current.doc_version < doc_version or current.acl_version < acl_version:
+                raise CanonicalStoreError("canonical store regressed below its anchor")
+
+    def _read_documents(
+        self, file_fd: int, *, digest_at: int = 0
+    ) -> tuple[dict[str, Document], int, str | None, Any]:
         # Relire depuis le descripteur vérifié, sans publier de demi-rejeu si
         # une ligne est corrompue ou si un invariant de version est violé.
         with os.fdopen(file_fd, "rb", closefd=False) as handle:
             handle.seek(0)
             payload = handle.read().decode("utf-8")
         documents: dict[str, Document] = {}
+        records = 0
+        running = hashlib.sha256()
+        prefix_digest: str | None = running.hexdigest() if digest_at == 0 else None
         for number, line in enumerate(payload.splitlines(), 1):
             if not line.strip():
                 continue
@@ -470,7 +702,14 @@ class CanonicalDocumentRegistry:
                     f"invalid canonical document record at line {number}: {exc}"
                 ) from exc
             documents[document.document_id] = document
-        return documents
+            # Les lignes blanches ne comptent pas et n'entrent pas dans
+            # l'empreinte : un bourrage ne doit pas casser la vérification,
+            # seule la suite des ENREGISTREMENTS est liée.
+            running.update(line.encode("utf-8") + b"\n")
+            records += 1
+            if records == digest_at:
+                prefix_digest = running.hexdigest()
+        return documents, records, prefix_digest, running
 
     def _check_against_previous(
         self, document: Document, documents: Mapping[str, Document] | None = None
@@ -529,6 +768,11 @@ class CanonicalDocumentRegistry:
         écrite, relue à l'identique et `fsync`-ée.
         """
         validated = _validated_document(document)
+        if self._broken is not None:
+            # Écrire par-dessus un magasin déjà constaté incohérent avancerait
+            # l'ancre sur un historique faux — et, via l'écriture traversante,
+            # pousserait vers Qdrant un document que le registre refuse.
+            raise CanonicalStoreError(self._broken)
         line = json.dumps(
             _record_from_document(validated),
             sort_keys=True,
@@ -556,15 +800,53 @@ class CanonicalDocumentRegistry:
                     # Le verrou sur l'inode partagé couvre relecture, contrôle
                     # monotone et append, y compris entre processus distincts.
                     fcntl.flock(file_fd, fcntl.LOCK_EX)
-                    fresh = self._fresh_verified(file_fd)
+                    fresh = self._fresh_verified(file_fd, dir_fd)
                     self._documents = fresh
                     self._check_against_previous(validated)
-                    with os.fdopen(file_fd, "ab", closefd=False) as handle:
-                        handle.write(line.encode("ascii") + b"\n")
-                        handle.flush()
-                        os.fsync(handle.fileno())
-                    os.fsync(dir_fd)
-                    self._documents = {**fresh, validated.document_id: validated}
+                    published = {**fresh, validated.document_id: validated}
+                    # L'ancre est publiée AVANT l'append : elle ne doit jamais
+                    # décrire un état plus ancien que le fichier. Son empreinte
+                    # couvre le préfixe relu PLUS la ligne qui va être écrite.
+                    record_bytes = line.encode("ascii") + b"\n"
+                    running = self._running.copy()
+                    running.update(record_bytes)
+                    self._write_anchor(
+                        dir_fd,
+                        _anchor_from_documents(
+                            published,
+                            records=self._records + 1,
+                            digest=running.hexdigest(),
+                        ),
+                    )
+                    try:
+                        with os.fdopen(file_fd, "ab", closefd=False) as handle:
+                            handle.write(record_bytes)
+                            handle.flush()
+                            os.fsync(handle.fileno())
+                        os.fsync(dir_fd)
+                    except OSError as exc:
+                        # Deux cas très différents sous le même `OSError` : soit
+                        # rien n'a été écrit (l'ancre est en avance, le magasin
+                        # est incohérent), soit la ligne EST là et seule la
+                        # barrière de durabilité a échoué. Le verrou exclusif
+                        # est toujours tenu : on relit pour trancher, au lieu de
+                        # condamner un magasin sain.
+                        self._signature = None
+                        try:
+                            fresh = self._fresh_verified(file_fd, dir_fd)
+                        except CanonicalStoreError:
+                            self._broken = (
+                                "canonical store anchor is ahead of its history"
+                            )
+                            raise CanonicalStoreError(self._broken) from exc
+                        self._documents = fresh
+                        self._signature = _file_identity(file_fd)
+                        raise CanonicalStoreError(
+                            "canonical record durability is not confirmed"
+                        ) from exc
+                    self._documents = published
+                    self._records += 1
+                    self._running = running
                     self._signature = _file_identity(file_fd)
                 finally:
                     _close_tracked_private_file(lease_token)

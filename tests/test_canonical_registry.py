@@ -10,6 +10,8 @@ from __future__ import annotations
 from dataclasses import replace
 from concurrent.futures import ThreadPoolExecutor
 import contextlib
+import errno
+import hashlib
 from io import BytesIO
 import json
 import multiprocessing
@@ -30,6 +32,7 @@ from rag_hermes.canonical_registry import (
     CanonicalWriteThrough,
     wrap_repository_with_canonical_barrier,
 )
+from rag_hermes.canonical_registry import _record_from_document as _record_of
 from rag_hermes.ingestion import Document, chunk_document
 from rag_hermes.http_api import make_app
 from rag_hermes.retrieval import CanonicalAclError, CanonicalAclSearch, SearchResult
@@ -113,6 +116,60 @@ def _idle_forked_child(ready, release) -> None:
     ready.set()
     if not release.wait(10):
         raise TimeoutError("test child was not released")
+
+
+def _register_pausing_after_the_anchor(store: Path, published, release) -> None:
+    """Publier l'ancre, garder le bail d'écriture, puis laisser l'append finir."""
+    from unittest.mock import patch as _patch
+
+    registry = CanonicalDocumentRegistry(store)
+    real_write = CanonicalDocumentRegistry._write_anchor
+
+    def pause_after_publish(self, dir_fd, anchor):  # noqa: ANN001
+        real_write(self, dir_fd, anchor)
+        published.set()
+        if not release.wait(10):
+            raise TimeoutError("test writer was not released")
+
+    with _patch.object(CanonicalDocumentRegistry, "_write_anchor", pause_after_publish):
+        registry.register(document())
+
+
+def _register_in_another_process(store: Path) -> None:
+    CanonicalDocumentRegistry(store).register(document())
+
+
+def _read_in_another_process(store: Path, started, outcome) -> None:
+    started.set()
+    try:
+        CanonicalDocumentRegistry(store).source("doc-1")
+        outcome.put("accepted")
+    except CanonicalStoreError as exc:
+        outcome.put(f"refused: {exc}")
+
+
+class _StillBlocked(Exception):
+    """Sentinelle du chien de garde.
+
+    PAS une sous-classe d'OSError : `TimeoutError` en est une, donc le code
+    sous test la convertirait en `CanonicalStoreError` et un blocage réel
+    passerait pour un refus propre.
+    """
+
+
+@contextlib.contextmanager
+def _bounded(seconds: float = 2.0):
+    """Faire ÉCHOUER une ouverture bloquante au lieu de suspendre la suite."""
+    def _expire(_signum, _frame):
+        raise _StillBlocked("blocking open was not refused")
+
+    previous = signal.signal(signal.SIGALRM, _expire)
+    signal.setitimer(signal.ITIMER_REAL, seconds)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
 
 
 def _wait_for_child(test, child_pid: int, *, timeout: float = 5.0) -> None:
@@ -490,7 +547,10 @@ class RegistryStoreTests(unittest.TestCase):
         )
         process.start()
         try:
-            self.assertTrue(entered.wait(5))
+            # Démarrage d'un interpréteur `spawn` : c'est une latence, pas la
+            # propriété testée. Un budget serré rendait ce test instable quand
+            # la suite entière tourne en parallèle sur une machine chargée.
+            self.assertTrue(entered.wait(30))
             started = threading.Event()
             def write():
                 started.set()
@@ -714,11 +774,11 @@ class RegistryStoreTests(unittest.TestCase):
         ready, release_child = ctx.Event(), ctx.Event()
         original = registry._fresh_verified
 
-        def hold_file_lock(fd):
+        def hold_file_lock(fd, dir_fd):
             entered.set()
             if not stop_writer.wait(5):
                 raise TimeoutError("writer not released")
-            return original(fd)
+            return original(fd, dir_fd)
 
         with patch.object(registry, "_fresh_verified", side_effect=hold_file_lock):
             with ThreadPoolExecutor(max_workers=2) as pool:
@@ -787,6 +847,442 @@ class RegistryStoreTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             registry.register(old)
         self.assertEqual(registry.path.read_bytes(), backup)
+
+    def test_restart_on_a_restored_backup_refuses_the_revoked_acl(self) -> None:
+        """Le trou que le cache en mémoire ne peut pas couvrir : un REDÉMARRAGE.
+
+        Un nouveau processus n'a rien observé ; sans repère persisté hors du
+        JSONL, il accepte une sauvegarde antérieure et réautorise Bob.
+        """
+        registry = CanonicalDocumentRegistry(self.store)
+        old = document(allowed_users=("bob",), acl_version=1)
+        registry.register(old)
+        backup = registry.path.read_bytes()
+        registry.register(document(allowed_users=(), acl_version=2))
+        registry.path.write_bytes(backup)
+
+        with self.assertRaises(CanonicalStoreError):
+            CanonicalDocumentRegistry(self.store)
+
+    def test_restart_on_a_truncated_history_is_refused(self) -> None:
+        registry = CanonicalDocumentRegistry(self.store)
+        registry.register(document(allowed_users=("bob",), acl_version=1))
+        registry.register(document(allowed_users=(), acl_version=2))
+        registry.path.write_bytes(b"")
+
+        with self.assertRaises(CanonicalStoreError):
+            CanonicalDocumentRegistry(self.store)
+
+    def test_anchor_is_private_and_refused_once_exposed(self) -> None:
+        registry = CanonicalDocumentRegistry(self.store)
+        registry.register(document())
+        self.assertEqual(stat.S_IMODE(registry.anchor_path.stat().st_mode), 0o600)
+        self.assertEqual(registry.anchor_path.stat().st_uid, os.geteuid())
+        registry.anchor_path.chmod(0o644)
+        with self.assertRaises(CanonicalStoreError):
+            CanonicalDocumentRegistry(self.store)
+
+    def test_a_tampered_anchor_fails_closed_without_repair(self) -> None:
+        registry = CanonicalDocumentRegistry(self.store)
+        registry.register(document())
+        original = registry.anchor_path.read_bytes()
+        for payload in (
+            b"{",
+            b"[]",
+            b'{"records":1}',
+            b'{"records":true,"documents":{}}',
+            b'{"records":1,"documents":{"doc-1":{"doc_version":true,"acl_version":1}}}',
+            b'{"records":1,"documents":{"doc-1":{"doc_version":1}}}',
+            b'{"records":1,"documents":{"doc-1":{"doc_version":1,"acl_version":1,"x":0}}}',
+        ):
+            with self.subTest(payload=payload):
+                registry.anchor_path.write_bytes(payload)
+                with self.assertRaises(CanonicalStoreError):
+                    CanonicalDocumentRegistry(self.store)
+                self.assertEqual(registry.anchor_path.read_bytes(), payload)
+        registry.anchor_path.write_bytes(original)
+        self.assertIsNotNone(CanonicalDocumentRegistry(self.store).source("doc-1"))
+
+    def test_anchor_symlink_is_refused_without_touching_its_target(self) -> None:
+        registry = CanonicalDocumentRegistry(self.store)
+        registry.register(document())
+        decoy = Path(self._tmp.name) / "decoy.json"
+        decoy.write_bytes(b"unchanged")
+        registry.anchor_path.unlink()
+        registry.anchor_path.symlink_to(decoy)
+        with self.assertRaises(CanonicalStoreError):
+            CanonicalDocumentRegistry(self.store)
+        self.assertEqual(decoy.read_bytes(), b"unchanged")
+
+    def test_a_store_predating_the_anchor_keeps_working_then_gains_one(self) -> None:
+        """Compatibilité : une installation sans ancre démarre, puis en gagne une."""
+        registry = CanonicalDocumentRegistry(self.store)
+        revoked = document(allowed_users=(), acl_version=2)
+        registry.register(document(allowed_users=("bob",), acl_version=1))
+        registry.register(revoked)
+        registry.anchor_path.unlink()
+
+        # Sans ancre, la protection au redémarrage n'existe pas encore.
+        reopened = CanonicalDocumentRegistry(self.store)
+        self.assertEqual(reopened.source("doc-1"), revoked)
+        self.assertFalse(reopened.anchor_path.exists())
+
+        # Le premier enregistrement la publie, et elle protège ensuite.
+        reopened.register(document(allowed_users=(), acl_version=3))
+        self.assertTrue(reopened.anchor_path.exists())
+        backup = reopened.path.read_bytes()
+        reopened.register(document(allowed_users=(), acl_version=4))
+        reopened.path.write_bytes(backup)
+        with self.assertRaises(CanonicalStoreError):
+            CanonicalDocumentRegistry(self.store)
+
+    def test_anchor_survives_a_refused_registration(self) -> None:
+        registry = CanonicalDocumentRegistry(self.store)
+        registry.register(document(allowed_users=("bob",), acl_version=1))
+        anchor = registry.anchor_path.read_bytes()
+        with self.assertRaises(ValueError):
+            registry.register(document(allowed_users=(), acl_version=1))
+        self.assertEqual(registry.anchor_path.read_bytes(), anchor)
+        self.assertIsNotNone(CanonicalDocumentRegistry(self.store).source("doc-1"))
+
+    def test_restart_with_a_deleted_history_but_a_live_anchor_is_refused(self) -> None:
+        """Supprimer le JSONL ne doit pas effacer un document déjà ancré."""
+        registry = CanonicalDocumentRegistry(self.store)
+        registry.register(document(allowed_users=("bob",), acl_version=1))
+        registry.register(document(allowed_users=(), acl_version=2))
+        registry.path.unlink()
+
+        with self.assertRaises(CanonicalStoreError):
+            CanonicalDocumentRegistry(self.store)
+        self.assertFalse(registry.path.exists())
+
+    def test_a_rewritten_history_with_the_same_final_state_is_refused(self) -> None:
+        """L'ancre compte les LIGNES : compacter la trace d'audit est refusé."""
+        registry = CanonicalDocumentRegistry(self.store)
+        registry.register(document(allowed_users=("bob",), acl_version=1))
+        final = document(allowed_users=(), acl_version=2)
+        registry.register(final)
+        lines = registry.path.read_bytes().splitlines(keepends=True)
+        self.assertEqual(len(lines), 2)
+
+        # État final identique, mais la révision intermédiaire a disparu.
+        registry.path.write_bytes(lines[-1])
+        with self.assertRaises(CanonicalStoreError):
+            CanonicalDocumentRegistry(self.store)
+
+    def test_a_dropped_document_with_enough_lines_is_still_refused(self) -> None:
+        """Le compte de lignes ne couvre pas la perte d'un document ancré."""
+        registry = CanonicalDocumentRegistry(self.store)
+        registry.register(document("doc-1", allowed_users=("bob",), acl_version=1))
+        registry.register(document("doc-2", allowed_users=(), acl_version=1))
+        first, second = registry.path.read_bytes().splitlines(keepends=True)
+
+        # Deux lignes comme l'ancre, mais doc-2 a été remplacé par doc-1.
+        registry.path.write_bytes(first + first)
+        with self.assertRaises(CanonicalStoreError):
+            CanonicalDocumentRegistry(self.store)
+
+    def test_an_unpublishable_anchor_blocks_the_append(self) -> None:
+        registry = CanonicalDocumentRegistry(self.store)
+        registry.register(document())
+        before = registry.path.read_bytes()
+        anchor = registry.anchor_path.read_bytes()
+        with patch.object(
+            CanonicalDocumentRegistry, "_write_anchor",
+            side_effect=CanonicalStoreError("canonical anchor cannot be published"),
+        ):
+            with self.assertRaises(CanonicalStoreError):
+                registry.register(document(doc_version=2, content="nouveau"))
+        self.assertEqual(registry.path.read_bytes(), before)
+        self.assertEqual(registry.anchor_path.read_bytes(), anchor)
+        reopened = CanonicalDocumentRegistry(self.store).source("doc-1")
+        assert reopened is not None
+        self.assertEqual(reopened.doc_version, 1)
+
+    def test_a_blocking_node_in_place_of_the_anchor_fails_closed(self) -> None:
+        """Un FIFO ne doit jamais suspendre lecture, démarrage ou publication."""
+        registry = CanonicalDocumentRegistry(self.store)
+        registry.register(document())
+        for name, target in {
+            "anchor": registry.anchor_path,
+            "history": registry.path,
+        }.items():
+            with self.subTest(node=name):
+                target.unlink(missing_ok=True)
+                os.mkfifo(target, 0o600)
+                try:
+                    with _bounded():
+                        with self.assertRaises(CanonicalStoreError):
+                            CanonicalDocumentRegistry(self.store)
+                finally:
+                    target.unlink(missing_ok=True)
+
+    def test_a_blocking_node_left_at_the_temporary_anchor_is_replaced(self) -> None:
+        """Le temporaire est un résidu : on le remplace, sans jamais bloquer."""
+        registry = CanonicalDocumentRegistry(self.store)
+        registry.register(document())
+        temporary = self.store / "canonical_anchor.json.new"
+        os.mkfifo(temporary, 0o600)
+        with _bounded():
+            registry.register(document(doc_version=2, content="nouveau"))
+        self.assertFalse(temporary.exists())
+        reopened = CanonicalDocumentRegistry(self.store).source("doc-1")
+        assert reopened is not None
+        self.assertEqual(reopened.doc_version, 2)
+
+    def test_a_failed_anchor_publication_leaves_no_temporary_behind(self) -> None:
+        """Un temporaire orphelin décrirait un état jamais publié.
+
+        Il est en 0600 donc inoffensif, mais le laisser rend le répertoire
+        trompeur pour un opérateur, et le nettoyage doit couvrir le cas
+        ATTENDU — `rename` ou écriture en échec — pas seulement l'interruption.
+        """
+        registry = CanonicalDocumentRegistry(self.store)
+        registry.register(document())
+        temporary = self.store / "canonical_anchor.json.new"
+
+        with patch(
+            "rag_hermes.canonical_registry.os.rename",
+            side_effect=OSError(errno.EIO, "input/output error"),
+        ):
+            with self.assertRaises(CanonicalStoreError):
+                registry.register(document(doc_version=2, content="nouveau"))
+        self.assertFalse(temporary.exists(), "leftover anchor temporary")
+
+    def test_a_temporary_recreated_after_the_unlink_fails_closed(self) -> None:
+        """TOCTOU entre le retrait du résidu et la création : `O_EXCL` tranche.
+
+        Sans `O_EXCL` (et sans `O_NONBLOCK`), un FIFO recréé dans cette fenêtre
+        suspendrait la publication alors que le verrou exclusif est tenu.
+        """
+        registry = CanonicalDocumentRegistry(self.store)
+        registry.register(document())
+        temporary = self.store / "canonical_anchor.json.new"
+        os.mkfifo(temporary, 0o600)
+        before = registry.path.read_bytes()
+        try:
+            # Le résidu survit au retrait : exactement la fenêtre de course.
+            with patch("rag_hermes.canonical_registry.os.unlink"):
+                with _bounded():
+                    with self.assertRaises(CanonicalStoreError):
+                        registry.register(document(doc_version=2, content="nouveau"))
+        finally:
+            temporary.unlink(missing_ok=True)
+        self.assertEqual(registry.path.read_bytes(), before)
+
+    def test_an_append_failure_after_the_anchor_fails_closed_for_reads_too(self) -> None:
+        """Toute panne d'append (pas seulement un crash) laisse l'ancre en avance.
+
+        Le processus vivant ne doit PAS continuer à servir son cache : l'ACL
+        qu'il garde est précisément celle que l'écriture voulait remplacer.
+        """
+        registry = CanonicalDocumentRegistry(self.store)
+        registry.register(document(allowed_users=("bob",), acl_version=1))
+        real_fdopen = os.fdopen
+
+        def failing_fdopen(fd, mode="r", *args, **kwargs):
+            if "a" in mode:
+                raise OSError(errno.ENOSPC, "no space left on device")
+            return real_fdopen(fd, mode, *args, **kwargs)
+
+        with patch("rag_hermes.canonical_registry.os.fdopen", failing_fdopen):
+            with self.assertRaises(CanonicalStoreError):
+                registry.register(document(allowed_users=(), acl_version=2))
+
+        with self.assertRaises(CanonicalStoreError):
+            registry.source("doc-1")
+        with self.assertRaises(CanonicalStoreError):
+            CanonicalDocumentRegistry(self.store)
+
+    def test_a_durability_failure_whose_bytes_landed_does_not_brick_the_store(self) -> None:
+        """`fsync` qui échoue alors que la ligne EST écrite : pas de brique.
+
+        L'ancre n'est pas en avance, donc refuser pour toujours serait une
+        panne de disponibilité fabriquée. L'écriture est signalée (durabilité
+        non confirmée), puis le magasin reste lisible et redémarrable.
+        """
+        registry = CanonicalDocumentRegistry(self.store)
+        registry.register(document(allowed_users=("bob",), acl_version=1))
+        real_fsync = os.fsync
+        calls: list[int] = []
+
+        def failing_fsync(fd):
+            calls.append(fd)
+            # 1 et 2 : contenu puis répertoire pour l'ancre. 3 : le JSONL,
+            # c'est-à-dire la barrière de durabilité de la ligne DÉJÀ écrite.
+            if len(calls) == 3:
+                raise OSError(errno.EIO, "input/output error")
+            return real_fsync(fd)
+
+        with patch("rag_hermes.canonical_registry.os.fsync", failing_fsync):
+            with self.assertRaises(CanonicalStoreError):
+                registry.register(document(allowed_users=(), acl_version=2))
+
+        revoked = registry.source("doc-1")
+        assert revoked is not None
+        self.assertEqual(revoked.allowed_users, ())
+        reopened = CanonicalDocumentRegistry(self.store).source("doc-1")
+        assert reopened is not None
+        self.assertEqual(reopened.acl_version, 2)
+
+    def test_a_broken_store_refuses_writes_as_well_as_reads(self) -> None:
+        registry = CanonicalDocumentRegistry(self.store)
+        registry.register(document(allowed_users=("bob",), acl_version=1))
+        real_fdopen = os.fdopen
+
+        def failing_fdopen(fd, mode="r", *args, **kwargs):
+            if "a" in mode:
+                raise OSError(errno.ENOSPC, "no space left on device")
+            return real_fdopen(fd, mode, *args, **kwargs)
+
+        with patch("rag_hermes.canonical_registry.os.fdopen", failing_fdopen):
+            with self.assertRaises(CanonicalStoreError):
+                registry.register(document(allowed_users=(), acl_version=2))
+
+        with self.assertRaises(CanonicalStoreError):
+            registry.register(document(allowed_users=(), acl_version=3))
+
+    def test_reads_and_writes_do_not_deadlock_on_a_store_without_records(self) -> None:
+        """Ordre des verrous : un lecteur ne doit jamais croiser un écrivain.
+
+        Un magasin neuf (aucun enregistrement) est le cas où la lecture
+        consultait l'ancre : si elle prenait le bail de transaction après le
+        mutex d'instance, l'ordre inverse de l'écriture produisait un ABBA.
+        """
+        registry = CanonicalDocumentRegistry(self.store)
+        self.assertIsNone(registry.source("doc-1"))
+        barrier = threading.Barrier(3, timeout=10)
+
+        def read_many():
+            barrier.wait()
+            for _ in range(40):
+                registry.source("doc-1")
+
+        def write_many():
+            barrier.wait()
+            for version in range(1, 6):
+                registry.register(document(doc_version=version, content=f"v{version}"))
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            reading = pool.submit(read_many)
+            writing = pool.submit(write_many)
+            barrier.wait()
+            writing.result(timeout=20)
+            reading.result(timeout=20)
+        current = registry.source("doc-1")
+        assert current is not None
+        self.assertEqual(current.doc_version, 5)
+
+    def test_a_cross_process_reader_of_an_empty_store_is_not_blocked_forever(self) -> None:
+        ctx = multiprocessing.get_context("spawn")
+        started, outcome = ctx.Event(), ctx.Queue()
+        registry = CanonicalDocumentRegistry(self.store)
+        reader = ctx.Process(
+            target=_read_in_another_process, args=(self.store, started, outcome)
+        )
+        reader.start()
+        try:
+            self.assertTrue(started.wait(30))
+            registry.register(document())
+            reader.join(15)
+            self.assertFalse(reader.is_alive(), "cross-process reader never finished")
+            self.assertEqual(reader.exitcode, 0)
+        finally:
+            if reader.is_alive():
+                reader.terminate()
+                reader.join(5)
+        self.assertEqual(outcome.get(timeout=5), "accepted")
+
+    def test_a_fresh_reader_racing_the_first_writer_is_not_refused(self) -> None:
+        """Deux observations non synchronisées donneraient un refus fallacieux.
+
+        Un processus neuf constate l'absence du JSONL ; un écrivain complet
+        s'exécute ensuite. Si l'ancre était comparée sans reprendre
+        l'observation sous le bail, il conclurait à une perte alors que le
+        magasin n'a fait que grandir.
+        """
+        done: list[object] = []
+        real_read_anchor = CanonicalDocumentRegistry._read_anchor
+
+        def write_from_another_process_then_read(self, dir_fd):  # noqa: ANN001
+            if not done:
+                process = multiprocessing.get_context("spawn").Process(
+                    target=_register_in_another_process, args=(self._store_dir,)
+                )
+                process.start()
+                process.join(20)
+                done.append(process.exitcode)
+            return real_read_anchor(self, dir_fd)
+
+        with patch.object(
+            CanonicalDocumentRegistry, "_read_anchor", write_from_another_process_then_read
+        ):
+            reader = CanonicalDocumentRegistry(self.store)
+        self.assertEqual(done, [0], "the racing writer failed")
+        self.assertIsNotNone(reader.source("doc-1"))
+
+    def test_a_forged_prefix_keeping_count_and_versions_is_refused(self) -> None:
+        """L'ancre doit lier le CONTENU, pas seulement compte et versions."""
+        registry = CanonicalDocumentRegistry(self.store)
+        registry.register(document(allowed_users=("bob",), acl_version=1))
+        revoked = document(allowed_users=(), acl_version=2)
+        registry.register(revoked)
+        lines = registry.path.read_bytes().splitlines(keepends=True)
+        self.assertEqual(len(lines), 2)
+
+        # Même nombre de lignes, même acl_version ancrée, mais Bob revient.
+        forged = json.dumps(
+            {
+                **json.loads(lines[-1]),
+                "allowed_users": ["bob"],
+            },
+            sort_keys=True, separators=(",", ":"),
+        ).encode("ascii") + b"\n"
+        registry.path.write_bytes(lines[0] + forged)
+
+        with self.assertRaises(CanonicalStoreError):
+            CanonicalDocumentRegistry(self.store)
+
+    def test_a_forged_record_APPENDED_after_the_anchor_is_refused(self) -> None:
+        """L'ancre est publiée AVANT l'append, donc le fichier n'est jamais
+        légitimement en avance : une ligne ajoutée sans ancre est refusée.
+
+        Sans cette borne haute, une révocation se contourne en ajoutant une
+        révision forgée à `acl_version` supérieure, sans toucher à l'ancre.
+        """
+        registry = CanonicalDocumentRegistry(self.store)
+        registry.register(document(allowed_users=("bob",), acl_version=1))
+        registry.register(document(allowed_users=(), acl_version=2))
+        anchor_before = registry.anchor_path.read_bytes()
+        forged = json.dumps(
+            _record_of(document(allowed_users=("bob",), acl_version=3)),
+            sort_keys=True, separators=(",", ":"),
+        ).encode("ascii") + b"\n"
+        with registry.path.open("ab") as handle:
+            handle.write(forged)
+
+        with self.assertRaises(CanonicalStoreError):
+            CanonicalDocumentRegistry(self.store)
+        self.assertEqual(registry.anchor_path.read_bytes(), anchor_before)
+
+    def test_a_well_formed_empty_anchor_does_not_disable_the_guard(self) -> None:
+        """Remettre une ancre vide ne doit pas valoir « pas d'ancre »."""
+        registry = CanonicalDocumentRegistry(self.store)
+        registry.register(document(allowed_users=("bob",), acl_version=1))
+        backup = registry.path.read_bytes()
+        registry.register(document(allowed_users=(), acl_version=2))
+        registry.path.write_bytes(backup)
+        registry.anchor_path.write_text(
+            json.dumps({
+                "records": 0,
+                "digest": hashlib.sha256(b"").hexdigest(),
+                "documents": {},
+            }),
+            encoding="ascii",
+        )
+
+        with self.assertRaises(CanonicalStoreError):
+            CanonicalDocumentRegistry(self.store)
 
     def test_deleted_history_is_not_recreated_after_revocation(self) -> None:
         registry = CanonicalDocumentRegistry(self.store)

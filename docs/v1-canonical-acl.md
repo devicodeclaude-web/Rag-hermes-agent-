@@ -108,6 +108,21 @@ sur un bail déjà détenu, rendu inatteignable par la réinitialisation de l'é
 de bail au `fork` ; il est conservé et annoté comme défense en profondeur, pas
 épinglé par un test.
 
+Lot du repère persisté (même méthode, 22 mutants) : contrôle de l'ancre au
+rejeu et sur fichier absent, empreinte des enregistrements, égalité stricte du
+compte (un `>=` permissif comme l'absence de contrôle sont tués), refus d'un
+recul de version et d'un document ancré perdu, publication de l'ancre AVANT
+l'append, inclusion de la nouvelle ligne dans l'empreinte, comptage des lignes
+plutôt que des documents, typage strict de l'ancre, `O_NONBLOCK` avant la
+validation `S_ISREG`, `O_EXCL` sur le temporaire et nettoyage de ce temporaire,
+distinction entre « rien n'a été écrit » et « seule la durabilité a échoué »,
+refus d'écriture sur un magasin déjà incohérent, et seconde observation du
+fichier absent — **tous tués**. Deux survivantes, gardées et annotées comme
+défense en profondeur parce qu'aucune sortie observable ne change : traiter une
+ancre absente comme une ancre vide est strictement équivalent, et le drapeau
+« magasin incohérent » en lecture est doublé par l'invalidation de la
+signature, qui force déjà un rejeu refusé.
+
 ## Comportements observables (testés)
 
 | Situation | Issue |
@@ -146,10 +161,64 @@ révocation valable.
   antérieure à celles déjà vues est refusée, sans créer de nouveau fichier.
   La relecture après changement reste proportionnelle à tout l'historique ;
   le contrôle de métadonnées n'est pas une preuve cryptographique contre une
-  modification hostile qui reproduirait la même signature. Un processus qui
-  démarre sur une ancienne sauvegarde n'a pas de repère indépendant pour la
-  rejeter. Ce n'est pas un registre distribué scalable.
+  modification hostile qui reproduirait la même signature.
+  Ce n'est pas un registre distribué scalable.
   Un montage réseau sans garantie de verrouillage équivalente est hors champ.
+- **Repère persisté hors du JSONL (`canonical_anchor.json`, 0600)** : il porte
+  le nombre de **lignes** rejouées, l'**empreinte SHA-256 de ces enregistrements
+  canonicalisés** (les chaînes effectivement rejouées, pas un hachage brut du
+  fichier : un bourrage de lignes blanches ou un `CRLF` est donc accepté, car il
+  décrit les mêmes documents) et, par document, les `doc_version`/`acl_version`
+  atteintes. Il est publié par remplacement atomique (temporaire créé en
+  `O_EXCL`, validé par `fstat`, `fsync`, `rename`, `fsync` du répertoire)
+  **avant** chaque append, sous le même `flock` exclusif.
+  Conséquence exploitée comme contrôle : le fichier n'est jamais légitimement
+  en avance sur son repère, donc l'égalité du nombre d'enregistrements est
+  exigée **strictement**. Sont refusés à chaque relecture — y compris au
+  **démarrage d'un processus neuf**, ce que le cache mémoire ne pouvait pas
+  couvrir : une ligne déjà ancrée dont le contenu a changé (même à compte et
+  versions constants, donc une ACL réécrite en place), un historique tronqué,
+  restauré depuis une sauvegarde antérieure, compacté, supprimé alors qu'une
+  ancre non vide existe, **et une ligne ajoutée sans republication de l'ancre**
+  (sinon une révision forgée à `acl_version` supérieure suffirait à annuler une
+  révocation sans toucher au repère). Une ancre remise à zéro ne vaut donc pas
+  « pas d'ancre » : face à un historique non vide, elle échoue fermé.
+  Un FIFO ou un périphérique posé à la place du JSONL, de l'ancre ou de son
+  temporaire **échoue fermé** (`O_NONBLOCK` avant la validation `S_ISREG`) au
+  lieu de suspendre indéfiniment la requête en tenant les verrous.
+  Le constat « fichier absent » est **réobservé une seconde fois** avant de
+  conclure à une disparition : l'historique ne peut que croître, et un processus
+  neuf qui démarre pendant la toute première écriture d'un autre processus se
+  refuserait sinon lui-même par erreur. Cette reprise n'acquiert aucun verrou,
+  volontairement : la lecture tient déjà le mutex d'instance alors que
+  l'écriture prend le bail de transaction **avant** lui, donc y prendre le bail
+  produirait un interblocage ABBA (constaté en revue sur un magasin neuf).
+  Limites assumées : une ancre absente signifie « installation antérieure à ce
+  lot », donc le démarrage est accepté et la protection ne commence qu'au
+  premier enregistrement suivant, qui publie l'ancre — **par construction,
+  supprimer le fichier d'ancre désactive donc cette garde** (une ancre
+  illisible, exposée, symbolique ou malformée échoue en revanche **fermé**,
+  sans réparation silencieuse) ; un repère vivant dans le même répertoire et
+  sous le même UID ne peut pas faire mieux, et une ancre hors de l'hôte reste
+  nécessaire contre un adversaire du même UID qui réécrirait les deux fichiers
+  de façon cohérente ; enfin la publication réécrit la carte complète des
+  documents à chaque enregistrement, coût proportionnel au nombre de documents.
+- **Panne d'append après la publication de l'ancre** — pas seulement un crash :
+  `ENOSPC`, `EIO`, un quota. Deux cas sont distingués en relisant le fichier
+  sous le verrou exclusif encore tenu, au lieu de condamner sur la seule
+  exception : si **rien n'a été écrit**, l'ancre est en avance, le registre se
+  marque **incohérent** et refuse désormais lectures *et* écritures (le cache
+  porte précisément l'ACL que l'écriture voulait remplacer, et une écriture
+  suivante avancerait l'ancre sur un historique faux, voire pousserait vers
+  Qdrant un document que le registre refuse) ; le redémarrage échoue
+  identiquement et la reprise est hors ligne. Si en revanche la ligne **est**
+  sur le disque et que seule la barrière de durabilité a échoué, l'état est
+  cohérent : l'écriture est signalée comme non confirmée
+  (`canonical record durability is not confirmed`), l'état relu est adopté, et
+  ni le processus vivant ni un redémarrage ne sont bloqués. L'ancre atteste le
+  compte, les versions et l'empreinte des enregistrements ; elle ne peut pas
+  valider le contenu d'une ligne ajoutée pendant une réparation hors ligne, et
+  aucun outil de reprise n'est fourni dans ce lot.
 - **SEC-02, portée mono-hôte coopérante uniquement** : le fichier privé
   `canonical_transaction.lock` est ouvert sous le répertoire canonique et
   verrouillé par `flock` partagé pendant `RagService.answer_with_trace`
@@ -182,7 +251,8 @@ révocation valable.
   n'est toujours pas une transaction : clients non coopérants et déploiement
   multi-hôte restent hors garantie. **SEC-02 général reste ouvert** ; cette
   tranche ne revendique pas d'atomicité native Qdrant ni de preuve de
-  concurrence sur un serveur Qdrant réel.
+  concurrence sur un serveur Qdrant réel. Le repère persisté décrit plus haut
+  couvre le redémarrage du registre, **pas** la cohérence registre/Qdrant.
 - **Reprise après crash** : une dernière ligne incomplète fait échouer les
   lectures et le démarrage. Ne jamais la tronquer automatiquement ni restaurer
   une sauvegarde sans vérifier hors ligne la dernière version connue de chaque
