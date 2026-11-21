@@ -9,13 +9,17 @@ from __future__ import annotations
 
 from dataclasses import replace
 from concurrent.futures import ThreadPoolExecutor
+import contextlib
+from io import BytesIO
 import json
 import multiprocessing
 import os
 from pathlib import Path
+import signal
 import stat
 import tempfile
 import threading
+import time
 import unittest
 from unittest.mock import patch
 
@@ -27,8 +31,10 @@ from rag_hermes.canonical_registry import (
     wrap_repository_with_canonical_barrier,
 )
 from rag_hermes.ingestion import Document, chunk_document
+from rag_hermes.http_api import make_app
 from rag_hermes.retrieval import CanonicalAclError, CanonicalAclSearch, SearchResult
 from rag_hermes.service import RagService
+
 
 
 def document(
@@ -63,6 +69,65 @@ def _revoke_in_another_process(store: Path) -> None:
     CanonicalDocumentRegistry(store).register(
         document(allowed_users=(), acl_version=2)
     )
+
+
+def _hold_canonical_read_in_child(store: Path, entered, release) -> None:
+    registry = CanonicalDocumentRegistry(store)
+    with registry.read_guard():
+        entered.set()
+        if not release.wait(10):
+            raise TimeoutError("test child read lease not released")
+
+
+def _nested_registry_guard_in_child(store: Path, outer_mode: str) -> None:
+    first = CanonicalDocumentRegistry(store)
+    second = CanonicalDocumentRegistry(store)
+    if outer_mode == "write":
+        with first.write_guard(), second.read_guard():
+            assert second.source("doc-1") is not None
+    else:
+        with first.read_guard():
+            try:
+                with second.write_guard():
+                    raise AssertionError("read lease was upgraded")
+            except CanonicalStoreError:
+                pass
+
+
+def _forked_child_reads_when_ready(store: Path, started, acquired) -> None:
+    registry = CanonicalDocumentRegistry(store)
+    started.set()
+    with registry.read_guard():
+        acquired.set()
+
+
+def _forked_child_reacquires_after_release(store: Path, released) -> None:
+    if not released.wait(5):
+        raise TimeoutError("parent did not release lock")
+    registry = CanonicalDocumentRegistry(store)
+    with registry.read_guard():
+        assert registry.source("doc-1") is not None
+
+
+def _idle_forked_child(ready, release) -> None:
+    ready.set()
+    if not release.wait(10):
+        raise TimeoutError("test child was not released")
+
+
+def _wait_for_child(test, child_pid: int, *, timeout: float = 5.0) -> None:
+    """Join a forked child WITHOUT hanging the suite if it deadlocks."""
+    deadline = time.monotonic() + timeout
+    while True:
+        waited, status = os.waitpid(child_pid, os.WNOHANG)
+        if waited == child_pid:
+            test.assertEqual(os.waitstatus_to_exitcode(status), 0)
+            return
+        if time.monotonic() >= deadline:
+            os.kill(child_pid, signal.SIGKILL)
+            os.waitpid(child_pid, 0)
+            test.fail("forked child blocked on inherited state")
+        time.sleep(0.02)
 
 
 class FakeRepository:
@@ -413,6 +478,281 @@ class RegistryStoreTests(unittest.TestCase):
         stored = CanonicalDocumentRegistry(self.store).source("doc-1")
         assert stored is not None
         self.assertEqual(stored.allowed_users, (f"reader-{accepted.index(True)}",))
+
+    def test_cross_process_reader_blocks_canonical_write(self) -> None:
+        registry = CanonicalDocumentRegistry(self.store)
+        registry.register(document(acl_version=1))
+        context = multiprocessing.get_context("spawn")
+        entered, release = context.Event(), context.Event()
+        process = context.Process(
+            target=_hold_canonical_read_in_child,
+            args=(self.store, entered, release),
+        )
+        process.start()
+        try:
+            self.assertTrue(entered.wait(5))
+            started = threading.Event()
+            def write():
+                started.set()
+                return registry.register(document(acl_version=2))
+
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                writing = pool.submit(write)
+                self.assertTrue(started.wait(5))
+                threading.Event().wait(0.15)
+                self.assertFalse(writing.done())
+                release.set()
+                writing.result(timeout=5)
+        finally:
+            release.set()
+            process.join(5)
+            if process.is_alive():
+                process.terminate()
+                process.join(5)
+        self.assertEqual(process.exitcode, 0)
+
+    def test_transaction_lock_is_private_and_rejects_permissions_change(self) -> None:
+        registry = CanonicalDocumentRegistry(self.store)
+        with registry.read_guard():
+            pass
+        lock_file = self.store / "canonical_transaction.lock"
+        self.assertEqual(stat.S_IMODE(lock_file.stat().st_mode), 0o600)
+        lock_file.chmod(0o644)
+        with self.assertRaises(CanonicalStoreError):
+            with registry.read_guard():
+                self.fail("permissive transaction lock accepted")
+
+    def test_writer_cannot_upgrade_its_own_read_lease(self) -> None:
+        registry = CanonicalDocumentRegistry(self.store)
+        with registry.read_guard():
+            with self.assertRaises(CanonicalStoreError):
+                registry.register(document())
+        self.assertFalse(registry.path.exists())
+        registry.register(document())
+
+    def test_same_thread_registry_instances_do_not_deadlock_or_upgrade(self) -> None:
+        CanonicalDocumentRegistry(self.store).register(document())
+        ctx = multiprocessing.get_context("spawn")
+        for mode in ("write", "read"):
+            with self.subTest(mode=mode):
+                process = ctx.Process(
+                    target=_nested_registry_guard_in_child, args=(self.store, mode)
+                )
+                process.start()
+                process.join(8)
+                if process.is_alive():
+                    process.terminate()
+                    process.join(5)
+                self.assertEqual(process.exitcode, 0, "nested lease blocked")
+
+    @unittest.skipUnless("fork" in multiprocessing.get_all_start_methods(), "fork unavailable")
+    def test_forked_process_waits_for_parent_transaction_lease(self) -> None:
+        registry = CanonicalDocumentRegistry(self.store)
+        registry.register(document())
+        ctx = multiprocessing.get_context("fork")
+        started, acquired = ctx.Event(), ctx.Event()
+        with registry.write_guard():
+            process = ctx.Process(
+                target=_forked_child_reads_when_ready,
+                args=(self.store, started, acquired),
+            )
+            process.start()
+            try:
+                self.assertTrue(started.wait(2))
+                self.assertFalse(acquired.wait(0.2), "child reused parent's write lease")
+            except BaseException:
+                process.terminate()
+                process.join(2)
+                raise
+        process.join(2)
+        if process.is_alive():
+            process.terminate()
+            process.join(2)
+        self.assertEqual(process.exitcode, 0)
+        self.assertTrue(acquired.is_set())
+
+    @unittest.skipUnless("fork" in multiprocessing.get_all_start_methods(), "fork unavailable")
+    def test_child_forked_by_holder_can_acquire_after_parent_releases(self) -> None:
+        registry = CanonicalDocumentRegistry(self.store)
+        registry.register(document())
+        released = multiprocessing.get_context("fork").Event()
+        with registry.write_guard():
+            process = multiprocessing.get_context("fork").Process(
+                target=_forked_child_reacquires_after_release,
+                args=(self.store, released),
+            )
+            process.start()
+        released.set()
+        process.join(2)
+        if process.is_alive():
+            process.terminate()
+            process.join(2)
+        self.assertEqual(process.exitcode, 0)
+
+    @unittest.skipUnless(hasattr(os, "fork"), "fork unavailable")
+    def test_unwinding_parent_lease_in_forked_child_does_not_close_reused_fd(self) -> None:
+        registry = CanonicalDocumentRegistry(self.store)
+        for write in (False, True):
+            with self.subTest(write=write):
+                child_pid = None
+                try:
+                    with (registry.write_guard() if write else registry.read_guard()):
+                        child_pid = os.fork()
+                except BaseException:
+                    if child_pid == 0:
+                        os._exit(1)
+                    raise
+                if child_pid == 0:
+                    os._exit(0)
+                _wait_for_child(self, child_pid)
+
+    @unittest.skipUnless(hasattr(os, "fork"), "fork unavailable")
+    def test_child_lease_survives_unwinding_the_inherited_parent_lease(self) -> None:
+        """A fresh child lease may reuse the fd number the child just closed."""
+        from rag_hermes import canonical_registry as module
+
+        registry = CanonicalDocumentRegistry(self.store)
+        registry.register(document())
+        stack = contextlib.ExitStack()
+        child_pid = None
+        with registry.read_guard():
+            child_pid = os.fork()
+            if child_pid == 0:
+                # Shared lease, so this does not block on the parent's.
+                stack.enter_context(CanonicalDocumentRegistry(self.store).read_guard())
+        if child_pid == 0:
+            # The inherited guard above has now unwound inside this child.
+            code = 1
+            try:
+                tracked = dict(module._ACTIVE_TRANSACTION_FDS)
+                if len(tracked) == 1:
+                    os.fstat(next(iter(tracked.values())))
+                    stack.close()
+                    code = 0
+            except BaseException:
+                code = 1
+            os._exit(code)
+        stack.close()
+        _wait_for_child(self, child_pid)
+
+    @unittest.skipUnless(hasattr(os, "fork"), "fork unavailable")
+    def test_child_does_not_inherit_a_locked_instance_mutex(self) -> None:
+        """A fork while another thread held the instance mutex must not hang."""
+        registry = CanonicalDocumentRegistry(self.store)
+        registry.register(document())
+        entered, release = threading.Event(), threading.Event()
+
+        def hold_instance_lock():
+            with registry._lock:
+                entered.set()
+                if not release.wait(5):
+                    raise TimeoutError("instance lock not released")
+
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            holding = pool.submit(hold_instance_lock)
+            try:
+                self.assertTrue(entered.wait(5))
+                child_pid = os.fork()
+                if child_pid == 0:
+                    code = 1
+                    try:
+                        # Same instance object, inherited with the mutex held.
+                        if registry.source("doc-1") is not None:
+                            code = 0
+                    except BaseException:
+                        code = 1
+                    os._exit(code)
+                _wait_for_child(self, child_pid)
+            finally:
+                release.set()
+                holding.result(timeout=5)
+
+    @unittest.skipUnless("fork" in multiprocessing.get_all_start_methods(), "fork unavailable")
+    def test_idle_child_cannot_keep_other_thread_read_lease_alive(self) -> None:
+        registry = CanonicalDocumentRegistry(self.store)
+        registry.register(document())
+        entered, stop_reader = threading.Event(), threading.Event()
+        ctx = multiprocessing.get_context("fork")
+        ready, release_child = ctx.Event(), ctx.Event()
+
+        def hold_read():
+            with registry.read_guard():
+                entered.set()
+                if not stop_reader.wait(5):
+                    raise TimeoutError("reader not released")
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            reading = pool.submit(hold_read)
+            self.assertTrue(entered.wait(5))
+            child = ctx.Process(target=_idle_forked_child, args=(ready, release_child))
+            child.start()
+            try:
+                self.assertTrue(ready.wait(5))
+                stop_reader.set()
+                reading.result(timeout=5)
+                writing = pool.submit(registry.register, document(acl_version=2))
+                try:
+                    writing.result(timeout=1)
+                finally:
+                    release_child.set()
+                    writing.result(timeout=5)
+            finally:
+                stop_reader.set()
+                release_child.set()
+                child.join(5)
+                if child.is_alive():
+                    child.terminate()
+                    child.join(5)
+            self.assertEqual(child.exitcode, 0)
+
+    @unittest.skipUnless("fork" in multiprocessing.get_all_start_methods(), "fork unavailable")
+    def test_idle_child_cannot_keep_registry_file_lock_alive(self) -> None:
+        registry = CanonicalDocumentRegistry(self.store)
+        registry.register(document())
+        entered, stop_writer = threading.Event(), threading.Event()
+        ctx = multiprocessing.get_context("fork")
+        ready, release_child = ctx.Event(), ctx.Event()
+        original = registry._fresh_verified
+
+        def hold_file_lock(fd):
+            entered.set()
+            if not stop_writer.wait(5):
+                raise TimeoutError("writer not released")
+            return original(fd)
+
+        with patch.object(registry, "_fresh_verified", side_effect=hold_file_lock):
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                writing = pool.submit(registry.register, document(acl_version=2))
+                self.assertTrue(entered.wait(5))
+                child = ctx.Process(target=_idle_forked_child, args=(ready, release_child))
+                child.start()
+                try:
+                    self.assertTrue(ready.wait(5))
+                    stop_writer.set()
+                    writing.result(timeout=5)
+                    next_write = pool.submit(registry.register, document(acl_version=3))
+                    try:
+                        next_write.result(timeout=1)
+                    finally:
+                        release_child.set()
+                        next_write.result(timeout=5)
+                finally:
+                    stop_writer.set()
+                    release_child.set()
+                    child.join(5)
+                    if child.is_alive():
+                        child.terminate()
+                        child.join(5)
+                self.assertEqual(child.exitcode, 0)
+
+    def test_registry_does_not_leave_untracked_duplicate_flock_descriptors(self) -> None:
+        registry = CanonicalDocumentRegistry(self.store)
+        # Fork closes tracked file descriptors in the child. An os.dup on a
+        # tracked flock descriptor would create an untracked inherited lease.
+        with patch("rag_hermes.canonical_registry.os.dup", side_effect=AssertionError("untracked flock dup")):
+            registry.register(document())
+            registry.source("doc-1")
+            registry.register(document(acl_version=2))
 
     def test_unchanged_history_is_not_reparsed_for_each_policy_lookup(self) -> None:
         registry = CanonicalDocumentRegistry(self.store)
@@ -778,6 +1118,160 @@ class BarrierWiringTests(unittest.TestCase):
         trace = service.answer_with_trace("question", context=reader)
         self.assertTrue(trace.response.abstained)
         self.assertEqual(trace.cited_chunks, ())
+
+    def test_local_reader_waits_for_replacement_to_finish_before_search(self) -> None:
+        initial = document(allowed_users=("bob",), acl_version=1)
+        revised = document(allowed_users=(), acl_version=2)
+        entered = threading.Event()
+        release = threading.Event()
+        searched = threading.Event()
+
+        class BlockingRepository(FakeRepository):
+            def replace_document(self, document, chunks):
+                if document.acl_version == 2:
+                    entered.set()
+                    if not release.wait(5):
+                        raise TimeoutError("test writer never released")
+                self.results = [SearchResult(list(chunks)[0], 0.9)]
+                return super().replace_document(document, chunks)
+
+            def search(self, query, *, context, limit=10):
+                searched.set()
+                return super().search(query, context=context, limit=limit)
+
+        repository = BlockingRepository()
+        writer = RagService(repository=wrap_repository_with_canonical_barrier(
+            repository, self.registry, minimum_score=0.2,
+        ))
+        reader_registry = CanonicalDocumentRegistry(Path(self._tmp.name))
+        reader = RagService(repository=wrap_repository_with_canonical_barrier(
+            repository, reader_registry, minimum_score=0.2,
+        ))
+        owner = AuthorizationContext("alpha", "alice", (), 1)
+        writer.import_document(initial, context=owner)
+        searched.clear()
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            writing = pool.submit(writer.import_document, revised, context=owner)
+            self.assertTrue(entered.wait(5))
+            reading = pool.submit(reader.answer_with_trace, "Hermes", context=owner)
+            try:
+                self.assertFalse(searched.wait(0.15), "reader searched mid-replacement")
+            finally:
+                release.set()
+            writing.result(timeout=5)
+            answer = reading.result(timeout=5)
+        self.assertFalse(answer.response.abstained)
+        self.assertEqual(answer.cited_chunks[0].acl_version, 2)
+
+    def test_local_writer_waits_until_generation_and_citation_finish(self) -> None:
+        initial = document(allowed_users=("bob",), acl_version=1)
+        revised = document(allowed_users=(), acl_version=2)
+        generating = threading.Event()
+        release = threading.Event()
+        wrote = threading.Event()
+
+        class RecordingRepository(FakeRepository):
+            def replace_document(self, document, chunks):
+                if document.acl_version == 2:
+                    wrote.set()
+                return super().replace_document(document, chunks)
+
+        repository = RecordingRepository([SearchResult(chunk_document(initial)[0], 0.9)])
+        writer = self._service(repository)
+        owner = AuthorizationContext("alpha", "alice", (), 1)
+        writer.import_document(initial, context=owner)
+        reader_registry = CanonicalDocumentRegistry(Path(self._tmp.name))
+
+        def generator(question, evidence):
+            generating.set()
+            if not release.wait(5):
+                raise TimeoutError("test generator never released")
+            return "Réponse [S1]"
+
+        reader = RagService(repository=wrap_repository_with_canonical_barrier(
+            repository, reader_registry, minimum_score=0.2,
+        ), generator=generator)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            reading = pool.submit(reader.answer_with_trace, "Hermes", context=owner)
+            self.assertTrue(generating.wait(5))
+            writing = pool.submit(writer.import_document, revised, context=owner)
+            try:
+                self.assertFalse(wrote.wait(0.15), "writer mutated index during generation")
+            finally:
+                release.set()
+            answer = reading.result(timeout=5)
+            writing.result(timeout=5)
+        self.assertEqual(answer.cited_chunks[0].acl_version, 1)
+        self.assertTrue(wrote.is_set())
+        policy = self.registry.authority.policy_for("doc-1")
+        assert policy is not None
+        self.assertEqual(policy.acl_version, 2)
+
+    def test_wsgi_delivery_after_revocation_is_not_retroactively_cancelled(self) -> None:
+        initial = document(allowed_users=("bob",), acl_version=1)
+        repository = FakeRepository([SearchResult(chunk_document(initial)[0], 0.9)])
+        service = self._service(repository)
+        service.import_document(initial, context=AuthorizationContext("alpha", "alice", (), 1))
+        class BobAuthenticator:
+            def authenticate(self, environ):
+                return AuthorizationContext("alpha", "bob", (), 1)
+
+        app = make_app(service, authenticator=BobAuthenticator())
+        body = json.dumps({"question": "Hermes"}).encode("utf-8")
+        statuses = []
+        response = app({
+            "REQUEST_METHOD": "POST", "PATH_INFO": "/api/questions",
+            "CONTENT_LENGTH": str(len(body)), "CONTENT_TYPE": "application/json",
+            "wsgi.input": BytesIO(body), "HTTP_HOST": "localhost:8080",
+        }, lambda status, headers: statuses.append(status))
+        self.registry.register(document(allowed_users=(), acl_version=2))
+        delivered = json.loads(b"".join(response))
+        self.assertEqual(statuses, ["200 OK"])
+        self.assertFalse(delivered["abstained"])
+        self.assertEqual(delivered["citations"][0]["document_id"], "doc-1")
+        # A new request after the completed revocation does not cite it.
+        self.assertTrue(service.answer_with_trace(
+            "Hermes", context=AuthorizationContext("alpha", "bob", (), 1)
+        ).response.abstained)
+
+    def test_direct_barrier_search_also_waits_for_a_replacement(self) -> None:
+        """Evaluation paths call `search()` without going through the service."""
+        initial = document(allowed_users=("bob",), acl_version=1)
+        revised = document(allowed_users=(), acl_version=2)
+        entered, release, searched = (threading.Event() for _ in range(3))
+
+        class BlockingRepository(FakeRepository):
+            def replace_document(self, document, chunks):
+                if document.acl_version == 2:
+                    entered.set()
+                    if not release.wait(5):
+                        raise TimeoutError("test writer never released")
+                self.results = [SearchResult(list(chunks)[0], 0.9)]
+                return super().replace_document(document, chunks)
+
+            def search(self, query, *, context, limit=10):
+                searched.set()
+                return super().search(query, context=context, limit=limit)
+
+        repository = BlockingRepository()
+        writer = self._service(repository)
+        owner = AuthorizationContext("alpha", "alice", (), 1)
+        writer.import_document(initial, context=owner)
+        searched.clear()
+        barrier = wrap_repository_with_canonical_barrier(
+            repository, CanonicalDocumentRegistry(Path(self._tmp.name)), minimum_score=0.2,
+        )
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            writing = pool.submit(writer.import_document, revised, context=owner)
+            self.assertTrue(entered.wait(5))
+            reading = pool.submit(barrier.search, "Hermes", context=owner, limit=1)
+            try:
+                self.assertFalse(searched.wait(0.15), "direct search ran mid-replacement")
+            finally:
+                release.set()
+            writing.result(timeout=5)
+            results = reading.result(timeout=5)
+        self.assertEqual([result.chunk.acl_version for result in results], [2])
 
 
 if __name__ == "__main__":

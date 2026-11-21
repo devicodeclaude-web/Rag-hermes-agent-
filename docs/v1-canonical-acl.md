@@ -98,6 +98,16 @@ observable. Il est gardé comme **défense en profondeur attendue inatteignable*
 un contrôle épinglé par un test — écrire un test identique au comportement de
 la couche voisine serait un test vacant.
 
+Lot du verrou de transaction (même méthode, 9 mutants) : fermeture par jeton
+après `fork`, fermeture des descripteurs hérités, réinitialisation de l'état
+de bail, remplacement des mutex d'instance hérités, refus de l'élévation
+lecture→écriture, verrou de lecture dans `CanonicalAclSearch.search`, verrou
+de lecture dans `RagService.answer_with_trace` et verrou d'écriture de
+`CanonicalWriteThrough` — **tous tués**. Seule survivante : le contrôle de PID
+sur un bail déjà détenu, rendu inatteignable par la réinitialisation de l'état
+de bail au `fork` ; il est conservé et annoté comme défense en profondeur, pas
+épinglé par un test.
+
 ## Comportements observables (testés)
 
 | Situation | Issue |
@@ -140,14 +150,39 @@ révocation valable.
   démarre sur une ancienne sauvegarde n'a pas de repère indépendant pour la
   rejeter. Ce n'est pas un registre distribué scalable.
   Un montage réseau sans garantie de verrouillage équivalente est hors champ.
-- **SEC-02 demeure ouvert** : le verrou du registre ne couvre ni Qdrant ni la
-  génération ni la publication atomique de la révision active. Un lecteur
-  déjà en cours de réponse peut avoir capturé un passage avant une révocation ;
-  l'upsert et la suppression restent deux opérations observables séparément.
-  Plusieurs lectures `policy_for`/`authorize`/`source` dans une requête ne
-  forment pas un instantané atomique : si le registre évolue entre elles, la
-  barrière peut refuser une réponse avec une erreur d'index (`503`), sans citer
-  un passage obsolète. Une solution de snapshot transactionnel reste à définir.
+- **SEC-02, portée mono-hôte coopérante uniquement** : le fichier privé
+  `canonical_transaction.lock` est ouvert sous le répertoire canonique et
+  verrouillé par `flock` partagé pendant `RagService.answer_with_trace`
+  (recherche Qdrant, recontrôle ACL, reranking, génération et citations), ou
+  exclusif pendant `CanonicalWriteThrough.replace_document` (publication du
+  registre puis remplacement Qdrant). `CanonicalAclSearch.search` seul prend
+  aussi la lecture partagée. Les appels imbriqués dans le même fil réutilisent
+  le verrou ; écrire sous une lecture échoue. Au `fork`, le processus enfant
+  ferme les descripteurs de verrou hérités, réinitialise l'état de bail et
+  remplace les mutex d'instance hérités : sans cela, un enfant gardait un
+  verrou partagé du parent ou se bloquait sur un mutex pris par un autre fil.
+  Deux processus partageant ce répertoire/inode sur un système de fichiers
+  local compatible `flock` ne voient plus la fenêtre upsert/suppression via
+  ces chemins coopérants. Les écritures Qdrant directes et les autres
+  hôtes/stockages ne sont pas bloqués.
+  Le fichier de verrou ne doit jamais être supprimé ou remplacé pendant le
+  service : cela créerait des inodes et des verrous indépendants. Une génération
+  lente bloque les imports jusqu'à sa fin ; aucune limite de temps n'est posée
+  par cette barrière. Des réponses déjà commencées peuvent achever leur
+  génération avant la publication de la révocation : ce n'est pas une coupure
+  immédiate. Le verrou est relâché dès que `RagService.answer_with_trace`
+  construit l'`AnswerTrace`, **avant** la sérialisation et la livraison HTTP
+  WSGI : un corps calculé sous l'ancienne ACL peut donc être transmis après
+  une révocation qui vient de finir. La barrière assure l'ordre des opérations
+  du service coopérant, pas l'annulation des réponses déjà calculées. Un crash
+  ou échec après l'écriture canonique mais avant la fin du remplacement Qdrant
+  laisse une divergence qui doit être réparée hors ligne ; les candidats
+  observés divergents échouent fermés, mais les points masqués par le préfiltre
+  ne sont pas prouvés exhaustifs. La séquence Qdrant
+  n'est toujours pas une transaction : clients non coopérants et déploiement
+  multi-hôte restent hors garantie. **SEC-02 général reste ouvert** ; cette
+  tranche ne revendique pas d'atomicité native Qdrant ni de preuve de
+  concurrence sur un serveur Qdrant réel.
 - **Reprise après crash** : une dernière ligne incomplète fait échouer les
   lectures et le démarrage. Ne jamais la tronquer automatiquement ni restaurer
   une sauvegarde sans vérifier hors ligne la dernière version connue de chaque
