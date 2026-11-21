@@ -18,9 +18,9 @@ Limites assumées (ne pas sur-promettre) :
   alors que le service indexe par `(tenant_id, document_id)`. Deux locataires
   utilisant le même `document_id` sont donc refusés à l'enregistrement, faute
   de quoi la politique de l'un remplacerait celle de l'autre.
-- Le verrou `flock` sérialise les accès au registre partagé sur un hôte et
-  un système de fichiers qui garantit ces verrous ; il ne verrouille PAS la
-  recherche Qdrant ni la réponse en cours de génération.
+- Un second verrou `flock` local bloque les lectures coopérantes pendant
+  registre + remplacement Qdrant, et les imports pendant génération/citation.
+  Ni Qdrant directement, ni les autres hôtes ne sont couverts.
 - Une désynchronisation registre/index se lit en abstention (document inconnu
   = non autorisé), pas en erreur : direction sûre, mais non diagnostique.
 - Ce registre atteste ce qu'un import authentifié a déclaré ; il ne prouve pas
@@ -29,6 +29,7 @@ Limites assumées (ne pas sur-promettre) :
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 import json
 import errno
 import fcntl
@@ -36,6 +37,7 @@ import os
 from pathlib import Path
 import stat
 import threading
+import weakref
 from typing import Any, Iterable, Mapping
 
 from .acl_authority import AclPolicy, CanonicalAclAuthority
@@ -43,6 +45,39 @@ from .ingestion import Document
 from .retrieval import CanonicalAclSearch
 
 _STORE_FILENAME = "canonical_documents.jsonl"
+_TRANSACTION_LOCK_FILENAME = "canonical_transaction.lock"
+_TRANSACTION_LEASES = threading.local()
+_ACTIVE_TRANSACTION_FDS_LOCK = threading.Lock()
+# token -> descriptor for every open file description carrying an flock lease.
+_ACTIVE_TRANSACTION_FDS: dict[int, int] = {}
+_NEXT_LEASE_TOKEN = 0
+_LIVE_REGISTRIES: "weakref.WeakSet[CanonicalDocumentRegistry]" = weakref.WeakSet()
+
+
+def _after_fork_in_child() -> None:
+    # flock locks an open file description, which is inherited across fork.
+    # Even a child forked by a DIFFERENT thread can keep a parent's lease
+    # alive. Close every tracked descriptor, then discard inherited TLS state.
+    for file_fd in _ACTIVE_TRANSACTION_FDS.values():
+        try:
+            os.close(file_fd)
+        except OSError:
+            pass
+    _ACTIVE_TRANSACTION_FDS.clear()
+    _TRANSACTION_LEASES.held = {}
+    # Only the forking thread survives in the child, so a mutex another
+    # thread held is inherited locked and would deadlock the child forever.
+    # The state it guarded is re-verified from the file under flock anyway.
+    for registry in _LIVE_REGISTRIES:
+        registry._lock = threading.Lock()
+    _ACTIVE_TRANSACTION_FDS_LOCK.release()
+
+
+os.register_at_fork(
+    before=_ACTIVE_TRANSACTION_FDS_LOCK.acquire,
+    after_in_parent=_ACTIVE_TRANSACTION_FDS_LOCK.release,
+    after_in_child=_after_fork_in_child,
+)
 
 _TEXT_FIELDS = (
     "document_id",
@@ -90,7 +125,9 @@ def _open_private_dir(path: Path) -> int:
         raise
 
 
-def _open_private_file(dir_fd: int, *, write: bool, create: bool = True) -> int:
+def _open_private_file(
+    dir_fd: int, *, write: bool, create: bool = True, name: str = _STORE_FILENAME
+) -> int:
     """Créer en 0600 même avec umask 022, ou refuser un fichier déjà exposé.
 
     La validation par fstat précède TOUTE lecture/écriture ; une vieille
@@ -103,7 +140,7 @@ def _open_private_file(dir_fd: int, *, write: bool, create: bool = True) -> int:
         if write else os.O_RDONLY
     )
     try:
-        fd = os.open(_STORE_FILENAME, flags, 0o600, dir_fd=dir_fd)
+        fd = os.open(name, flags, 0o600, dir_fd=dir_fd)
     except OSError as exc:
         if exc.errno in (errno.ELOOP, errno.ENOTDIR):
             raise ValueError("canonical store file must not be a symlink") from exc
@@ -118,6 +155,36 @@ def _open_private_file(dir_fd: int, *, write: bool, create: bool = True) -> int:
     except BaseException:
         os.close(fd)
         raise
+
+
+def _open_tracked_private_file(
+    dir_fd: int, *, write: bool, create: bool = True, name: str = _STORE_FILENAME
+) -> tuple[int, int]:
+    """Open a lease-carrying file and track it against `fork`.
+
+    Returns the descriptor plus a unique token. Both the transaction lock and
+    the registry JSONL hold `flock` leases that a child would inherit, so the
+    registration must be indivisible with `register_at_fork(before=...)`.
+    The token is what identifies this open: after a child closes the inherited
+    descriptors, the numeric fd can be reused by a NEW open in that child, and
+    unwinding the inherited context must not close that unrelated descriptor.
+    """
+    with _ACTIVE_TRANSACTION_FDS_LOCK:
+        file_fd = _open_private_file(dir_fd, write=write, create=create, name=name)
+        global _NEXT_LEASE_TOKEN
+        token = _NEXT_LEASE_TOKEN
+        _NEXT_LEASE_TOKEN += 1
+        _ACTIVE_TRANSACTION_FDS[token] = file_fd
+        return file_fd, token
+
+
+def _close_tracked_private_file(token: int) -> None:
+    with _ACTIVE_TRANSACTION_FDS_LOCK:
+        file_fd = _ACTIVE_TRANSACTION_FDS.pop(token, None)
+        if file_fd is None:
+            # Already closed by the at-fork handler in this child process.
+            return
+        os.close(file_fd)
 
 
 def _check_exact_str(value: object, field: str) -> str:
@@ -273,6 +340,10 @@ class CanonicalDocumentRegistry:
         self._documents: dict[str, Document] = {}
         self._signature: tuple[int, int, int, int, int] | None = None
         self._authority = _LiveCanonicalAclAuthority(self)
+        with _ACTIVE_TRANSACTION_FDS_LOCK:
+            # Registered under the fork `before` lock: a child must never see
+            # a half-built registry whose mutex it cannot reset.
+            _LIVE_REGISTRIES.add(self)
         self._load()
 
     @property
@@ -283,12 +354,68 @@ class CanonicalDocumentRegistry:
     def authority(self) -> CanonicalAclAuthority:
         return self._authority
 
+    @contextmanager
+    def _transaction_guard(self, *, write: bool):
+        """Single-host lease: readers include generation, writers include Qdrant.
+
+        Cooperating processes must share this store directory and lock inode.
+        Reentrant calls in the same thread reuse the lease across instances
+        sharing the lock inode; a writer cannot upgrade a read lease.
+        """
+        try:
+            dir_fd = _open_private_dir(self._store_dir)
+            try:
+                file_fd, lease_token = _open_tracked_private_file(
+                    dir_fd, write=True, name=_TRANSACTION_LOCK_FILENAME
+                )
+            finally:
+                os.close(dir_fd)
+        except (OSError, ValueError):
+            raise CanonicalStoreError("canonical transaction lock unavailable") from None
+        try:
+            lock_stat = os.fstat(file_fd)
+            identity = (lock_stat.st_dev, lock_stat.st_ino)
+            leases = getattr(_TRANSACTION_LEASES, "held", None)
+            if leases is None:
+                leases = {}
+                _TRANSACTION_LEASES.held = leases
+            held = leases.get(identity)
+            if held is not None:
+                # Defense in depth, expected unreachable: the at-fork handler
+                # already clears inherited thread-local lease state, so a
+                # child never reads a lease recorded by its parent. Keep the
+                # check in case a future path reaches here without that reset;
+                # it is not pinned by a test (removing it changes no output).
+                if held[1] != os.getpid():
+                    raise CanonicalStoreError("canonical lease inherited across fork")
+                if write and held[0] != "write":
+                    raise CanonicalStoreError("cannot write during a canonical read")
+                yield
+                return
+            try:
+                fcntl.flock(file_fd, fcntl.LOCK_EX if write else fcntl.LOCK_SH)
+            except OSError:
+                raise CanonicalStoreError("canonical transaction lock unavailable") from None
+            leases[identity] = ("write" if write else "read", os.getpid())
+            try:
+                yield
+            finally:
+                del leases[identity]
+        finally:
+            _close_tracked_private_file(lease_token)
+
+    def read_guard(self):
+        return self._transaction_guard(write=False)
+
+    def write_guard(self):
+        return self._transaction_guard(write=True)
+
     def _load(self) -> None:
         try:
             dir_fd = _open_private_dir(self._store_dir)
             try:
                 try:
-                    file_fd = _open_private_file(dir_fd, write=False)
+                    file_fd, lease_token = _open_tracked_private_file(dir_fd, write=False)
                 except FileNotFoundError:
                     if self._documents:
                         raise CanonicalStoreError("canonical store file disappeared")
@@ -301,7 +428,7 @@ class CanonicalDocumentRegistry:
                         self._documents = fresh
                         self._signature = signature
                 finally:
-                    os.close(file_fd)
+                    _close_tracked_private_file(lease_token)
             finally:
                 os.close(dir_fd)
         except (OSError, ValueError, UnicodeError):
@@ -326,7 +453,7 @@ class CanonicalDocumentRegistry:
     def _read_documents(self, file_fd: int) -> dict[str, Document]:
         # Relire depuis le descripteur vérifié, sans publier de demi-rejeu si
         # une ligne est corrompue ou si un invariant de version est violé.
-        with os.fdopen(os.dup(file_fd), "rb") as handle:
+        with os.fdopen(file_fd, "rb", closefd=False) as handle:
             handle.seek(0)
             payload = handle.read().decode("utf-8")
         documents: dict[str, Document] = {}
@@ -392,6 +519,10 @@ class CanonicalDocumentRegistry:
             return dict(self._documents)
 
     def register(self, document: Any) -> Document:
+        with self.write_guard():
+            return self._register_in_transaction(document)
+
+    def _register_in_transaction(self, document: Any) -> Document:
         """Enregistrer la révision canonique AVANT toute écriture d'index.
 
         Échoue fermé : rien n'est publié en mémoire avant que la ligne ne soit
@@ -416,7 +547,7 @@ class CanonicalDocumentRegistry:
                 raise CanonicalStoreError("canonical store unavailable") from None
             try:
                 try:
-                    file_fd = _open_private_file(
+                    file_fd, lease_token = _open_tracked_private_file(
                         dir_fd, write=True, create=not bool(self._documents)
                     )
                 except (OSError, ValueError):
@@ -428,7 +559,7 @@ class CanonicalDocumentRegistry:
                     fresh = self._fresh_verified(file_fd)
                     self._documents = fresh
                     self._check_against_previous(validated)
-                    with os.fdopen(os.dup(file_fd), "ab") as handle:
+                    with os.fdopen(file_fd, "ab", closefd=False) as handle:
                         handle.write(line.encode("ascii") + b"\n")
                         handle.flush()
                         os.fsync(handle.fileno())
@@ -436,7 +567,7 @@ class CanonicalDocumentRegistry:
                     self._documents = {**fresh, validated.document_id: validated}
                     self._signature = _file_identity(file_fd)
                 finally:
-                    os.close(file_fd)
+                    _close_tracked_private_file(lease_token)
             finally:
                 os.close(dir_fd)
         return validated
@@ -462,8 +593,9 @@ class CanonicalWriteThrough:
         if not materialized:
             # Une révision vide n'est PAS une demande de suppression.
             raise ValueError("a replacement must carry at least one passage")
-        self._registry.register(document)
-        return self._repository.replace_document(document, materialized)
+        with self._registry.write_guard():
+            self._registry.register(document)
+            return self._repository.replace_document(document, materialized)
 
     def search(self, query: str, *, context: Any, limit: int = 10) -> Any:
         return self._repository.search(query, context=context, limit=limit)
@@ -492,4 +624,5 @@ def wrap_repository_with_canonical_barrier(
         minimum_score=minimum_score,
         source=registry.source,
         chunker=chunker,
+        read_guard=registry.read_guard,
     )

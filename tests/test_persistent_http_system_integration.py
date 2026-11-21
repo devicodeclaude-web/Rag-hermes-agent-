@@ -1,21 +1,28 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 import json
 import hashlib
 import os
 from pathlib import Path
 import tempfile
+import threading
 import unittest
 import uuid
 
+from rag_hermes.acl import AuthorizationContext
 from rag_hermes.app_factory import build_service
-from rag_hermes.canonical_registry import CanonicalDocumentRegistry
+from rag_hermes.canonical_registry import (
+    CanonicalDocumentRegistry, wrap_repository_with_canonical_barrier,
+)
 from rag_hermes.ingestion import Document, chunk_document
+from rag_hermes.qdrant_repository import QdrantChunkRepository
 from rag_hermes.qdrant_store import chunk_to_point
 from rag_hermes.http_api import make_app
 from rag_hermes.qdrant_provision import provision_collection
 from rag_hermes.qdrant_identity import mint_collection_token
 from rag_hermes.qdrant_rest import QdrantRestClient
+from rag_hermes.service import RagService
 from tests.test_http_api import (
     ALPHA_ALICE_TOKEN,
     ALPHA_BOB_TOKEN,
@@ -100,6 +107,76 @@ class PersistentHttpSystemIntegrationTests(unittest.TestCase):
             build_service(env=self.env, embed=_fixed_vector, tokenizer=_FixtureTokenizer()),
             authenticator=SHARED_AUTHENTICATOR,
         )
+
+    def test_read_waits_through_real_qdrant_upsert_then_delete(self) -> None:
+        """CI Qdrant: a cooperating reader cannot observe the upsert/delete gap."""
+        entered, release, reading_started, queried = (threading.Event() for _ in range(4))
+
+        class InstrumentedClient:
+            def __init__(self, base, *, pause_delete=False, probe_query=False):
+                self.base = base
+                self.pause_delete = pause_delete
+                self.probe_query = probe_query
+
+            def __getattr__(self, name):
+                return getattr(self.base, name)
+
+            def delete_points(self, *args, **kwargs):
+                if self.pause_delete:
+                    entered.set()
+                    if not release.wait(10):
+                        raise TimeoutError("test writer not released")
+                return self.base.delete_points(*args, **kwargs)
+
+            def query(self, *args, **kwargs):
+                if self.probe_query:
+                    queried.set()
+                return self.base.query(*args, **kwargs)
+
+        def service(client):
+            repository = QdrantChunkRepository(
+                client, collection=self.collection, embed=_fixed_vector, vector_size=4,
+            )
+            registry = CanonicalDocumentRegistry(self.store_dir)
+            return RagService(repository=wrap_repository_with_canonical_barrier(
+                repository, registry, minimum_score=0.2,
+            ))
+
+        owner = AuthorizationContext("alpha", "alice", (), 1)
+        old = Document(
+            document_id="two-part-guide", content="ancien " * 500,
+            tenant_id="alpha", visibility="private", owner_id="alice",
+            allowed_groups=(), allowed_users=(), classification=1,
+            doc_version=1, source_uri="file:///docs/two-part-guide.md", acl_version=1,
+        )
+        new = Document(
+            document_id="two-part-guide", content="nouveau " * 100,
+            tenant_id="alpha", visibility="private", owner_id="alice",
+            allowed_groups=(), allowed_users=(), classification=1,
+            doc_version=2, source_uri="file:///docs/two-part-guide.md", acl_version=2,
+        )
+        writer = service(InstrumentedClient(self.client, pause_delete=True))
+        reader = service(InstrumentedClient(self.client, probe_query=True))
+        self.assertEqual(writer.import_document(old, context=owner).chunk_count, 2)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            writing = pool.submit(writer.import_document, new, context=owner)
+            self.assertTrue(entered.wait(10), "real Qdrant delete was not reached")
+            def read():
+                reading_started.set()
+                return reader.answer_with_trace("nouveau", context=owner)
+
+            reading = pool.submit(read)
+            try:
+                self.assertTrue(reading_started.wait(5))
+                self.assertFalse(queried.wait(0.2), "Qdrant queried mid-replacement")
+            finally:
+                release.set()
+            writing.result(timeout=15)
+            trace = reading.result(timeout=15)
+        self.assertTrue(queried.is_set())
+        self.assertFalse(trace.response.abstained)
+        self.assertEqual(trace.cited_chunks[0].doc_version, 2)
+        self.assertEqual(trace.response.citations[0].document_id, "two-part-guide")
 
     def test_import_survives_service_restart_and_returns_citation(self) -> None:
         first_app = self._new_app()

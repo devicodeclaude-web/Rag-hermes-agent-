@@ -146,6 +146,17 @@ class RagService:
         context: AuthorizationContext,
     ) -> AnswerTrace:
         """Answer through the normal path and expose evidence for evaluation."""
+        if isinstance(self._repository, CanonicalAclSearch):
+            # Hold the same local shared lease across retrieval, reranking and
+            # generation. The write-through takes its exclusive counterpart
+            # across canonical publication AND Qdrant replacement.
+            with self._repository.read_guard():
+                return self._answer_with_trace_in_guard(question, context=context)
+        return self._answer_with_trace_in_guard(question, context=context)
+
+    def _answer_with_trace_in_guard(
+        self, question: str, *, context: AuthorizationContext
+    ) -> AnswerTrace:
         results = self._search(question, context=context)
         if not results or not any(
             result.effective_threshold_score >= self._minimum_score

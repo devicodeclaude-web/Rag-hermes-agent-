@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from collections import Counter
+from contextlib import nullcontext
 from dataclasses import dataclass, fields
 import hashlib
 import math
 import re
-from typing import Any, Callable, Iterable
+from typing import Any, Callable, ContextManager, Iterable
 
 from .acl import AuthorizationContext, Chunk, filter_authorized
 from .acl_authority import CanonicalAclAuthority
@@ -41,6 +42,7 @@ class CanonicalAclSearch:
         minimum_score: float = 0.2,
         source: Callable[[str], Document | None] | None = None,
         chunker: Callable[[Document], list[Chunk]] | None = None,
+        read_guard: Callable[[], ContextManager[None]] | None = None,
     ) -> None:
         if not 0.0 < minimum_score <= 1.0:
             raise ValueError("minimum_score must be between 0 and 1")
@@ -48,12 +50,22 @@ class CanonicalAclSearch:
         self._authority = authority
         self._source = source
         self._chunker = chunker
+        self._read_guard = read_guard or nullcontext
         self.minimum_score = minimum_score
+
+    def read_guard(self) -> ContextManager[None]:
+        return self._read_guard()
 
     def replace_document(self, document: Any, chunks: Iterable[Chunk]) -> Any:
         return self._ranked_search.replace_document(document, chunks)
 
     def search(
+        self, query: str, *, context: AuthorizationContext, limit: int = 10
+    ) -> list[SearchResult]:
+        with self.read_guard():
+            return self._search_in_guard(query, context=context, limit=limit)
+
+    def _search_in_guard(
         self, query: str, *, context: AuthorizationContext, limit: int = 10
     ) -> list[SearchResult]:
         if not isinstance(context, AuthorizationContext):
