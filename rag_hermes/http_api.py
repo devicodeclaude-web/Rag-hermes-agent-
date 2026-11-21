@@ -11,6 +11,7 @@ from .generator import GenerationError
 from .ingestion import Document
 from .qdrant_write_lock import DocumentWriteLockTimeout
 from .reranker_budget import RerankerBudgetExceeded
+from .retrieval import CanonicalAclError
 from .service import RagService
 from .web_ui import APP_JS, INDEX_HTML
 
@@ -243,6 +244,15 @@ def make_app(service: RagService, *, authenticator):
                 start_response,
                 "502 Bad Gateway",
                 {"error": "generation_failed"},
+            )
+        except CanonicalAclError:
+            # This is a stale/corrupt index or inconsistent canonical proof,
+            # not a denied principal. It subclasses PermissionError, so this
+            # branch must precede the ordinary 403 authorization handler.
+            return _json_response(
+                start_response,
+                "503 Service Unavailable",
+                {"error": "canonical_index_unavailable"},
             )
         except PermissionError:
             return _json_response(

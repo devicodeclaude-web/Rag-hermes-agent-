@@ -2,14 +2,19 @@ from __future__ import annotations
 
 from io import BytesIO
 import json
+from pathlib import Path
+import tempfile
 from typing import Any
 import unittest
 
 from rag_hermes.acl import AuthorizationContext
 from rag_hermes.auth import TokenAuthenticator
+from rag_hermes.canonical_registry import CanonicalDocumentRegistry
 from rag_hermes.http_api import make_app
 from rag_hermes.generator import GenerationError, OpenAICompatibleGenerator
+from rag_hermes.ingestion import Document
 from rag_hermes.reranker_budget import RerankerBudgetExceeded
+from rag_hermes.retrieval import CanonicalAclError
 from rag_hermes.service import RagService
 
 
@@ -219,6 +224,43 @@ class HttpApiTests(unittest.TestCase):
         self.assertEqual(status, "503 Service Unavailable")
         self.assertEqual(response, {"error": "document_write_busy"})
         self.assertEqual(headers.get("Retry-After"), "1")
+
+    def test_canonical_store_read_failure_is_server_error_not_client_400(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            registry = CanonicalDocumentRegistry(Path(directory))
+            registry.register(Document(
+                document_id="guide", content="Confidentiel", tenant_id="alpha",
+                visibility="private", owner_id="alice", allowed_groups=(),
+                allowed_users=(), classification=1, doc_version=1,
+                source_uri="local://guide",
+            ))
+
+            class StoreService(RagService):
+                def answer(self, question, *, context):
+                    registry.source("guide")
+                    raise AssertionError("unreachable after store corruption")
+
+            registry.path.chmod(0o644)
+            status, headers, response = request(
+                make_app(StoreService(), authenticator=SHARED_AUTHENTICATOR),
+                "POST", "/api/questions", {"question": "Hermes ?"},
+            )
+            self.assertEqual(status, "500 Internal Server Error")
+            self.assertEqual(response, {"error": "internal_error"})
+            self.assertEqual(headers.get("X-Content-Type-Options"), "nosniff")
+
+    def test_stale_canonical_index_is_server_error_not_false_403(self) -> None:
+        class StaleIndexService(RagService):
+            def answer(self, question, *, context):
+                raise CanonicalAclError("stale ACL index has no usable candidates")
+
+        status, headers, response = request(
+            make_app(StaleIndexService(), authenticator=SHARED_AUTHENTICATOR),
+            "POST", "/api/questions", {"question": "Hermes ?"},
+        )
+        self.assertEqual(status, "503 Service Unavailable")
+        self.assertEqual(response, {"error": "canonical_index_unavailable"})
+        self.assertEqual(headers.get("X-Content-Type-Options"), "nosniff")
 
     def test_generator_failure_returns_bad_gateway_not_abstention(self) -> None:
         def fail_generator(question, evidence):
