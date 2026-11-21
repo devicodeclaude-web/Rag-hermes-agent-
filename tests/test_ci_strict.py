@@ -230,3 +230,97 @@ class AuditLockCompletenessTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SecretScanHistoryDepthTests(unittest.TestCase):
+    """Le scan de secrets prétend couvrir l'historique : il doit le couvrir.
+
+    `actions/checkout` sans `fetch-depth` ne récupère QU'UN commit, donc
+    `gitleaks git` ne scannait qu'un commit tout en étant présenté comme un
+    contrôle historique. Ces tests verrouillent la profondeur et le mode.
+    """
+
+    ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    def _workflow(self) -> dict:
+        import yaml
+        with open(StrictCiWorkflowCoverageTests.WORKFLOW, encoding="utf-8") as handle:
+            return yaml.safe_load(handle)
+
+    def test_checkout_fetches_the_whole_history(self):
+        steps = self._workflow()["jobs"]["lock-install"]["steps"]
+        checkouts = [
+            step for step in steps
+            if isinstance(step.get("uses"), str)
+            and step["uses"].startswith("actions/checkout@")
+        ]
+        self.assertEqual(len(checkouts), 1)
+        self.assertEqual(checkouts[0].get("with", {}).get("fetch-depth"), 0)
+
+    def test_the_scanner_reads_git_history_not_just_the_working_tree(self):
+        with open(
+            os.path.join(self.ROOT, "scripts", "run_ci_strict.py"), encoding="utf-8"
+        ) as handle:
+            source = handle.read()
+        self.assertIn('binary, "git"', source)
+        self.assertNotIn('binary, "dir"', source)
+
+    def test_allowlist_stays_an_exact_match_list_without_path_exclusions(self):
+        import tomllib
+        with open(os.path.join(self.ROOT, ".gitleaks.toml"), "rb") as handle:
+            config = tomllib.load(handle)
+        allowlists = config["allowlists"]
+        self.assertTrue(allowlists)
+        for entry in allowlists:
+            self.assertEqual(entry.get("regexTarget"), "match")
+            self.assertNotIn("paths", entry)
+            self.assertNotIn("commits", entry)
+            self.assertTrue(entry.get("regexes"))
+            self.assertTrue(entry.get("description", "").strip())
+
+
+class SecretScanEvidenceTests(unittest.TestCase):
+    """La portée du scan doit être PROUVÉE par l'artefact, pas supposée.
+
+    Sur succès, la sortie de gitleaks était capturée puis jetée : rien dans la
+    preuve CI ne distinguait « 266 commits scannés » de « 1 commit scanné ».
+    Et sur échec, les résultats bruts étaient recopiés dans le journal, ce qui
+    y aurait écrit le secret trouvé.
+    """
+
+    class _Completed:
+        def __init__(self, returncode=0):
+            self.returncode = returncode
+            self.stdout = ""
+            self.stderr = "INF 266 commits scanned.\nINF no leaks found\n"
+
+    def _run(self, returncode=0):
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with (
+            patch.object(run_ci_strict.shutil, "which", return_value="/usr/bin/gitleaks"),
+            patch.dict(run_ci_strict.os.environ, {}, clear=True),
+            patch.object(
+                run_ci_strict.subprocess, "run",
+                return_value=self._Completed(returncode),
+            ) as runner,
+            patch.object(run_ci_strict.sys, "stdout", stdout),
+            patch.object(run_ci_strict.sys, "stderr", stderr),
+        ):
+            code = run_ci_strict.run_gitleaks()
+        return code, stdout.getvalue(), stderr.getvalue(), runner
+
+    def test_the_scanned_commit_count_is_recorded_on_success(self):
+        code, out, _, _ = self._run()
+        self.assertEqual(code, 0)
+        self.assertIn("266 commits scanned", out)
+
+    def test_findings_are_redacted_so_a_leak_never_reaches_the_log(self):
+        _, _, _, runner = self._run()
+        command = runner.call_args[0][0]
+        self.assertIn("--redact", command)
+
+    def test_a_failure_reports_the_summary_without_dumping_raw_findings(self):
+        code, _, err, _ = self._run(returncode=1)
+        self.assertNotEqual(code, 0)
+        self.assertIn("ECHEC CI", err)
+        self.assertIn("266 commits scanned", err)

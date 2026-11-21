@@ -13,6 +13,11 @@ Valeurs publiques ou factices exactes uniquement :
 1. Revision et SHA-256 publics du tokenizer HuggingFace bge-reranker-v2-m3.
 2. Fixtures volontaires du scanner de secrets interne.
 3. Identifiants d'exemple reproduits depuis la documentation publique Hermes.
+4. Faux positif de la regle generic-api-key sur un APPEL DE FONCTION Python,
+   dans un fichier supprime depuis mais conserve par l'historique git
+   (scripts/step1_retrieval_ablation.py, commit bd7b2b4f) : la regle lit
+   `max_length=max_pair_tokens, normalize=True` comme une paire cle/valeur.
+   Ce n'est pas un secret, c'est le passage du budget de tokens au reranker.
 Aucun chemin entier n'est exclu et aucune condition AND dependante du mode de scan
 n'est utilisee.
 """
@@ -23,4 +28,5 @@ regexes = [
   '''supersecretvalue123''',
   '''change-me-local-dev''',
   '''(?:3uo8dkh1p7g1mfk49ear5fzs5c|abc123def456ghi789jkl012mn|123456789012345678|284102345871466496|111222333444555666)''',
+  '''max_pair_tokens, normalize=True''',
 ]
