@@ -195,8 +195,10 @@ class PersistentHttpSystemIntegrationTests(unittest.TestCase):
             self._new_app(), "POST", "/api/questions",
             {"question": "ancien"}, token=ALPHA_ALICE_TOKEN,
         )
-        self.assertEqual(status, "403 Forbidden")
-        self.assertEqual(body["error"], "forbidden")
+        # An obsolete index point is a server-side proof failure, not a
+        # refusal of Alice's authorization. It still must never be cited.
+        self.assertEqual(status, "503 Service Unavailable")
+        self.assertEqual(body["error"], "canonical_index_unavailable")
         self.assertNotIn("citations", body)
 
     def test_restart_does_not_allow_another_user_to_hijack_document_owner(self) -> None:
