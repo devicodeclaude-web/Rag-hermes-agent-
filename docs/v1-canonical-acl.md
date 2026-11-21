@@ -125,13 +125,39 @@ révocation valable.
 - **Déni de service après révocation sans réindexation.** Tant que l'index
   porte l'ancien payload, le passage n'est plus servi à personne. C'est le prix
   du fail-closed ; la réindexation du document rétablit le service.
-- **Verrou intra-processus seulement** (`threading.Lock`) : deux serveurs V1
-  écrivant dans le même répertoire ne sont pas sérialisés.
+- **Registre partagé local** : les lectures contrôlent le fichier sous `flock`
+  partagé et rejouent les lignes si l'identité du fichier a changé
+  (`st_dev`, inode, taille, mtime et ctime en nanosecondes) ; les écritures
+  rejouent toujours le fichier sous `flock` exclusif avant le contrôle monotone.
+  Deux processus partageant le même inode sur un
+  système de fichiers qui respecte `flock` ne peuvent plus rejouer une ancienne
+  ACL à partir d'un cache obsolète ; un lecteur déjà démarré voit une révocation
+  au prochain accès. Une disparition, troncature ou restauration d'une révision
+  antérieure à celles déjà vues est refusée, sans créer de nouveau fichier.
+  La relecture après changement reste proportionnelle à tout l'historique ;
+  le contrôle de métadonnées n'est pas une preuve cryptographique contre une
+  modification hostile qui reproduirait la même signature. Un processus qui
+  démarre sur une ancienne sauvegarde n'a pas de repère indépendant pour la
+  rejeter. Ce n'est pas un registre distribué scalable.
+  Un montage réseau sans garantie de verrouillage équivalente est hors champ.
+- **SEC-02 demeure ouvert** : le verrou du registre ne couvre ni Qdrant ni la
+  génération ni la publication atomique de la révision active. Un lecteur
+  déjà en cours de réponse peut avoir capturé un passage avant une révocation ;
+  l'upsert et la suppression restent deux opérations observables séparément.
+  Plusieurs lectures `policy_for`/`authorize`/`source` dans une requête ne
+  forment pas un instantané atomique : si le registre évolue entre elles, la
+  barrière peut refuser une réponse avec une erreur d'index (`503`), sans citer
+  un passage obsolète. Une solution de snapshot transactionnel reste à définir.
+- **Reprise après crash** : une dernière ligne incomplète fait échouer les
+  lectures et le démarrage. Ne jamais la tronquer automatiquement ni restaurer
+  une sauvegarde sans vérifier hors ligne la dernière version connue de chaque
+  document auprès d'une ancre indépendante. Arrêter le service, préserver le
+  fichier original pour l'enquête et rétablir l'intégrité avant redémarrage.
 - **Le registre atteste ce qu'un import authentifié a déclaré** ; il ne prouve
   pas l'origine des octets du document. L'identité du principal vient de
   `rag_hermes/auth.py` (`tenant_id`/`owner_id` forcés depuis le jeton).
-- Ce lot ne traite ni SEC-02 (remplacement non atomique), ni SEC-03 (transport
-  Qdrant). Le chemin V1 Qdrant exige désormais un profil de tokenizer épinglé
+- Ce lot ne clôt ni SEC-02 (remplacement non atomique), ni les limites de SEC-03
+  (privilèges Qdrant). Le chemin V1 Qdrant exige un profil de tokenizer épinglé
   (lot ARCH-01) ; le mode mémoire reste découpé en mots. Le registre enregistre
   le **document**, pas les chunks : il est donc insensible au chunker utilisé.
   Les candidats renvoyés par Qdrant sont comparés aux passages régénérés depuis

@@ -8,16 +8,21 @@ lecture. Aucun Qdrant, aucun modèle, aucun GPU.
 from __future__ import annotations
 
 from dataclasses import replace
+from concurrent.futures import ThreadPoolExecutor
 import json
+import multiprocessing
 import os
 from pathlib import Path
 import stat
 import tempfile
+import threading
 import unittest
+from unittest.mock import patch
 
 from rag_hermes.acl import AuthorizationContext
 from rag_hermes.canonical_registry import (
     CanonicalDocumentRegistry,
+    CanonicalStoreError,
     CanonicalWriteThrough,
     wrap_repository_with_canonical_barrier,
 )
@@ -51,6 +56,12 @@ def document(
         doc_version=doc_version,
         source_uri=f"file:///docs/{document_id}.md",
         acl_version=acl_version,
+    )
+
+
+def _revoke_in_another_process(store: Path) -> None:
+    CanonicalDocumentRegistry(store).register(
+        document(allowed_users=(), acl_version=2)
     )
 
 
@@ -123,7 +134,7 @@ class RegistryStoreTests(unittest.TestCase):
         path = self.store / "canonical_documents.jsonl"
         path.write_text("unchanged\n", encoding="utf-8")
         path.chmod(0o644)
-        with self.assertRaisesRegex(ValueError, "canonical store file.*permissions"):
+        with self.assertRaises(CanonicalStoreError):
             CanonicalDocumentRegistry(self.store)
         self.assertEqual(path.read_text(encoding="utf-8"), "unchanged\n")
         self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o644)
@@ -134,15 +145,17 @@ class RegistryStoreTests(unittest.TestCase):
         path = self.store / "canonical_documents.jsonl"
         original = path.read_bytes()
         path.chmod(0o644)
-        with self.assertRaisesRegex(ValueError, "canonical store file.*permissions"):
+        with self.assertRaises(CanonicalStoreError):
             registry.register(document(doc_version=2))
         self.assertEqual(path.read_bytes(), original)
-        self.assertEqual(registry.source("doc-1"), document())
+        # Après exposition du fichier, la lecture ne doit pas servir un cache.
+        with self.assertRaises(CanonicalStoreError):
+            registry.source("doc-1")
 
     def test_directory_permissions_changed_after_startup_refuse_append(self) -> None:
         registry = CanonicalDocumentRegistry(self.store)
         self.store.chmod(0o755)
-        with self.assertRaisesRegex(ValueError, "canonical store directory.*permissions"):
+        with self.assertRaises(CanonicalStoreError):
             registry.register(document())
         self.assertFalse((self.store / "canonical_documents.jsonl").exists())
 
@@ -151,7 +164,7 @@ class RegistryStoreTests(unittest.TestCase):
         target.write_bytes(b"secret\n")
         target.chmod(0o600)
         (self.store / "canonical_documents.jsonl").symlink_to(target)
-        with self.assertRaises(ValueError):
+        with self.assertRaises(CanonicalStoreError):
             CanonicalDocumentRegistry(self.store)
         self.assertEqual(target.read_bytes(), b"secret\n")
 
@@ -161,10 +174,11 @@ class RegistryStoreTests(unittest.TestCase):
         target.write_bytes(b"unchanged\n")
         target.chmod(0o600)
         (self.store / "canonical_documents.jsonl").symlink_to(target)
-        with self.assertRaisesRegex(ValueError, "symlink"):
+        with self.assertRaises(CanonicalStoreError):
             registry.register(document())
         self.assertEqual(target.read_bytes(), b"unchanged\n")
-        self.assertIsNone(registry.source("doc-1"))
+        with self.assertRaises(CanonicalStoreError):
+            registry.source("doc-1")
 
     def test_store_directory_symlink_is_refused(self) -> None:
         link = self.store.parent / (self.store.name + "-link")
@@ -332,6 +346,129 @@ class RegistryStoreTests(unittest.TestCase):
         self.assertEqual(policy.allowed_users, ())
         self.assertEqual(CanonicalDocumentRegistry(self.store).authority.policy_for("doc-1"), policy)
 
+    def test_second_registry_cannot_replay_acl_after_first_revokes(self) -> None:
+        first = CanonicalDocumentRegistry(self.store)
+        first.register(document(allowed_users=("bob",), acl_version=1))
+        second = CanonicalDocumentRegistry(self.store)
+        first.register(document(allowed_users=(), acl_version=2))
+        before = first.path.read_bytes()
+
+        with self.assertRaisesRegex(ValueError, "acl_version"):
+            second.register(document(allowed_users=("bob",), acl_version=2))
+
+        self.assertEqual(first.path.read_bytes(), before)
+        stored = CanonicalDocumentRegistry(self.store).source("doc-1")
+        assert stored is not None
+        self.assertEqual(stored.allowed_users, ())
+
+    def test_second_registry_reads_revoked_policy_without_restart(self) -> None:
+        writer = CanonicalDocumentRegistry(self.store)
+        writer.register(document(allowed_users=("bob",), acl_version=1))
+        reader = CanonicalDocumentRegistry(self.store)
+        writer.register(document(allowed_users=(), acl_version=2))
+
+        policy = reader.authority.policy_for("doc-1")
+        assert policy is not None
+        self.assertEqual(policy.acl_version, 2)
+        self.assertEqual(policy.allowed_users, ())
+        self.assertEqual(reader.source("doc-1"), writer.source("doc-1"))
+
+    def test_other_process_revocation_blocks_replay_and_refreshes_reader(self) -> None:
+        reader = CanonicalDocumentRegistry(self.store)
+        reader.register(document(allowed_users=("bob",), acl_version=1))
+        process = multiprocessing.get_context("spawn").Process(
+            target=_revoke_in_another_process, args=(self.store,)
+        )
+        process.start()
+        process.join(10)
+        if process.is_alive():
+            process.terminate()
+            process.join(5)
+        self.assertEqual(process.exitcode, 0)
+        with self.assertRaisesRegex(ValueError, "acl_version"):
+            reader.register(document(allowed_users=("bob",), acl_version=2))
+        current = reader.source("doc-1")
+        assert current is not None
+        self.assertEqual((current.acl_version, current.allowed_users), (2, ()))
+
+    def test_simultaneous_writers_only_one_acl_revision_wins(self) -> None:
+        seed = CanonicalDocumentRegistry(self.store)
+        seed.register(document(acl_version=1))
+        registries = [CanonicalDocumentRegistry(self.store) for _ in range(6)]
+        barrier = threading.Barrier(len(registries))
+
+        def write(index: int) -> bool:
+            barrier.wait(timeout=10)
+            try:
+                registries[index].register(document(
+                    allowed_users=(f"reader-{index}",), acl_version=2,
+                ))
+                return True
+            except ValueError:
+                return False
+
+        with ThreadPoolExecutor(max_workers=len(registries)) as pool:
+            accepted = list(pool.map(write, range(len(registries))))
+        self.assertEqual(sum(accepted), 1)
+        stored = CanonicalDocumentRegistry(self.store).source("doc-1")
+        assert stored is not None
+        self.assertEqual(stored.allowed_users, (f"reader-{accepted.index(True)}",))
+
+    def test_unchanged_history_is_not_reparsed_for_each_policy_lookup(self) -> None:
+        registry = CanonicalDocumentRegistry(self.store)
+        registry.register(document())
+        with patch.object(registry, "_read_documents", wraps=registry._read_documents) as read:
+            for _ in range(3):
+                self.assertIsNotNone(registry.authority.policy_for("doc-1"))
+                self.assertIsNotNone(registry.source("doc-1"))
+            self.assertEqual(read.call_count, 0)
+
+    def test_truncated_history_cannot_restore_a_revoked_acl(self) -> None:
+        registry = CanonicalDocumentRegistry(self.store)
+        old = document(allowed_users=("bob",), acl_version=1)
+        registry.register(old)
+        registry.register(document(allowed_users=(), acl_version=2))
+        registry.path.write_bytes(b"")
+        with self.assertRaises(RuntimeError):
+            registry.source("doc-1")
+        with self.assertRaises(RuntimeError):
+            registry.register(old)
+        self.assertEqual(registry.path.read_bytes(), b"")
+
+    def test_restored_old_history_cannot_restore_a_revoked_acl(self) -> None:
+        registry = CanonicalDocumentRegistry(self.store)
+        old = document(allowed_users=("bob",), acl_version=1)
+        registry.register(old)
+        backup = registry.path.read_bytes()
+        registry.register(document(allowed_users=(), acl_version=2))
+        registry.path.write_bytes(backup)
+        with self.assertRaises(RuntimeError):
+            registry.source("doc-1")
+        with self.assertRaises(RuntimeError):
+            registry.register(old)
+        self.assertEqual(registry.path.read_bytes(), backup)
+
+    def test_deleted_history_is_not_recreated_after_revocation(self) -> None:
+        registry = CanonicalDocumentRegistry(self.store)
+        registry.register(document(allowed_users=("bob",), acl_version=1))
+        registry.register(document(allowed_users=(), acl_version=2))
+        registry.path.unlink()
+        with self.assertRaises(RuntimeError):
+            registry.source("doc-1")
+        with self.assertRaises(RuntimeError):
+            registry.register(document(allowed_users=("bob",), acl_version=1))
+        self.assertFalse(registry.path.exists())
+
+    def test_partial_last_line_fails_closed_until_repaired_offline(self) -> None:
+        registry = CanonicalDocumentRegistry(self.store)
+        registry.register(document())
+        with registry.path.open("ab") as handle:
+            handle.write(b'{"document_id":"incomplete"')
+        with self.assertRaises(CanonicalStoreError):
+            registry.source("doc-1")
+        with self.assertRaises(CanonicalStoreError):
+            registry.register(document(doc_version=2))
+
     def test_content_change_at_equal_doc_version_is_refused(self) -> None:
         registry = CanonicalDocumentRegistry(self.store)
         original = document(content="contenu initial")
@@ -391,7 +528,7 @@ class RegistryStoreTests(unittest.TestCase):
         replay["acl_version"] = 2
         with registry.path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(replay) + "\n")
-        with self.assertRaisesRegex(ValueError, "acl_version"):
+        with self.assertRaises(CanonicalStoreError):
             CanonicalDocumentRegistry(self.store)
 
     def test_tampered_store_file_refuses_startup(self) -> None:
@@ -403,7 +540,7 @@ class RegistryStoreTests(unittest.TestCase):
             record["doc_version"] = 1
             handle.write(json.dumps(record, sort_keys=True) + "\n")
 
-        with self.assertRaisesRegex(ValueError, "doc_version"):
+        with self.assertRaises(CanonicalStoreError):
             CanonicalDocumentRegistry(self.store)
 
     def test_stale_indexed_acl_version_is_reported_as_stale(self) -> None:
