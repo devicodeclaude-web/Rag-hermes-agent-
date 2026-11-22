@@ -421,6 +421,12 @@ class CanonicalDocumentRegistry:
     def _read_anchor(
         self, dir_fd: int
     ) -> tuple[int, str, dict[str, tuple[int, int]]] | None:
+        return self._read_anchor_file(dir_fd)
+
+    @staticmethod
+    def _read_anchor_file(
+        dir_fd: int
+    ) -> tuple[int, str, dict[str, tuple[int, int]]] | None:
         """Lire le repère persisté hors du JSONL, ou `None` s'il n'existe pas.
 
         Le descripteur de répertoire DÉJÀ validé par l'appelant est réutilisé :
@@ -677,8 +683,9 @@ class CanonicalDocumentRegistry:
             if current.doc_version < doc_version or current.acl_version < acl_version:
                 raise CanonicalStoreError("canonical store regressed below its anchor")
 
+    @staticmethod
     def _read_documents(
-        self, file_fd: int, *, digest_at: int = 0
+        file_fd: int, *, digest_at: int = 0
     ) -> tuple[dict[str, Document], int, str | None, Any]:
         # Relire depuis le descripteur vérifié, sans publier de demi-rejeu si
         # une ligne est corrompue ou si un invariant de version est violé.
@@ -694,7 +701,7 @@ class CanonicalDocumentRegistry:
                 continue
             try:
                 document = _document_from_record(json.loads(line))
-                self._check_against_previous(document, documents)
+                CanonicalDocumentRegistry._check_against_previous(document, documents)
             except (ValueError, PermissionError) as exc:
                 # Au démarrage, toute violation d'invariant est un refus de
                 # démarrage : on uniformise en ValueError.
@@ -711,10 +718,11 @@ class CanonicalDocumentRegistry:
                 prefix_digest = running.hexdigest()
         return documents, records, prefix_digest, running
 
+    @staticmethod
     def _check_against_previous(
-        self, document: Document, documents: Mapping[str, Document] | None = None
+        document: Document, documents: Mapping[str, Document]
     ) -> None:
-        previous = (self._documents if documents is None else documents).get(document.document_id)
+        previous = documents.get(document.document_id)
         if previous is None:
             return
         if previous.tenant_id != document.tenant_id:
@@ -802,7 +810,7 @@ class CanonicalDocumentRegistry:
                     fcntl.flock(file_fd, fcntl.LOCK_EX)
                     fresh = self._fresh_verified(file_fd, dir_fd)
                     self._documents = fresh
-                    self._check_against_previous(validated)
+                    self._check_against_previous(validated, fresh)
                     published = {**fresh, validated.document_id: validated}
                     # L'ancre est publiée AVANT l'append : elle ne doit jamais
                     # décrire un état plus ancien que le fichier. Son empreinte
@@ -881,6 +889,73 @@ class CanonicalWriteThrough:
 
     def search(self, query: str, *, context: Any, limit: int = 10) -> Any:
         return self._repository.search(query, context=context, limit=limit)
+
+
+def verify_anchor_recovery_candidate(store_dir: str | Path, candidate: bytes) -> None:
+    """Prouver SANS MUTATION qu'une ligne précise comble une ancre en avance.
+
+    Le contenu manquant ne se déduit PAS de l'ancre : l'opérateur doit fournir
+    les octets exacts. Ne répare ni le registre, ni la cohérence Qdrant.
+    """
+    path = Path(store_dir)
+    if not path.is_absolute() or type(candidate) is not bytes:
+        raise CanonicalStoreError("absolute store path and candidate bytes required")
+    if candidate.count(b"\n") != 1 or not candidate.endswith(b"\n"):
+        raise CanonicalStoreError("candidate must be exactly one canonical JSONL line")
+    try:
+        document = _document_from_record(json.loads(candidate[:-1].decode("ascii")))
+        expected = (json.dumps(
+            _record_from_document(document), sort_keys=True, separators=(",", ":"),
+            allow_nan=False, ensure_ascii=True,
+        ) + "\n").encode("ascii")
+        if candidate != expected:
+            raise ValueError("candidate is not in the canonical record format")
+    except (UnicodeError, ValueError, TypeError) as exc:
+        raise CanonicalStoreError("candidate is not a canonical record") from exc
+
+    try:
+        dir_fd = _open_private_dir(path)
+        try:
+            # Baux partagés, sans création implicite : verifier = lecture seule.
+            lock_fd, lock_token = _open_tracked_private_file(
+                dir_fd, write=True, create=False, name=_TRANSACTION_LOCK_FILENAME
+            )
+            try:
+                fcntl.flock(lock_fd, fcntl.LOCK_SH)
+                file_fd, file_token = _open_tracked_private_file(
+                    dir_fd, write=False, create=False
+                )
+                try:
+                    fcntl.flock(file_fd, fcntl.LOCK_SH)
+                    anchor = CanonicalDocumentRegistry._read_anchor_file(dir_fd)
+                    if anchor is None or anchor[0] == 0:
+                        raise CanonicalStoreError("nonempty canonical anchor required")
+                    with os.fdopen(file_fd, "rb", closefd=False) as handle:
+                        existing = handle.read()
+                    if existing and not existing.endswith(b"\n"):
+                        raise CanonicalStoreError("canonical history has a partial trailing line")
+                    documents, count, _, running = CanonicalDocumentRegistry._read_documents(
+                        file_fd
+                    )
+                    if count + 1 != anchor[0]:
+                        raise CanonicalStoreError("anchor is not exactly one record ahead")
+                    CanonicalDocumentRegistry._check_against_previous(document, documents)
+                    documents[document.document_id] = document
+                    running.update(candidate)
+                    marks = {
+                        key: (doc.doc_version, doc.acl_version)
+                        for key, doc in documents.items()
+                    }
+                    if running.hexdigest() != anchor[1] or marks != anchor[2]:
+                        raise CanonicalStoreError("candidate does not match anchored history")
+                finally:
+                    _close_tracked_private_file(file_token)
+            finally:
+                _close_tracked_private_file(lock_token)
+        finally:
+            os.close(dir_fd)
+    except (OSError, ValueError, UnicodeError) as exc:
+        raise CanonicalStoreError("canonical recovery verification unavailable") from exc
 
 
 def wrap_repository_with_canonical_barrier(

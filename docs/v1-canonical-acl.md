@@ -217,8 +217,22 @@ révocation valable.
   (`canonical record durability is not confirmed`), l'état relu est adopté, et
   ni le processus vivant ni un redémarrage ne sont bloqués. L'ancre atteste le
   compte, les versions et l'empreinte des enregistrements ; elle ne peut pas
-  valider le contenu d'une ligne ajoutée pendant une réparation hors ligne, et
-  aucun outil de reprise n'est fourni dans ce lot.
+  valider le contenu d'une ligne ajoutée pendant une réparation hors ligne.
+  **Vérification préalable, sans réparation :** après arrêt du service et
+  conservation des originaux, l'opérateur peut fournir une copie privée (0600)
+  de la **ligne JSONL originale exacte**, terminée par `\n` :
+  `PYTHONPATH=. python scripts/check_canonical_recovery.py --store /chemin/prive --candidate /chemin/prive/ligne-originale.jsonl`.
+  Le vérificateur prend des baux partagés, ne crée ni n'écrit aucun fichier et
+  refuse si l'ancre n'est pas en avance d'exactement UNE ligne, si l'historique
+  se termine par une ligne partielle, si le candidat n'est pas canonicalisé,
+  ou si son ajout simulé ne reproduit pas l'empreinte ET les versions de l'ancre.
+  L'empreinte porte sur les enregistrements **rejoués** (`ligne + LF`) et non
+  sur tous les octets historiques : lignes blanches et CRLF anciens sont
+  normalisés par le lecteur ; le candidat, lui, doit être canonicalisé exactement.
+  Le succès ne reconstitue pas une ligne perdue, ne répare pas le JSONL, ne
+  valide pas Qdrant et ne vaut pas autorisation de redémarrer : une reprise
+  exige sauvegarde vérifiée, contrôle hors ligne et réconciliation de l'index.
+  Ne jamais inventer le contenu manquant à partir des seules versions.
 - **SEC-02, portée mono-hôte coopérante uniquement** : le fichier privé
   `canonical_transaction.lock` est ouvert sous le répertoire canonique et
   verrouillé par `flock` partagé pendant `RagService.answer_with_trace`
