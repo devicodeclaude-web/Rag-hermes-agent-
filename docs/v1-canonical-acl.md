@@ -284,6 +284,30 @@ révocation valable.
   utilisable sur un support monté en lecture seule ; mais `flock` ne coordonne
   que des processus coopérants du même hôte : n'auditer qu'une copie hors
   service et sans écrivains.
+  **Plan de réconciliation (`--plan`, lecture seule lui aussi) :** l'audit
+  échoue fermé sur la première anomalie et ne dit pas QUOI réparer. Avec les
+  mêmes arguments plus `--plan` (et éventuellement
+  `--surplus-budget N`, défaut 1000), le programme énumère les points
+  **manquants**, **inattendus** et **divergents** sous le même bail partagé,
+  la même empreinte d'ancre approuvée et le même rejeu : pour un point
+  divergent il n'imprime que les **noms de champs** en écart, jamais une
+  valeur, afin de ne pas recopier du texte documentaire ou une ACL dans un
+  journal ou un ticket. Ces étiquettes (clés de payload, identifiants de
+  points) viennent de l'index, donc de quiconque peut y écrire : elles sont
+  **assainies** avant impression (jeu de caractères restreint, sinon un
+  marqueur compté) et le nombre de lignes est borné, pour qu'une clé contenant
+  des retours à la ligne ou des séquences ANSI ne puisse pas fabriquer de
+  fausses lignes de rapport sur l'écran de l'opérateur. Un identifiant de
+  point ENTIER (légal dans Qdrant, possible si un outil tiers a écrit) est
+  énuméré comme intrus au lieu de bloquer tout le plan. `--surplus-budget`
+  plafonne le nombre **TOTAL** de points lus (attendus + surplus) : c'est une
+  borne mémoire, pas un plafond du nombre d'intrus listés. Code de sortie :
+  `0` plan vide, `1` divergence énumérée, `2` refus. Un plan au-delà du budget
+  échoue fermé plutôt que de collecter sans borne. **Un plan vide n'est pas une
+  preuve de concordance** : seul l'audit est la porte en échec fermé, et le
+  plan n'écrit rien, ne décide rien et n'autorise aucun redémarrage — la
+  réparation des points listés puis un nouvel audit restent à la charge de
+  l'opérateur.
   Ne jamais inventer le contenu manquant à partir des seules versions.
 - **SEC-02, portée mono-hôte coopérante uniquement** : le fichier privé
   `canonical_transaction.lock` est ouvert sous le répertoire canonique et

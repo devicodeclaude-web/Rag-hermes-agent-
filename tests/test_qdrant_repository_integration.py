@@ -13,7 +13,9 @@ from unittest.mock import patch
 
 from rag_hermes.acl import AuthorizationContext
 from rag_hermes.canonical_registry import CanonicalDocumentRegistry
-from rag_hermes.canonical_reconciliation import audit_canonical_copy_index
+from rag_hermes.canonical_reconciliation import (
+    audit_canonical_copy_index, plan_canonical_index_reconciliation,
+)
 from rag_hermes.g1_audited_candidates import run_audited_g1_candidate_window
 from rag_hermes.index_integrity import AuditedIndexSessionError, verify_index_snapshot
 from rag_hermes.ingestion import Document, chunk_document
@@ -566,6 +568,47 @@ class QdrantRepositoryIntegrationTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "indexed payload conflicts"):
                 audit_canonical_copy_index(
                     directory, anchor_sha256=changed_pin, client=audit_client,
+                    collection=self.collection, chunker=chunk_document, page_size=1,
+                )
+
+    def test_reconciliation_plan_enumerates_real_qdrant_divergences(self) -> None:
+        document = self._document("plan-copy", "alpha", "alice", "Texte du plan.")
+        with tempfile.TemporaryDirectory() as directory:
+            registry = CanonicalDocumentRegistry(directory)
+            registry.register(document)
+            chunks = chunk_document(document)
+            self.repository.replace_document(document, chunks)
+            pin = hashlib.sha256(registry.anchor_path.read_bytes()).hexdigest()
+            audit_client = QdrantAuditClient(os.environ["QDRANT_INTEGRATION_URL"])
+            expected_id = chunk_to_point(chunks[0], _fixed_vector(""))["id"]
+
+            clean = plan_canonical_index_reconciliation(
+                directory, anchor_sha256=pin, client=audit_client,
+                collection=self.collection, chunker=chunk_document, page_size=1,
+            )
+            self.assertTrue(clean.is_clean, clean)
+
+            # One stranger, plus a payload altered at the expected id.
+            stranger_id = str(uuid.uuid4())
+            altered = chunk_to_point(chunks[0], _fixed_vector(""))
+            altered["payload"] = {**altered["payload"], "acl_version": 7}
+            self.client.upsert(self.collection, [
+                {"id": stranger_id, "vector": {"dense": _fixed_vector("")},
+                 "payload": {"tenant_id": "alpha", "document_id": "intrus"}},
+                altered,
+            ])
+            plan = plan_canonical_index_reconciliation(
+                directory, anchor_sha256=pin, client=audit_client,
+                collection=self.collection, chunker=chunk_document, page_size=1,
+            )
+            self.assertFalse(plan.is_clean)
+            self.assertEqual(plan.unexpected_point_ids, (stranger_id,))
+            self.assertEqual(plan.divergent_points, ((expected_id, ("acl_version",)),))
+            self.assertEqual(plan.missing_point_ids, ())
+            # The same divergence must still FAIL the audit gate.
+            with self.assertRaises(ValueError):
+                audit_canonical_copy_index(
+                    directory, anchor_sha256=pin, client=audit_client,
                     collection=self.collection, chunker=chunk_document, page_size=1,
                 )
 
