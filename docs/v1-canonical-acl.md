@@ -232,6 +232,30 @@ révocation valable.
   Le succès ne reconstitue pas une ligne perdue, ne répare pas le JSONL, ne
   valide pas Qdrant et ne vaut pas autorisation de redémarrer : une reprise
   exige sauvegarde vérifiée, contrôle hors ligne et réconciliation de l'index.
+  **Copie de reprise isolée (jamais une mutation de la source) :** avec le même
+  candidat exact, ajouter `--output-dir /autre/repertoire/prive/reprise` à la
+  commande ci-dessus. Le parent de sortie doit déjà exister, appartenir à
+  l'UID du service, être inscriptible et ne donner aucun droit groupe/autres
+  (0700 convient ; la porte accepte aussi d'autres modes privés utilisables).
+  La cible ne doit pas exister ni se trouver sous le registre source. Sous les baux
+  partagés, le programme copie le JSONL + la ligne candidate et l'ancre dans
+  un répertoire temporaire privé, rejoue les enregistrements et vérifie leur
+  cohérence avec l'ancre **par descripteurs de fichier** (sans résoudre une
+  seconde fois le chemin du staging), puis la publie sans écraser une cible
+  concurrente (`renameat2`/`RENAME_NOREPLACE`).
+  Les fichiers sont fsyncés avant publication. Si la publication ou son fsync
+  final échoue, **vérifier la cible** : elle peut exister même si la commande a
+  rendu un refus ; la source reste intacte. En cas d'échec du nettoyage, un
+  staging privé (`.*.recovery-*`, mode 0700) peut rester : il n'est PAS une
+  copie publiée, le préserver pour diagnostic avant suppression manuelle.
+  La copie possède un NOUVEL inode de verrou : ne jamais la substituer à chaud,
+  arrêter tous les processus et réconcilier Qdrant avant toute mise en service.
+  Les contrôles de contenance comparent les inodes ouverts et l'ascendance du
+  parent avant création et avant publication ; ils ne constituent pas une
+  défense contre un autre processus du même UID qui déplace les répertoires
+  hors des verrous coopératifs pendant ou après ces contrôles. Exécuter cette
+  procédure sur un hôte arrêté et une arborescence maîtrisée. Ce chemin ne
+  prouve pas l'origine de la ligne fournie ni la cohérence de l'index.
   Ne jamais inventer le contenu manquant à partir des seules versions.
 - **SEC-02, portée mono-hôte coopérante uniquement** : le fichier privé
   `canonical_transaction.lock` est ouvert sous le répertoire canonique et

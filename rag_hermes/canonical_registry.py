@@ -31,6 +31,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 import contextlib
+import ctypes
 import hashlib
 import json
 import errno
@@ -643,8 +644,8 @@ class CanonicalDocumentRegistry:
         except (OSError, ValueError, UnicodeError, PermissionError):
             raise CanonicalStoreError("canonical store history is invalid") from None
 
+    @staticmethod
     def _check_against_anchor(
-        self,
         anchor: tuple[int, str, dict[str, tuple[int, int]]] | None,
         fresh: Mapping[str, Document],
         records: int,
@@ -891,8 +892,9 @@ class CanonicalWriteThrough:
         return self._repository.search(query, context=context, limit=limit)
 
 
-def verify_anchor_recovery_candidate(store_dir: str | Path, candidate: bytes) -> None:
-    """Prouver SANS MUTATION qu'une ligne précise comble une ancre en avance.
+@contextmanager
+def _verified_anchor_snapshot(store_dir: str | Path, candidate: bytes):
+    """Snapshot vérifié, sous baux partagés jusqu'à la sortie du contexte.
 
     Le contenu manquant ne se déduit PAS de l'ancre : l'opérateur doit fournir
     les octets exacts. Ne répare ni le registre, ni la cohérence Qdrant.
@@ -927,8 +929,19 @@ def verify_anchor_recovery_candidate(store_dir: str | Path, candidate: bytes) ->
                 )
                 try:
                     fcntl.flock(file_fd, fcntl.LOCK_SH)
-                    anchor = CanonicalDocumentRegistry._read_anchor_file(dir_fd)
-                    if anchor is None or anchor[0] == 0:
+                    # Même descripteur pour la validation ET la copie : un
+                    # second open pourrait lire un autre inode après échange
+                    # du chemin, même pendant notre bail partagé.
+                    anchor_fd = _open_private_file(
+                        dir_fd, write=False, create=False, name=_ANCHOR_FILENAME
+                    )
+                    try:
+                        with os.fdopen(anchor_fd, "rb", closefd=False) as handle:
+                            anchor_bytes = handle.read()
+                    finally:
+                        os.close(anchor_fd)
+                    anchor = _validated_anchor(json.loads(anchor_bytes.decode("utf-8")))
+                    if anchor[0] == 0:
                         raise CanonicalStoreError("nonempty canonical anchor required")
                     with os.fdopen(file_fd, "rb", closefd=False) as handle:
                         existing = handle.read()
@@ -948,6 +961,8 @@ def verify_anchor_recovery_candidate(store_dir: str | Path, candidate: bytes) ->
                     }
                     if running.hexdigest() != anchor[1] or marks != anchor[2]:
                         raise CanonicalStoreError("candidate does not match anchored history")
+                    source_info = os.fstat(dir_fd)
+                    yield existing, anchor_bytes, (source_info.st_dev, source_info.st_ino)
                 finally:
                     _close_tracked_private_file(file_token)
             finally:
@@ -956,6 +971,196 @@ def verify_anchor_recovery_candidate(store_dir: str | Path, candidate: bytes) ->
             os.close(dir_fd)
     except (OSError, ValueError, UnicodeError) as exc:
         raise CanonicalStoreError("canonical recovery verification unavailable") from exc
+
+
+def verify_anchor_recovery_candidate(store_dir: str | Path, candidate: bytes) -> None:
+    """Prouver sans écriture qu'une ligne précise comble une ancre en avance."""
+    with _verified_anchor_snapshot(store_dir, candidate):
+        pass
+
+
+def _write_recovery_file(dir_fd: int, name: str, payload: bytes) -> None:
+    """Créer un fichier privé neuf et durable dans le répertoire de staging."""
+    fd = os.open(
+        name,
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
+        0o600,
+        dir_fd=dir_fd,
+    )
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or (
+            stat.S_IMODE(info.st_mode) & 0o7077
+        ):
+            raise CanonicalStoreError("recovery output is not a private regular file")
+        with os.fdopen(fd, "wb", closefd=False) as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _read_recovery_file(dir_fd: int, name: str) -> bytes:
+    fd = _open_private_file(dir_fd, write=False, create=False, name=name)
+    try:
+        with os.fdopen(fd, "rb", closefd=False) as handle:
+            return handle.read()
+    finally:
+        os.close(fd)
+
+
+def _rename_recovery_noreplace(parent_fd: int, source: str, target: str) -> None:
+    """Publication atomique sans remplacer un répertoire concurrent (Linux)."""
+    libc = ctypes.CDLL(None, use_errno=True)
+    renameat2 = getattr(libc, "renameat2", None)
+    if renameat2 is None:
+        raise CanonicalStoreError("atomic no-replace rename is unavailable")
+    renameat2.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int,
+                          ctypes.c_char_p, ctypes.c_uint]
+    renameat2.restype = ctypes.c_int
+    if renameat2(parent_fd, os.fsencode(source), parent_fd,
+                 os.fsencode(target), 1) != 0:  # RENAME_NOREPLACE
+        raise OSError(ctypes.get_errno(), "recovery target cannot be published")
+
+
+def _directory_descends_from(fd: int, ancestor: tuple[int, int]) -> bool:
+    """Tester l'ascendance des INODES ouverts, pas des noms pré-résolus."""
+    current = os.dup(fd)  # Descripteur de répertoire, jamais un bail flock.
+    try:
+        for _ in range(256):
+            info = os.fstat(current)
+            identity = (info.st_dev, info.st_ino)
+            if identity == ancestor:
+                return True
+            above = os.open(
+                "..", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                dir_fd=current,
+            )
+            try:
+                parent_info = os.fstat(above)
+            except BaseException:
+                os.close(above)
+                raise
+            if (parent_info.st_dev, parent_info.st_ino) == identity:
+                os.close(above)  # Racine atteinte.
+                return False
+            os.close(current)
+            current = above
+        raise CanonicalStoreError("recovery output ancestry is too deep")
+    finally:
+        os.close(current)
+
+
+def prepare_anchor_recovery_copy(
+    store_dir: str | Path, candidate: bytes, output_dir: str | Path
+) -> None:
+    """Créer une COPIE réparée, jamais modifier le magasin source.
+
+    La copie ne doit pas être mise en service sans réconciliation Qdrant et
+    décision explicite de l'opérateur. Le succès seul ne prouve rien sur l'index.
+    """
+    source = Path(store_dir)
+    target = Path(output_dir)
+    if not source.is_absolute() or not target.is_absolute():
+        raise CanonicalStoreError("absolute source and output paths required")
+    # Un répertoire de sortie imbriqué dans la source modifierait celle-ci.
+    source_real = source.resolve(strict=True)
+    parent_real = target.parent.resolve(strict=True)
+    if source_real == parent_real or source_real in parent_real.parents:
+        raise CanonicalStoreError("recovery copy cannot be created inside the source")
+    with _verified_anchor_snapshot(source, candidate) as (history, anchor, source_inode):
+        try:
+            parent_fd = _open_private_dir(target.parent)
+        except (OSError, ValueError) as exc:
+            raise CanonicalStoreError("recovery output parent is not private") from exc
+        try:
+            if _directory_descends_from(parent_fd, source_inode):
+                raise CanonicalStoreError("recovery output is inside the opened source")
+            # Réobserver la relation après l'ouverture : le chemin du parent
+            # pouvait avoir été remplacé entre le premier prévol et l'open.
+            current_parent = target.parent.resolve(strict=True)
+            if source_real == current_parent or source_real in current_parent.parents:
+                raise CanonicalStoreError("recovery output moved inside the source")
+            stage = f".{target.name}.recovery-{os.urandom(12).hex()}"
+            os.mkdir(stage, 0o700, dir_fd=parent_fd)
+            try:
+                stage_fd = os.open(
+                    stage, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                    dir_fd=parent_fd,
+                )
+            except BaseException:
+                # Le staging vient d'être créé ; si son ouverture échoue,
+                # l'ancien `finally` (qui supposait stage_fd) ne le nettoyait pas.
+                with contextlib.suppress(OSError):
+                    os.rmdir(stage, dir_fd=parent_fd)
+                raise
+            published = False
+            try:
+                _write_recovery_file(stage_fd, _STORE_FILENAME, history + candidate)
+                _write_recovery_file(stage_fd, _ANCHOR_FILENAME, anchor)
+                _write_recovery_file(stage_fd, _TRANSACTION_LOCK_FILENAME, b"")
+                os.fsync(stage_fd)
+                # Ne JAMAIS rouvrir le staging par `target.parent / stage` :
+                # le chemin parent peut avoir été échangé depuis l'ouverture
+                # du descripteur. Valider les mêmes inodes sous `stage_fd`.
+                if _read_recovery_file(stage_fd, _STORE_FILENAME) != history + candidate:
+                    raise CanonicalStoreError("recovery copy differs from verified history")
+                if _read_recovery_file(stage_fd, _ANCHOR_FILENAME) != anchor:
+                    raise CanonicalStoreError("recovery anchor differs from source")
+                if _read_recovery_file(stage_fd, _TRANSACTION_LOCK_FILENAME):
+                    raise CanonicalStoreError("recovery lock file is not empty")
+                anchor_view = CanonicalDocumentRegistry._read_anchor_file(stage_fd)
+                if anchor_view is None:
+                    raise CanonicalStoreError("recovery copy has no anchor")
+                copy_fd = _open_private_file(stage_fd, write=False, create=False)
+                try:
+                    docs, count, prefix, _ = CanonicalDocumentRegistry._read_documents(
+                        copy_fd, digest_at=anchor_view[0]
+                    )
+                finally:
+                    os.close(copy_fd)
+                CanonicalDocumentRegistry._check_against_anchor(
+                    anchor_view, docs, count, prefix
+                )
+                expected = _document_from_record(json.loads(candidate[:-1]))
+                if docs.get(expected.document_id) != expected:
+                    raise CanonicalStoreError("recovery copy failed its restart check")
+                parent_stat = os.stat(target.parent, follow_symlinks=False)
+                opened_stat = os.fstat(parent_fd)
+                if (parent_stat.st_dev, parent_stat.st_ino) != (
+                    opened_stat.st_dev, opened_stat.st_ino
+                ):
+                    raise CanonicalStoreError("recovery output parent path changed")
+                if _directory_descends_from(parent_fd, source_inode):
+                    raise CanonicalStoreError("recovery output moved inside the source")
+                _rename_recovery_noreplace(parent_fd, stage, target.name)
+                published = True
+                os.fsync(parent_fd)
+                published_stat = os.stat(target.name, dir_fd=parent_fd, follow_symlinks=False)
+                visible_stat = os.stat(target, follow_symlinks=False)
+                if (published_stat.st_dev, published_stat.st_ino) != (
+                    visible_stat.st_dev, visible_stat.st_ino
+                ):
+                    raise CanonicalStoreError("recovery output path changed after publication")
+            finally:
+                try:
+                    if not published:
+                        # Même un échec du nettoyage ne doit pas garder le FD
+                        # ouvert. Le résidu éventuel reste privé (0700) et le
+                        # chemin final n'est jamais publié.
+                        for name in (_STORE_FILENAME, _ANCHOR_FILENAME, _TRANSACTION_LOCK_FILENAME):
+                            with contextlib.suppress(OSError):
+                                os.unlink(name, dir_fd=stage_fd)
+                finally:
+                    os.close(stage_fd)
+                if not published:
+                    with contextlib.suppress(OSError):
+                        os.rmdir(stage, dir_fd=parent_fd)
+        except (OSError, ValueError) as exc:
+            raise CanonicalStoreError("recovery copy could not be published") from exc
+        finally:
+            os.close(parent_fd)
 
 
 def wrap_repository_with_canonical_barrier(
