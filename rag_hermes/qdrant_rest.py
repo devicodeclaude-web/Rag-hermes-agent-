@@ -368,6 +368,8 @@ class QdrantAuditClient:
         if offset is not None:
             body["offset"] = offset
         response = self._transport.request("POST", f"/collections/{name}/points/scroll", body)
+        if "status" in response and response["status"] != "ok":
+            raise RuntimeError("Qdrant returned invalid audit scroll status")
         result = response.get("result")
         if not isinstance(result, dict) or not isinstance(result.get("points"), list) or "next_page_offset" not in result:
             raise RuntimeError("Qdrant returned malformed paginated scroll result")

@@ -109,6 +109,16 @@ class QdrantAuditScrollPageTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "malformed"):
                     self.client.scroll_page("chunks", limit=2)
 
+    def test_rejects_an_explicit_error_status_even_with_matching_points(self) -> None:
+        self.client._transport.request = lambda *_a, **_k: {
+            "status": "error", "result": {
+                "points": [{"id": "one", "payload": {}}],
+                "next_page_offset": None,
+            },
+        }
+        with self.assertRaisesRegex(RuntimeError, "status"):
+            self.client.scroll_page("chunks", limit=2)
+
     def test_rejects_a_self_referential_cursor(self) -> None:
         self.patch_request({"points": [{"id": "a"}], "next_page_offset": "same-id"})
         with self.assertRaisesRegex(RuntimeError, "cursor"):

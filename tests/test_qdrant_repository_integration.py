@@ -12,6 +12,8 @@ import uuid
 from unittest.mock import patch
 
 from rag_hermes.acl import AuthorizationContext
+from rag_hermes.canonical_registry import CanonicalDocumentRegistry
+from rag_hermes.canonical_reconciliation import audit_canonical_copy_index
 from rag_hermes.g1_audited_candidates import run_audited_g1_candidate_window
 from rag_hermes.index_integrity import AuditedIndexSessionError, verify_index_snapshot
 from rag_hermes.ingestion import Document, chunk_document
@@ -543,6 +545,29 @@ class QdrantRepositoryIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(len(points), 1)
         self.assertEqual(points[0]["payload"]["owner_id"], ["alice", "bob"])
+
+    def test_canonical_copy_audit_checks_real_qdrant_scroll(self) -> None:
+        document = self._document("audit-copy", "alpha", "alice", "Texte de l'audit.")
+        with tempfile.TemporaryDirectory() as directory:
+            registry = CanonicalDocumentRegistry(directory)
+            registry.register(document)
+            self.repository.replace_document(document, chunk_document(document))
+            pin = hashlib.sha256(registry.anchor_path.read_bytes()).hexdigest()
+            audit_client = QdrantAuditClient(os.environ["QDRANT_INTEGRATION_URL"])
+            report = audit_canonical_copy_index(
+                directory, anchor_sha256=pin, client=audit_client,
+                collection=self.collection, chunker=chunk_document, page_size=1,
+            )
+            self.assertEqual(report.point_count, 1)
+            registry.register(Document(**{
+                **document.__dict__, "acl_version": 2, "allowed_users": ("bob",),
+            }))
+            changed_pin = hashlib.sha256(registry.anchor_path.read_bytes()).hexdigest()
+            with self.assertRaisesRegex(ValueError, "indexed payload conflicts"):
+                audit_canonical_copy_index(
+                    directory, anchor_sha256=changed_pin, client=audit_client,
+                    collection=self.collection, chunker=chunk_document, page_size=1,
+                )
 
 
 if __name__ == "__main__":

@@ -256,6 +256,34 @@ révocation valable.
   hors des verrous coopératifs pendant ou après ces contrôles. Exécuter cette
   procédure sur un hôte arrêté et une arborescence maîtrisée. Ce chemin ne
   prouve pas l'origine de la ligne fournie ni la cohérence de l'index.
+  **Diagnostic d'index en lecture seule (tranche suivante) :** après arrêt
+  de TOUS les écrivains sur le registre ET Qdrant, conserver la copie privée
+  publiée et obtenir hors de cette copie une empreinte SHA-256 approuvée de
+  `canonical_anchor.json`. Exécuter avec les mêmes fichiers `tokenizer.json`
+  et lock approuvés que le service V1 (moteur `tokenizers==0.22.2`) :
+  `PYTHONPATH=. RAG_QDRANT_G1_AUDIT_API_KEY=<jeton-r-collection> python scripts/audit_canonical_copy.py --copy /autre/repertoire/prive/reprise --anchor-sha256 <empreinte-independante> --qdrant-url <url> --collection <collection> --tokenizer-lock <lock> --tokenizer-file <tokenizer.json>`.
+  Le jeton doit donner uniquement `r` sur cette collection (Qdrant vérifie
+  sa signature) ; ne jamais passer la clé admin à cet outil. Avant le scroll
+  non filtré, le programme rejoue le JSONL contre son ancre et compare celle-ci
+  au digest approuvé ; il régénère les chunks depuis les documents canoniques
+  et refuse un document qui ne génère aucun passage ainsi que tout point absent,
+  supplémentaire, en doublon ou dont le payload diverge. Aucun fichier source
+  ou point Qdrant n'est réparé par cet outil. Un REFUS signifie que la
+  concordance n'a PAS été établie : divergence, configuration ou panne de
+  transport sont à diagnostiquer séparément. Une concordance signifie
+  seulement que les IDs/payloads OBSERVÉS correspondaient
+  au manifeste de la copie lors du scroll : ni les vecteurs, ni les écritures
+  non coopératives/multi-hôte, ni l'immuabilité ultérieure, ni la provenance
+  de l'empreinte fournie par l'opérateur ne sont prouvés. Le script exige un
+  vrai profil tokenizer approuvé ; les tests CPU avec chunker factice ne le
+  valident pas. NE PAS mettre la copie en service sur ce seul diagnostic :
+  revue humaine, réparation contrôlée des divergences et nouvelle vérification
+  restent à concevoir. Même après réussite, SEC-02 reste ouvert.
+  Ce diagnostic prend le verrou partagé du répertoire inspecté **en lecture
+  seule** (aucun descripteur en écriture, aucun fichier créé), donc il reste
+  utilisable sur un support monté en lecture seule ; mais `flock` ne coordonne
+  que des processus coopérants du même hôte : n'auditer qu'une copie hors
+  service et sans écrivains.
   Ne jamais inventer le contenu manquant à partir des seules versions.
 - **SEC-02, portée mono-hôte coopérante uniquement** : le fichier privé
   `canonical_transaction.lock` est ouvert sous le répertoire canonique et
