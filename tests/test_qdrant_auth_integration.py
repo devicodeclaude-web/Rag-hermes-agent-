@@ -5,13 +5,20 @@ authorization boundary, so every claim here is a round trip to Qdrant.
 """
 from __future__ import annotations
 
+import hashlib
 import os
+from pathlib import Path
+import tempfile
 import unittest
 import uuid
 
+from rag_hermes.canonical_reconciliation import audit_canonical_copy_index
+from rag_hermes.canonical_registry import CanonicalDocumentRegistry
+from rag_hermes.ingestion import Document, chunk_document
 from rag_hermes.qdrant_identity import mint_collection_token
 from rag_hermes.qdrant_rest import QdrantAuditClient, QdrantRestClient
 from rag_hermes.qdrant_service_clients import QdrantRepositoryClients
+from rag_hermes.qdrant_store import chunk_to_point
 
 
 def _jwt(secret: str, collection: str, access: str, *, ttl_seconds: int = 3600) -> str:
@@ -169,3 +176,41 @@ class QdrantAuditIdentityIntegrationTests(unittest.TestCase):
             }, limit=10)],
             [self.point_id],
         )
+
+    def test_canonical_copy_audit_runs_on_the_read_only_audit_credential(self) -> None:
+        """The reconciliation diagnostic must need nothing but `r`, server-side."""
+        self.admin.delete_points(
+            self.collection,
+            {"must": [{"key": "tenant_id", "match": {"value": "alpha"}}]},
+        )
+        document = Document(
+            document_id="audit-rbac", content="Texte canonique de l'audit RBAC.",
+            tenant_id="alpha", visibility="private", owner_id="alice",
+            allowed_groups=(), allowed_users=("alice",), classification=1,
+            doc_version=1, source_uri="local://audit-rbac",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            registry = CanonicalDocumentRegistry(directory)
+            registry.register(document)
+            chunks = chunk_document(document)
+            self.admin.upsert(
+                self.collection,
+                [chunk_to_point(chunk, [1.0, 0.0, 0.0, 0.0]) for chunk in chunks],
+            )
+            pin = hashlib.sha256(Path(registry.anchor_path).read_bytes()).hexdigest()
+            report = audit_canonical_copy_index(
+                directory, anchor_sha256=pin, client=self.auditor,
+                collection=self.collection, chunker=chunk_document, page_size=1,
+            )
+            self.assertEqual(report.point_count, len(chunks))
+            # A point the canonical copy does not describe must be refused, so
+            # the passing report above is not simply an empty comparison.
+            self.admin.upsert(self.collection, [{
+                "id": str(uuid.uuid4()), "vector": {"dense": [1.0, 0.0, 0.0, 0.0]},
+                "payload": {"tenant_id": "alpha", "document_id": "intrus"},
+            }])
+            with self.assertRaisesRegex(ValueError, "unexpected indexed points"):
+                audit_canonical_copy_index(
+                    directory, anchor_sha256=pin, client=self.auditor,
+                    collection=self.collection, chunker=chunk_document, page_size=1,
+                )
