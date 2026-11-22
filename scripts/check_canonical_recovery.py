@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Vérifier hors ligne une ligne manquante du registre ; ne répare rien.
+"""Vérifier une ligne manquante ou préparer une copie privée ; jamais la source.
 
 PYTHONPATH=. python scripts/check_canonical_recovery.py \
   --store /chemin/prive --candidate /chemin/prive/ligne-originale.jsonl
+# Option : --output-dir /autre/repertoire/prive/reprise
 """
 from __future__ import annotations
 
@@ -14,6 +15,7 @@ import stat
 
 from rag_hermes.canonical_registry import (
     CanonicalStoreError, verify_anchor_recovery_candidate,
+    prepare_anchor_recovery_copy,
 )
 
 
@@ -35,16 +37,27 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--store", type=Path, required=True)
     parser.add_argument("--candidate", type=Path, required=True)
+    parser.add_argument("--output-dir", type=Path,
+                        help="nouveau répertoire privé : préparer une COPIE, jamais la source")
     args = parser.parse_args()
     try:
-        verify_anchor_recovery_candidate(
-            args.store, _read_private_candidate(args.candidate)
-        )
+        candidate = _read_private_candidate(args.candidate)
+        if args.output_dir is None:
+            verify_anchor_recovery_candidate(args.store, candidate)
+        else:
+            prepare_anchor_recovery_copy(args.store, candidate, args.output_dir)
     except (CanonicalStoreError, OSError) as exc:
-        # Aucune donnée documentaire (ni nom de client, ni contenu) dans la sortie.
-        print(f"REFUS : {type(exc).__name__} ; aucune modification effectuée")
+        # Une panne après publication peut laisser une copie complète malgré
+        # le refus (fsync parent en échec). Ne jamais promettre « aucun écrit ».
+        if args.output_dir is None:
+            print(f"REFUS : {type(exc).__name__} ; aucune modification effectuée")
+        else:
+            print(f"REFUS : {type(exc).__name__} ; source inchangée, vérifier la sortie avant toute reprise")
         return 2
-    print("Candidat vérifié contre l'ancre ; aucune modification effectuée.")
+    if args.output_dir is None:
+        print("Candidat vérifié contre l'ancre ; aucune modification effectuée.")
+    else:
+        print("Copie de reprise préparée ; source inchangée. NE PAS déployer sans réconciliation Qdrant.")
     return 0
 
 
