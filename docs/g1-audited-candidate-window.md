@@ -1,7 +1,13 @@
-# G1 — fenêtre candidate-only encadrée par deux audits de payload
+# G1 — fenêtre encadrée par deux audits de payload (candidats, ou réponse citée)
 
-`run_audited_g1_candidate_window` assemble, **pour une seule question**, les
-briques précédentes sans les brancher à `RagService` :
+Deux points d'entrée publics partagent le même moteur privé
+`_run_audited_g1_window` et assemblent, **pour une seule question**, les briques
+précédentes sans les brancher à `RagService` :
+`run_audited_g1_candidate_window`, qui rend des candidats, et
+`run_audited_g1_answer`, qui rend une réponse citée. Le rappel de génération
+n'est **pas** exposé sur une signature publique : il le serait, un appelant
+obtiendrait les deux vrais rapports d'audit autour d'une réponse fabriquée tout
+en contournant les gardes du pilote.
 
 1. charge un JSONL documentaire et vérifie son SHA-256 attendu, puis reconstruit
    les chunks via un chunker fourni par l'opérateur ;
@@ -23,11 +29,34 @@ briques précédentes sans les brancher à `RagService` :
    restitution des candidats. Une exception ou une interruption pendant la
    requête invalide la session sans scroll de clôture.
 
+Sur la voie réponse, la génération s'intercale **entre le reranking et l'audit
+de clôture** : ordre observable `schéma → audit → dense → sparse → reranking →
+génération → audit`. Conséquence à ne pas euphémiser : un générateur injecté —
+donc potentiellement une API distante — voit les passages **avant** que l'audit
+de clôture ait confirmé l'index. Si cet audit échoue, aucune réponse n'est
+rendue à l'appelant et la session devient terminale, mais le texte est déjà
+sorti. Ce qui est garanti avant tout appel au modèle ou au générateur : ACL et
+provenance canoniques, et appartenance de chaque candidat au manifeste audité.
+
 Le type `AuditedCandidateWindow` contient une liste immuable de candidats et
 les deux rapports d'audit. Il ne contient ni réponse, ni citation, ni décision
 `abstained`. **Une fenêtre vide n'est pas une abstention honnête** : les top-40
 par voie, le préfiltre et l'absence de calibration peuvent cacher une preuve.
 Les scores RRF et reranker sont des scores de rang non calibrés.
+
+Le type `AuditedG1Answer` porte la trace de réponse, la fenêtre reclassée qui
+l'a produite et les deux rapports. Une fenêtre vide y lève `GenerationError`
+— panne serveur — au lieu de devenir une abstention. Les marqueurs `[Sn]` sont
+résolus sur cette seule fenêtre, et un marqueur hors fenêtre fait **échouer**
+la requête (`strict_citations=True`) au lieu d'être silencieusement effacé du
+texte publié. Une abstention émise par le générateur lui-même est conservée
+telle quelle, mais elle n'est **pas calibrée** : ce n'est pas une décision
+d'abstention du système. Comme `AuditedCandidateWindow`, ce type n'est **pas
+une attestation** : `object.__new__`, `dataclasses.replace`, `pickle` et
+`deepcopy` le reconstruisent avec n'importe quels champs à côté de rapports
+d'audit authentiques. Un reçu G1 devra le verrouiller par une empreinte
+recalculable, pas accepter l'objet. Son `repr` ne recopie ni le texte des
+preuves ni celui des citations ; les attributs bruts, eux, restent sensibles.
 
 Bornes de la preuve : les deux rapports dérivent du **même** manifeste ; leur
 égalité n'est pas une confirmation indépendante. L'audit lit les IDs/payloads,

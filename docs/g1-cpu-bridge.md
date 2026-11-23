@@ -92,8 +92,12 @@ existe désormais, avec recontrôle canonique opt-in (`g1_hybrid_candidates.py`)
 et un étage de reranking verrouillé (`g1_reranking.py`, faux modèles en CPU).
 `run_audited_g1_candidate_window` raccorde **pour une seule question** la source
 hybride, la barrière canonique et cet étage entre deux audits de payload sur la
-collection donnée ; ce chemin candidate-only ne produit aucune réponse. Rien de
-cela n'est relié à `RagService` ni à une règle d'abstention. La liaison
+collection donnée et ne produit aucune réponse ; un second point d'entrée,
+`run_audited_g1_answer`, génère une réponse citée dans la même fenêtre auditée
+(génération entre le reranking et l'audit de clôture, marqueurs `[Sn]` résolus
+sur cette seule fenêtre, fenêtre vide = `GenerationError`, pas une abstention).
+Rien de cela n'est relié à `RagService` ni à une règle d'abstention
+calibrée, et aucun modèle réel n'a été exécuté sur ce chemin. La liaison
 vérifiable des requêtes à une collection figée et le
 reçu de campagne restent à câbler et à tester. La traduction des erreurs par cas
 est désormais câblée dans `run_evaluation` (voir ci-dessous), sans présumer

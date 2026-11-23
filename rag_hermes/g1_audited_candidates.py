@@ -21,6 +21,8 @@ from .qdrant_identity import validate_audit_tokens
 from .qdrant_rest import QdrantAuditClient, QdrantRestClient
 from .qdrant_store import chunk_to_point
 from .retrieval import CanonicalAclError
+from .answering import AnswerTrace, answer_from_evidence
+from .generator import GenerationError
 
 
 @dataclass(frozen=True)
@@ -32,11 +34,41 @@ class AuditedCandidateWindow:
     closing: IndexSnapshotReport
 
 
+@dataclass(frozen=True)
+class AuditedG1Answer:
+    """Pilot answer with structural citations; NOT a calibrated G1 receipt.
+
+    `candidates` keeps the reranked window that produced the answer so a future
+    receipt can reconstruct it. Like `AuditedCandidateWindow`, this dataclass is
+    NOT an attestation: `object.__new__`, `dataclasses.replace`, `pickle` and
+    `deepcopy` all rebuild it with arbitrary fields next to authentic-looking
+    audit reports. Do not accept it as proof in a receipt without an
+    independently recomputable digest over the trace and the manifest.
+    """
+
+    trace: AnswerTrace
+    candidates: tuple[RerankedCandidate, ...]
+    opening: IndexSnapshotReport
+    closing: IndexSnapshotReport
+
+    def __repr__(self) -> str:
+        # Same representation policy as the divergence plans: an accidental
+        # repr (log line, traceback) must not copy evidence or citation text.
+        # The raw attributes stay available for controlled programmatic use.
+        return (
+            f"AuditedG1Answer(abstained={self.trace.response.abstained!r}, "
+            f"citations={len(self.trace.response.citations)}, "
+            f"candidates={len(self.candidates)}, "
+            f"opening_points={self.opening.point_count}, "
+            f"closing_points={self.closing.point_count})"
+        )
+
+
 def _dense_only_disabled(_query: str) -> list[float]:
     raise ValueError("this candidate-only path requires a hybrid encoder")
 
 
-def run_audited_g1_candidate_window(
+def _run_audited_g1_window(
     *,
     base_url: str,
     collection: str,
@@ -55,8 +87,23 @@ def run_audited_g1_candidate_window(
     top_k: int = 8,
     max_length: int = 512,
     batch_size: int = 1,
-) -> AuditedCandidateWindow:
-    """Audit, retrieve and rerank, audit again, *then* release candidates.
+    answer_fn: Callable[[tuple[RerankedCandidate, ...]], AnswerTrace] | None = None,
+) -> tuple[
+    tuple[RerankedCandidate, ...], AnswerTrace | None,
+    IndexSnapshotReport, IndexSnapshotReport,
+]:
+    """Shared engine of the two public entry points. PRIVATE on purpose.
+
+    An answer callback on a PUBLIC signature would let any caller obtain both
+    genuine audit reports around a fabricated answer while bypassing the
+    pilot's own guards; each public wrapper below owns its guards and returns a
+    single type.
+
+    Order: schema preflight, opening audit, hybrid query, canonical barrier,
+    manifest guard, reranking, THEN `answer_fn` when supplied, THEN the closing
+    audit. The callback therefore sees the window BEFORE the closing audit has
+    confirmed the index: nothing is released to the caller when that audit
+    fails, but an injected generator will already have seen those passages.
 
     The two clients are constructed here from the SAME base URL and collection,
     but this is not a network identity proof (proxies and mutable indexes can
@@ -126,9 +173,102 @@ def run_audited_g1_candidate_window(
     opening = session.open()
     try:
         candidates = stage.candidates(question, context=context)
+        trace = answer_fn(tuple(candidates)) if answer_fn is not None else None
         closing = session.close()
     except BaseException:
-        # No second scroll on an abort or Ctrl-C; no partial window escapes.
+        # No second scroll on an abort or Ctrl-C, and no partial window escapes
+        # to the CALLER (an `answer_fn` may already have seen it). The session
+        # stays terminal: no retry can bless a later window with this audit.
         session.invalidate()
         raise
-    return AuditedCandidateWindow(tuple(candidates), opening, closing)
+    return tuple(candidates), trace, opening, closing
+
+
+def run_audited_g1_candidate_window(
+    *,
+    base_url: str,
+    collection: str,
+    source_path: Path,
+    expected_source_sha256: str,
+    expected_manifest_sha256: str,
+    chunker: Callable[[Document], list[Chunk]],
+    embed_hybrid: Callable[[str], tuple[list[float], dict[str, float]]],
+    reranker: object,
+    tokenizer: object,
+    question: str,
+    context: AuthorizationContext,
+    audit_api_key: str = "",
+    query_api_key: str = "",
+    candidate_limit: int = 20,
+    top_k: int = 8,
+    max_length: int = 512,
+    batch_size: int = 1,
+) -> AuditedCandidateWindow:
+    """Audit, retrieve and rerank, audit again, *then* release candidates.
+
+    No answer, no citation and no abstention verdict: an empty window only
+    means "no usable candidate in this bounded window".
+    """
+    candidates, _trace, opening, closing = _run_audited_g1_window(
+        base_url=base_url, collection=collection, source_path=source_path,
+        expected_source_sha256=expected_source_sha256,
+        expected_manifest_sha256=expected_manifest_sha256, chunker=chunker,
+        embed_hybrid=embed_hybrid, reranker=reranker, tokenizer=tokenizer,
+        question=question, context=context, audit_api_key=audit_api_key,
+        query_api_key=query_api_key, candidate_limit=candidate_limit,
+        top_k=top_k, max_length=max_length, batch_size=batch_size,
+    )
+    return AuditedCandidateWindow(candidates, opening, closing)
+
+
+def run_audited_g1_answer(
+    *,
+    base_url: str,
+    collection: str,
+    source_path: Path,
+    expected_source_sha256: str,
+    expected_manifest_sha256: str,
+    chunker: Callable[[Document], list[Chunk]],
+    embed_hybrid: Callable[[str], tuple[list[float], dict[str, float]]],
+    reranker: object,
+    tokenizer: object,
+    question: str,
+    context: AuthorizationContext,
+    generator: Callable[[str, tuple[Chunk, ...]], str],
+    audit_api_key: str = "",
+    query_api_key: str = "",
+    candidate_limit: int = 20,
+    top_k: int = 8,
+    max_length: int = 512,
+    batch_size: int = 1,
+) -> AuditedG1Answer:
+    """CPU pilot: audit → canonical rerank → cited answer → closing audit.
+
+    Never interpret an empty bounded candidate window as honest abstention.
+    The generator's own abstention is not calibrated against a no-answer set.
+    The generator runs BEFORE the closing audit, so it sees the passages even
+    when that audit later refuses to release the answer.
+    """
+    if not callable(generator):
+        raise ValueError("G1 answer generator must be callable")
+
+    def answer(candidates: tuple[RerankedCandidate, ...]) -> AnswerTrace:
+        return answer_from_evidence(
+            question, tuple(candidate.chunk for candidate in candidates),
+            generator=generator, strict_citations=True,
+        )
+
+    candidates, trace, opening, closing = _run_audited_g1_window(
+        base_url=base_url, collection=collection, source_path=source_path,
+        expected_source_sha256=expected_source_sha256,
+        expected_manifest_sha256=expected_manifest_sha256, chunker=chunker,
+        embed_hybrid=embed_hybrid, reranker=reranker, tokenizer=tokenizer,
+        question=question, context=context, audit_api_key=audit_api_key,
+        query_api_key=query_api_key, candidate_limit=candidate_limit, top_k=top_k,
+        max_length=max_length, batch_size=batch_size, answer_fn=answer,
+    )
+    if type(trace) is not AnswerTrace:
+        # Fail closed rather than assert: an `assert` disappears under
+        # `python -O` and would let a non-answer escape typed as one.
+        raise GenerationError("audited G1 answer path produced no answer trace")
+    return AuditedG1Answer(trace, candidates, opening, closing)

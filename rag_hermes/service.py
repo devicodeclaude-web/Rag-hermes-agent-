@@ -1,46 +1,27 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import re
 from typing import Any, Callable
 
 from .acl import AuthorizationContext, Chunk
-from .generator import ABSTENTION_ANSWER, GenerationError
+from .answering import (
+    ABSTENTION_ANSWER, AnswerResponse, AnswerTrace, Citation, answer_from_evidence,
+)
+from .generator import GenerationError
 from .ingestion import Document, chunk_document
 from .reranker_scores import RerankerScoreError, ensure_finite_scores
 from .retrieval import CanonicalAclSearch, LexicalRetriever, SearchResult
 
-_CITATION_MARKER_RE = re.compile(r"\[S(\d+)\]")
+# Citation, AnswerResponse, AnswerTrace et answer_from_evidence vivent dans
+# `rag_hermes.answering` : la voie G1 doit pouvoir rendre une reponse citee sans
+# importer ce service (donc sans cycle quand le cablage inverse arrivera).
+# Ils restent reexportes ici pour les appelants historiques.
 
 
 @dataclass(frozen=True)
 class ImportResult:
     document_id: str
     chunk_count: int
-
-
-@dataclass(frozen=True)
-class Citation:
-    document_id: str
-    chunk_id: str
-    source_uri: str
-    quote: str
-
-
-@dataclass(frozen=True)
-class AnswerResponse:
-    answer: str
-    abstained: bool
-    citations: tuple[Citation, ...]
-
-
-@dataclass(frozen=True)
-class AnswerTrace:
-    """Internal evaluation trace from the production answer path."""
-
-    response: AnswerResponse
-    retrieved_chunks: tuple[Chunk, ...]
-    cited_chunks: tuple[Chunk, ...]
 
 
 class RagService:
@@ -203,58 +184,10 @@ class RagService:
             evidence = tuple(evidence[index] for index in ordered[: self._top_k])
         else:
             evidence = evidence[: self._top_k]
-        if not self._generator:
-            # Extractive default: single best chunk with its citation.
-            top = evidence[0]
-            response = AnswerResponse(
-                answer=top.text,
-                abstained=False,
-                citations=(
-                    Citation(
-                        document_id=top.document_id,
-                        chunk_id=top.chunk_id,
-                        source_uri=top.source_uri,
-                        quote=top.text,
-                    ),
-                ),
-            )
-            return AnswerTrace(response, evidence, (top,))
-        answer = self._generator(question, evidence)
-        if answer == ABSTENTION_ANSWER:
-            response = AnswerResponse(answer=answer, abstained=True, citations=())
-            return AnswerTrace(response, evidence, ())
-        # Keep only citations the generator actually referenced via [Sn]. The
-        # markers are compared as strings against the allowed set, so an
-        # attacker-controlled marker with an astronomically long digit run can
-        # never trigger an int() conversion here. Preserve first-cited order,
-        # deduplicated.
-        allowed = {str(position): position - 1 for position in range(1, len(evidence) + 1)}
-        cited_indices: list[int] = []
-        for marker in _CITATION_MARKER_RE.findall(answer):
-            index = allowed.get(marker)
-            if index is not None and index not in cited_indices:
-                cited_indices.append(index)
-        citations = tuple(
-            Citation(
-                document_id=evidence[index].document_id,
-                chunk_id=evidence[index].chunk_id,
-                source_uri=evidence[index].source_uri,
-                quote=evidence[index].text,
-            )
-            for index in cited_indices
+        # strict_citations=False : le chemin V1 garde son comportement
+        # historique (un marqueur hors fenetre est ignore, pas fatal), epingle
+        # par test_service.test_pathological_marker_from_generator_is_ignored_
+        # without_error. Le pilote G1 opte, lui, pour le mode strict.
+        return answer_from_evidence(
+            question, evidence, generator=self._generator, strict_citations=False,
         )
-        # Fail closed: a non-abstention answer must resolve to at least one
-        # citation, regardless of which generator is injected. The bundled
-        # generator already enforces this, but the service must not trust an
-        # arbitrary generator to keep the marker->citation invariant.
-        if not citations:
-            raise GenerationError(
-                "generated answer resolved to zero valid citations"
-            )
-        response = AnswerResponse(
-            answer=answer,
-            abstained=False,
-            citations=citations,
-        )
-        cited_chunks = tuple(evidence[index] for index in cited_indices)
-        return AnswerTrace(response, evidence, cited_chunks)

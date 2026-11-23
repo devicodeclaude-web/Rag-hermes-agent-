@@ -284,6 +284,31 @@ class RagServiceTests(unittest.TestCase):
         with self.assertRaises(GenerationError):
             service.answer("Comment installer Hermes ?", context=self.context)
 
+    def test_shared_renderer_defaults_to_the_strict_citation_mode(self) -> None:
+        # Le mode SÛR est le défaut du module partagé : un nouvel appelant qui
+        # oublie l'option ne doit pas hériter de la tolérance historique de V1.
+        # RagService, lui, opte explicitement pour le mode permissif.
+        from rag_hermes.answering import answer_from_evidence
+        from rag_hermes.ingestion import chunk_document
+        evidence = tuple(chunk_document(self.document)[:1])
+
+        with self.assertRaisesRegex(GenerationError, "invalid citation"):
+            answer_from_evidence(
+                "q", evidence, generator=lambda q, e: "Preuve [S1] et [S42].",
+            )
+        lenient = answer_from_evidence(
+            "q", evidence, generator=lambda q, e: "Preuve [S1] et [S42].",
+            strict_citations=False,
+        )
+        self.assertEqual(len(lenient.response.citations), 1)
+
+    def test_shared_renderer_refuses_an_empty_window_as_a_server_failure(self) -> None:
+        # Fenêtre vide = panne serveur (502), jamais une requête client invalide
+        # (400) ni une abstention fabriquée.
+        from rag_hermes.answering import answer_from_evidence
+        with self.assertRaisesRegex(GenerationError, "no verified evidence"):
+            answer_from_evidence("q", (), generator=None)
+
     def test_only_out_of_range_markers_fail_closed(self) -> None:
         def generate(question, evidence):
             return "Voir la source [S9]."

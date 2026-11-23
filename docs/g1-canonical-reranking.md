@@ -46,5 +46,11 @@ de sa révision et du tokenizer est une obligation de l'appelant, décrite par l
 manifeste GPU (`manifests/locks/bge-reranker-v2-m3.lock.json`) mais **non
 vérifiée** par cette classe. Le snapshot canonique reste épinglé en mémoire à
 la construction ; la révocation postérieure n'est pas recontrôlée par cet étage.
-Rien n'est câblé à `RagService` ni à `g1_wiring` ; la génération citée, le reçu
-G1 et la comparaison G0/G1 restent à faire.
+Le pilote `run_audited_g1_answer` utilise cet étage pour transmettre les seuls
+chunks reclassés à la fonction de génération, puis résout les marqueurs [S1]
+sur ces chunks et rejette tout marqueur hors fenêtre, avant l'audit de clôture.
+Une fenêtre vide lève une erreur au lieu de devenir une abstention. Cette voie
+pilote ne branche toujours pas l'hybride à `RagService`/`g1_wiring` et ne fournit
+ni calibration, ni reçu G1, ni comparaison G0/G1. Les tests CPU utilisent des
+modèles et clients factices : ils ne prouvent ni qualité, ni Qdrant réel, ni
+exécution du checkpoint épinglé, ni soutien sémantique des citations.

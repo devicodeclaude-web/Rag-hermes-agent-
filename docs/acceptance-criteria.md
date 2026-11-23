@@ -20,6 +20,14 @@ Le smoke set actuel valide le câblage, pas la qualité statistique. Une campagn
 - La validité structurelle d'une citation (identifiant résolvable et passage
   réellement fourni au générateur) est mesurée séparément de son support
   sémantique (le passage cité justifie effectivement l'affirmation associée).
+- **Cette mesure porte sur les citations RÉSOLUES, pas sur le texte publié.**
+  Le chemin V1 (`RagService`) ignore un marqueur `[Sn]` hors fenêtre au lieu de
+  refuser la réponse : le texte servi peut donc afficher un marqueur non résolu
+  pendant que la validité structurelle vaut 1,00. Un seuil de validité à 1,00
+  n'est donc une preuve de citations propres que si le mode strict est actif.
+  La voie pilote G1 (`run_audited_g1_answer`) exige, elle, le mode strict :
+  tout marqueur hors fenêtre fait échouer la requête. Avant le gel, trancher
+  si V1 doit basculer en strict ; ce choix est un acte humain.
 - L'indépendance envers Hermes est vérifiée dans un environnement propre où
   Hermes est absent : installation du produit, ingestion, question, réponse
   sourcée, arrêt, redémarrage, puis nouvelle question sur l'index persistant.
