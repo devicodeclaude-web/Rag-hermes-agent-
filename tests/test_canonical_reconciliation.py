@@ -489,6 +489,25 @@ class DivergenceRenderingTests(unittest.TestCase):
         self.assertIn("acl_version, allowed_user_ids", rendered)
         self.assertNotIn("non imprimable", rendered)
 
+    def test_field_names_within_one_entry_are_bounded_too(self):
+        fields = tuple(f"field_{index:03d}" for index in range(100))
+        plan = CanonicalIndexDivergence(
+            expected_point_count=1, observed_point_count=1,
+            missing_point_ids=(), unexpected_point_ids=(),
+            divergent_points=(("11111111-1111-4111-8111-111111111111", fields),),
+        )
+        lines = render_divergence_report(plan, max_entries=3)
+        self.assertEqual(len(lines), 5)
+        self.assertIn("field_000, field_001, field_002", lines[-1])
+        self.assertNotIn("field_003", lines[-1])
+        self.assertIn("97 autres champs non affichés", lines[-1])
+        self.assertLess(len(lines[-1]), 300)
+        default_line = render_divergence_report(plan)[-1]
+        self.assertIn("field_015", default_line)
+        self.assertNotIn("field_016", default_line)
+        self.assertIn("84 autres champs non affichés", default_line)
+        self.assertLess(len(default_line), 1200)
+
     def test_the_number_of_printed_lines_is_bounded(self):
         many = tuple(f"00000000-0000-4000-8000-{index:012d}" for index in range(500))
         plan = CanonicalIndexDivergence(

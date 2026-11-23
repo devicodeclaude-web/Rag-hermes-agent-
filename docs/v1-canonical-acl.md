@@ -297,7 +297,12 @@ révocation valable.
   **assainies** avant impression (jeu de caractères restreint, sinon un
   marqueur compté) et le nombre de lignes est borné, pour qu'une clé contenant
   des retours à la ligne ou des séquences ANSI ne puisse pas fabriquer de
-  fausses lignes de rapport sur l'écran de l'opérateur. Un identifiant de
+  fausses lignes de rapport sur l'écran de l'opérateur. Le rendu borne aussi
+  les noms de champs affichés **dans chaque point divergent** (au plus 16,
+  ou moins si `max_entries` est abaissé) et indique combien sont omis : un
+  payload avec beaucoup de clés ne peut plus produire une ligne de journal
+  démesurée. La liste complète reste dans le plan en mémoire, sans valeurs.
+  Un identifiant de
   point ENTIER (légal dans Qdrant, possible si un outil tiers a écrit) est
   énuméré comme intrus au lieu de bloquer tout le plan. `--surplus-budget`
   plafonne le nombre **TOTAL** de points lus (attendus + surplus) : c'est une

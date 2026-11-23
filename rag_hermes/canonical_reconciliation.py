@@ -211,18 +211,22 @@ def render_divergence_report(
             lambda index, point_id: _safe_label(point_id, "identifiant", index))
     section("Points inattendus dans l'index", plan.unexpected_point_ids,
             lambda index, point_id: _safe_label(point_id, "identifiant", index))
-    section(
-        "Points divergents", plan.divergent_points,
-        lambda index, entry: "{} : {}".format(
-            _safe_label(entry[0], "identifiant", index),
-            # Field NAMES only, each sanitised: a value would copy document
-            # text or an ACL into the operator's logs.
-            ", ".join(
-                _safe_label(field, "champ", position)
-                for position, field in enumerate(entry[1])
-            ),
-        ),
-    )
+    def format_divergent(index: int, entry: tuple[str, tuple[str, ...]]) -> str:
+        # Field NAMES only, each sanitised. Bound the names WITHIN an entry
+        # too: one hostile payload may contain thousands of distinct keys and
+        # otherwise turn a single printed line into an unbounded log record.
+        fields = entry[1]
+        limit = min(max_entries, 16)
+        shown = ", ".join(
+            _safe_label(field, "champ", position)
+            for position, field in enumerate(fields[:limit])
+        )
+        hidden = len(fields) - limit
+        if hidden > 0:
+            shown += f" ; … et {hidden} autres champs non affichés"
+        return f"{_safe_label(entry[0], 'identifiant', index)} : {shown}"
+
+    section("Points divergents", plan.divergent_points, format_divergent)
     return lines
 
 
