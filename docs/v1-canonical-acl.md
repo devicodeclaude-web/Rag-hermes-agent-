@@ -291,11 +291,12 @@ révocation valable.
   **manquants**, **inattendus** et **divergents** sous le même bail partagé,
   la même empreinte d'ancre approuvée et le même rejeu : pour un point
   divergent le plan en mémoire ne contient que les **noms de champs** en
-  écart, jamais une valeur. Ne pas journaliser/représenter (`repr`) le plan
-  brut : un nom de clé Qdrant inconnu peut lui-même contenir un secret.
-  Le rendu CLI imprime **tous les champs du schéma canonique connus** (ACL
-  comprise) même si de nombreuses clés inconnues les précèdent ; les clés
-  inconnues ne sont **jamais imprimées**, seulement comptées par point.
+  écart, jamais une valeur. `repr(plan)` et `str(plan)` sont réduits à des
+  compteurs, mais ne pas journaliser/sérialiser (`asdict`, attributs bruts)
+  le plan en mémoire : un nom de clé Qdrant inconnu peut lui-même contenir
+  un secret. Le rendu CLI imprime **tous les champs du schéma canonique
+  connus** (ACL comprise) même si de nombreuses clés inconnues les précèdent ;
+  les clés inconnues ne sont **jamais imprimées**, seulement comptées par point.
   Les identifiants de points viennent aussi de l'index : ils sont assainis
   avant impression (jeu de caractères restreint, sinon un marqueur compté).
   Le nombre de lignes affichées et la longueur de chaque ligne sont bornés

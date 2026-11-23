@@ -552,6 +552,25 @@ class DivergenceRenderingTests(unittest.TestCase):
         self.assertEqual(shown_fields, list(canonical_fields))
         self.assertLess(len(printed), 600)
 
+    def test_plan_repr_does_not_log_index_controlled_identifiers_or_keys(self):
+        secret = "PRIVATE_TOKEN_abcd1234"
+        plan = CanonicalIndexDivergence(
+            expected_point_count=2, observed_point_count=3,
+            missing_point_ids=(secret,),
+            unexpected_point_ids=("\n\x1b[32m-faux",),
+            divergent_points=(("11111111-1111-4111-8111-111111111111",
+                               ("allowed_user_ids", secret)),),
+        )
+        for rendered in (repr(plan), str(plan)):
+            self.assertNotIn(secret, rendered)
+            self.assertNotIn("allowed_user_ids", rendered)
+            self.assertNotIn("\n", rendered)
+            self.assertNotIn("\x1b", rendered)
+            self.assertIn("missing_count=1", rendered)
+            self.assertIn("unexpected_count=1", rendered)
+            self.assertIn("divergent_count=1", rendered)
+        self.assertEqual(plan.divergent_points[0][1][-1], secret)
+
     def test_the_number_of_printed_lines_is_bounded(self):
         many = tuple(f"00000000-0000-4000-8000-{index:012d}" for index in range(500))
         plan = CanonicalIndexDivergence(

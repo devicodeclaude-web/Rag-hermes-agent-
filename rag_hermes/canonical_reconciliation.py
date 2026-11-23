@@ -141,10 +141,11 @@ class CanonicalIndexDivergence:
     """What an operator must repair. NOT an audit verdict, and never a pass.
 
     Point identifiers and payload FIELD NAMES only: no document text or ACL
-    values. The in-memory plan can contain hostile unknown field names; do not
-    log/repr it. Use render_divergence_report for a safe operator-facing view.
-    An empty plan is not proof of concordance either: only
-    `audit_canonical_copy_index` is the fail-closed gate.
+    values. The in-memory plan can contain hostile unknown field names;
+    its repr/str are redacted to counts, but do not serialise/log its raw
+    attributes or dataclasses.asdict(plan). Use render_divergence_report for
+    a safe operator-facing view. An empty plan is not proof of concordance
+    either: only `audit_canonical_copy_index` is the fail-closed gate.
     """
 
     expected_point_count: int
@@ -157,6 +158,19 @@ class CanonicalIndexDivergence:
     def is_clean(self) -> bool:
         return not (self.missing_point_ids or self.unexpected_point_ids
                     or self.divergent_points)
+
+    def __repr__(self) -> str:
+        # Dataclass' default repr would log hostile index-controlled field
+        # names and point IDs. Preserve the full plan for programmatic repair,
+        # but make accidental logging show only counts.
+        return (
+            "CanonicalIndexDivergence("
+            f"expected_point_count={self.expected_point_count}, "
+            f"observed_point_count={self.observed_point_count}, "
+            f"missing_count={len(self.missing_point_ids)}, "
+            f"unexpected_count={len(self.unexpected_point_ids)}, "
+            f"divergent_count={len(self.divergent_points)})"
+        )
 
 
 def _canonical_json(value: Any) -> str:
