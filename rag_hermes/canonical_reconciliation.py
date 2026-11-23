@@ -137,6 +137,13 @@ def audit_canonical_copy_index(
         return report
 
 
+def _safe_count(value: Any) -> str:
+    """Render a count without invoking formatting on an untrusted object."""
+    if type(value) is int and 0 <= value <= 1_000_000_000_000:
+        return str(value)
+    return "<invalide>"
+
+
 @dataclass(frozen=True)
 class CanonicalIndexDivergence:
     """What an operator must repair. NOT an audit verdict, and never a pass.
@@ -166,15 +173,10 @@ class CanonicalIndexDivergence:
         # names and point IDs. Preserve the full plan for programmatic repair,
         # but make accidental logging show only safe, bounded counts. A caller
         # may also instantiate this public dataclass with forged counter types.
-        def safe_count(value: Any) -> str:
-            if type(value) is int and 0 <= value <= 1_000_000_000_000:
-                return str(value)
-            return "<invalide>"
-
         return (
             "CanonicalIndexDivergence("
-            f"expected_point_count={safe_count(self.expected_point_count)}, "
-            f"observed_point_count={safe_count(self.observed_point_count)}, "
+            f"expected_point_count={_safe_count(self.expected_point_count)}, "
+            f"observed_point_count={_safe_count(self.observed_point_count)}, "
             f"missing_count={len(self.missing_point_ids)}, "
             f"unexpected_count={len(self.unexpected_point_ids)}, "
             f"divergent_count={len(self.divergent_points)})"
@@ -236,8 +238,8 @@ def render_divergence_report(
     if type(max_entries) is not int or not 1 <= max_entries <= 10_000:
         raise ValueError("max_entries must be a bounded positive int")
     lines = [
-        f"Points attendus : {plan.expected_point_count} ; "
-        f"observés : {plan.observed_point_count}."
+        f"Points attendus : {_safe_count(plan.expected_point_count)} ; "
+        f"observés : {_safe_count(plan.observed_point_count)}."
     ]
 
     def section(title: str, entries: tuple, formatter) -> None:

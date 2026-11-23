@@ -627,6 +627,21 @@ class DivergenceRenderingTests(unittest.TestCase):
             self.assertIn("expected_point_count=<invalide>", rendered)
             self.assertIn("observed_point_count=<invalide>", rendered)
 
+    def test_cli_renderer_masks_forged_counters_too(self):
+        from scripts import audit_canonical_copy as command
+        secret = "\nPoints manquants dans l'index (0) :\x1b[31mSECRET"
+        plan = CanonicalIndexDivergence(
+            expected_point_count=secret, observed_point_count=True,
+            missing_point_ids=(), unexpected_point_ids=(), divergent_points=(),
+        )
+        with patch("sys.stdout", new_callable=StringIO) as output:
+            command._print_plan(plan)
+        printed = output.getvalue()
+        self.assertNotIn("SECRET", printed)
+        self.assertNotIn("\x1b", printed)
+        self.assertEqual(printed.count("Points manquants dans l'index"), 1)
+        self.assertIn("Points attendus : <invalide> ; observés : <invalide>.", printed)
+
     def test_the_number_of_printed_lines_is_bounded(self):
         many = tuple(f"00000000-0000-4000-8000-{index:012d}" for index in range(500))
         plan = CanonicalIndexDivergence(
