@@ -535,9 +535,13 @@ class DivergenceRenderingTests(unittest.TestCase):
         self.assertLess(len(lines[-1]), 300)
 
     def test_all_canonical_payload_fields_remain_visible(self):
+        from rag_hermes import canonical_reconciliation as reconciliation
         canonical_fields = tuple(sorted(chunk_to_point(
             chunk_document(_document())[0], [1.0]
         )["payload"]))
+        # Both directions: a retired field must not stay on the print
+        # allowlist either, or an unknown Qdrant key could leak into logs.
+        self.assertEqual(set(canonical_fields), reconciliation._CANONICAL_PAYLOAD_FIELDS)
         plan = CanonicalIndexDivergence(
             expected_point_count=1, observed_point_count=1,
             missing_point_ids=(), unexpected_point_ids=(),
