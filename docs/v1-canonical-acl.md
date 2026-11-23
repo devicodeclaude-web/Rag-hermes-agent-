@@ -290,16 +290,20 @@ révocation valable.
   `--surplus-budget N`, défaut 1000), le programme énumère les points
   **manquants**, **inattendus** et **divergents** sous le même bail partagé,
   la même empreinte d'ancre approuvée et le même rejeu : pour un point
-  divergent il n'imprime que les **noms de champs** en écart, jamais une
-  valeur, afin de ne pas recopier du texte documentaire ou une ACL dans un
-  journal ou un ticket. Ces étiquettes (clés de payload, identifiants de
-  points) viennent de l'index, donc de quiconque peut y écrire : elles sont
-  **assainies** avant impression (jeu de caractères restreint, sinon un
-  marqueur compté) et le nombre de lignes est borné, pour qu'une clé contenant
-  des retours à la ligne ou des séquences ANSI ne puisse pas fabriquer de
-  fausses lignes de rapport sur l'écran de l'opérateur. Un identifiant de
-  point ENTIER (légal dans Qdrant, possible si un outil tiers a écrit) est
-  énuméré comme intrus au lieu de bloquer tout le plan. `--surplus-budget`
+  divergent le plan en mémoire ne contient que les **noms de champs** en
+  écart, jamais une valeur. Ne pas journaliser/représenter (`repr`) le plan
+  brut : un nom de clé Qdrant inconnu peut lui-même contenir un secret.
+  Le rendu CLI imprime **tous les champs du schéma canonique connus** (ACL
+  comprise) même si de nombreuses clés inconnues les précèdent ; les clés
+  inconnues ne sont **jamais imprimées**, seulement comptées par point.
+  Les identifiants de points viennent aussi de l'index : ils sont assainis
+  avant impression (jeu de caractères restreint, sinon un marqueur compté).
+  Le nombre de lignes affichées et la longueur de chaque ligne sont bornés
+  par les champs canoniques fixes, afin d'empêcher une clé malveillante de
+  fabriquer de fausses lignes ou de gonfler le journal. Toute évolution du
+  schéma payload doit mettre à jour l'ensemble approuvé et le test de parité.
+  Un identifiant de point ENTIER (légal dans Qdrant, possible si un outil tiers
+  a écrit) est énuméré comme intrus au lieu de bloquer tout le plan. `--surplus-budget`
   plafonne le nombre **TOTAL** de points lus (attendus + surplus) : c'est une
   borne mémoire, pas un plafond du nombre d'intrus listés. Code de sortie :
   `0` plan vide, `1` divergence énumérée, `2` refus. Un plan au-delà du budget

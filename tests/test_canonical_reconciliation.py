@@ -444,8 +444,36 @@ class ReconciliationPlanTests(unittest.TestCase):
         printed = output.getvalue()
         self.assertNotIn("\x1b", printed)
         self.assertNotIn("FAUX-SEMBLANT", printed)
-        self.assertIn("non imprimable", printed)
+        self.assertIn("champ inconnu", printed)
 
+
+    def test_cli_plan_keeps_acl_field_visible_amid_many_unknown_keys(self):
+        from scripts import audit_canonical_copy as command
+        token = mint_collection_token(
+            "fixture", collection="chunks", access="r", ttl_seconds=600,
+        )
+        altered = dict(self.points[0])
+        payload = dict(altered["payload"])
+        payload.pop("allowed_user_ids")
+        payload.update({f"0_extra_{index:02d}": "x" for index in range(20)})
+        payload["PRIVATE_TOKEN_abcd1234"] = "x"
+        altered["payload"] = payload
+        self.client.points = [altered]
+        args = ["audit_canonical_copy.py", "--plan", "--copy", str(self.store),
+                "--anchor-sha256", self.anchor_digest,
+                "--qdrant-url", "http://127.0.0.1:6333", "--collection", "chunks",
+                "--tokenizer-lock", "lock.json", "--tokenizer-file", "tokenizer.json"]
+        with (patch("sys.argv", args),
+              patch.dict(os.environ, {"RAG_QDRANT_G1_AUDIT_API_KEY": token}, clear=True),
+              patch.object(command, "QdrantAuditClient", return_value=self.client),
+              patch.object(command, "LockedTokenChunker", return_value=chunk_document),
+              patch("sys.stdout", new_callable=StringIO) as output):
+            self.assertEqual(command.main(), 1)
+        printed = output.getvalue()
+        self.assertIn("allowed_user_ids", printed)
+        self.assertIn("21 champs inconnus", printed)
+        self.assertNotIn("PRIVATE_TOKEN_abcd1234", printed)
+        self.assertNotIn("0_extra_", printed)
 
 class DivergenceRenderingTests(unittest.TestCase):
     """Index-controlled labels must never forge report lines on an operator's screen."""
@@ -488,6 +516,41 @@ class DivergenceRenderingTests(unittest.TestCase):
         self.assertIn("22222222-2222-4222-8222-222222222222", rendered)
         self.assertIn("acl_version, allowed_user_ids", rendered)
         self.assertNotIn("non imprimable", rendered)
+
+    def test_unknown_fields_are_counted_without_printing_their_names(self):
+        fields = tuple(f"0_extra_{index:03d}" for index in range(100)) + (
+            "allowed_user_ids", "PRIVATE_TOKEN_abcd1234",
+        )
+        plan = CanonicalIndexDivergence(
+            expected_point_count=1, observed_point_count=1,
+            missing_point_ids=(), unexpected_point_ids=(),
+            divergent_points=(("11111111-1111-4111-8111-111111111111", fields),),
+        )
+        lines = render_divergence_report(plan, max_entries=3)
+        self.assertEqual(len(lines), 5)
+        self.assertIn("allowed_user_ids", lines[-1])
+        self.assertIn("101 champs inconnus", lines[-1])
+        self.assertNotIn("0_extra", lines[-1])
+        self.assertNotIn("PRIVATE_TOKEN", lines[-1])
+        self.assertLess(len(lines[-1]), 300)
+
+    def test_all_canonical_payload_fields_remain_visible(self):
+        from rag_hermes import canonical_reconciliation as reconciliation
+        canonical_fields = tuple(sorted(chunk_to_point(
+            chunk_document(_document())[0], [1.0]
+        )["payload"]))
+        # Both directions: a retired field must not stay on the print
+        # allowlist either, or an unknown Qdrant key could leak into logs.
+        self.assertEqual(set(canonical_fields), reconciliation._CANONICAL_PAYLOAD_FIELDS)
+        plan = CanonicalIndexDivergence(
+            expected_point_count=1, observed_point_count=1,
+            missing_point_ids=(), unexpected_point_ids=(),
+            divergent_points=(("11111111-1111-4111-8111-111111111111", canonical_fields),),
+        )
+        printed = render_divergence_report(plan, max_entries=1)[-1]
+        shown_fields = printed.split(" : ", 1)[1].split(", ")
+        self.assertEqual(shown_fields, list(canonical_fields))
+        self.assertLess(len(printed), 600)
 
     def test_the_number_of_printed_lines_is_bounded(self):
         many = tuple(f"00000000-0000-4000-8000-{index:012d}" for index in range(500))
