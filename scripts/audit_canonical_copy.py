@@ -4,9 +4,11 @@
 Arrêter tous les écrivains avant l'audit. Le digest de l'ancre doit provenir
 D'UNE SOURCE INDÉPENDANTE de la copie ; un succès n'autorise pas le redémarrage.
 
-`--plan` énumère les divergences (identifiants de points et NOMS de champs
-seulement, jamais une valeur) pour qu'un humain décide de la réparation. Un
-plan vide n'est pas une preuve de concordance : seul l'audit en est la porte.
+`--plan` énumère les divergences pour qu'un humain décide de la réparation.
+La sortie ne montre que les noms des champs canoniques ; les clés inconnues
+sont comptées sans être imprimées (elles peuvent contenir un secret). Le plan
+en mémoire ne doit pas être journalisé tel quel. Un plan vide n'est pas une
+preuve de concordance : seul l'audit en est la porte.
 """
 from __future__ import annotations
 
@@ -24,9 +26,9 @@ from rag_hermes.token_chunking_profile import LockedTokenChunker
 
 
 def _print_plan(plan) -> None:
-    # Labels come from the index, so they are rendered through the sanitising
-    # helper: a payload key full of newlines and ANSI escapes must not forge
-    # report lines on the operator's screen.
+    # Point IDs come from the index and need sanitising. Unknown payload
+    # field names may be secrets even when printable: the renderer prints
+    # only canonical field names and counts all unknown keys.
     for line in render_divergence_report(plan):
         print(line)
 

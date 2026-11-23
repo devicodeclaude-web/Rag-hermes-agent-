@@ -140,9 +140,10 @@ def audit_canonical_copy_index(
 class CanonicalIndexDivergence:
     """What an operator must repair. NOT an audit verdict, and never a pass.
 
-    Point identifiers and payload FIELD NAMES only: no document text, no ACL
-    value, nothing that would copy confidential content into an operator's
-    logs or ticket. An empty plan is not proof of concordance either: only
+    Point identifiers and payload FIELD NAMES only: no document text or ACL
+    values. The in-memory plan can contain hostile unknown field names; do not
+    log/repr it. Use render_divergence_report for a safe operator-facing view.
+    An empty plan is not proof of concordance either: only
     `audit_canonical_copy_index` is the fail-closed gate.
     """
 
@@ -172,16 +173,26 @@ def _canonical_json(value: Any) -> str:
 
 _PRINTABLE_LABEL = re.compile(r"[A-Za-z0-9_.:+-]{1,64}")
 
+# Fixed service schema, not obtained from the index. Keep this list in sync
+# with chunk_to_point's payload (the regression test checks all its keys).
+# Unknown index keys can themselves be secrets and must not reach CLI logs.
+_CANONICAL_PAYLOAD_FIELDS = frozenset({
+    "chunk_id", "document_id", "text", "tenant_id", "visibility",
+    "allowed_group_ids", "allowed_user_ids", "owner_id", "classification",
+    "doc_version", "acl_version", "source_sha", "source_uri", "section",
+    "start_offset", "end_offset", "token_count", "tokenizer_name",
+    "tokenizer_revision", "content_hash", "tombstone",
+})
+
 
 def _safe_label(value: Any, kind: str, index: int) -> str:
     """Render an INDEX-CONTROLLED label without letting it forge a report.
 
-    Payload keys and point identifiers come from whoever can write to the
-    collection — the very adversary this diagnostic looks for. Printed
-    verbatim, a key holding newlines and ANSI escapes injects plausible
-    report lines into the operator's screen or into a script that greps this
-    output. Anything outside a conservative character set is replaced by a
-    counted marker instead of being quoted or truncated.
+    Point identifiers come from whoever can write to the collection — the
+    adversary this diagnostic looks for. Printed verbatim, an id holding
+    newlines and ANSI escapes could forge report lines on the operator's
+    screen. Unknown payload field names are NOT passed here: they are counted
+    without printing, because even a printable name can contain a secret.
     """
     if type(value) is str and _PRINTABLE_LABEL.fullmatch(value):
         return value
@@ -212,18 +223,17 @@ def render_divergence_report(
     section("Points inattendus dans l'index", plan.unexpected_point_ids,
             lambda index, point_id: _safe_label(point_id, "identifiant", index))
     def format_divergent(index: int, entry: tuple[str, tuple[str, ...]]) -> str:
-        # Field NAMES only, each sanitised. Bound the names WITHIN an entry
-        # too: one hostile payload may contain thousands of distinct keys and
-        # otherwise turn a single printed line into an unbounded log record.
+        # Show ALL approved fields (including ACL) even when unknown index
+        # keys sort first. Unknown key names may be secrets, so count them
+        # without printing them. The static schema bounds every line.
         fields = entry[1]
-        limit = min(max_entries, 16)
-        shown = ", ".join(
-            _safe_label(field, "champ", position)
-            for position, field in enumerate(fields[:limit])
-        )
-        hidden = len(fields) - limit
-        if hidden > 0:
-            shown += f" ; … et {hidden} autres champs non affichés"
+        approved = [field for field in fields
+                    if type(field) is str and field in _CANONICAL_PAYLOAD_FIELDS]
+        unknown_count = len(fields) - len(approved)
+        shown = ", ".join(approved)
+        if unknown_count:
+            noun = "champ inconnu" if unknown_count == 1 else "champs inconnus"
+            shown += f" ; {unknown_count} {noun}" if shown else f"{unknown_count} {noun}"
         return f"{_safe_label(entry[0], 'identifiant', index)} : {shown}"
 
     section("Points divergents", plan.divergent_points, format_divergent)
