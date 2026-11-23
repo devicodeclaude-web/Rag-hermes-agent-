@@ -15,6 +15,7 @@ from rag_hermes.acl import AuthorizationContext
 from rag_hermes.canonical_registry import CanonicalDocumentRegistry
 from rag_hermes.canonical_reconciliation import (
     audit_canonical_copy_index, plan_canonical_index_reconciliation,
+    render_divergence_report,
 )
 from rag_hermes.g1_audited_candidates import run_audited_g1_candidate_window
 from rag_hermes.index_integrity import AuditedIndexSessionError, verify_index_snapshot
@@ -588,13 +589,17 @@ class QdrantRepositoryIntegrationTests(unittest.TestCase):
             )
             self.assertTrue(clean.is_clean, clean)
 
-            # One stranger, plus a payload altered at the expected id.
+            # A UUID stranger, an integer stranger (legal Qdrant point ID),
+            # plus a payload altered at the expected id.
             stranger_id = str(uuid.uuid4())
+            integer_stranger_id = 42
             altered = chunk_to_point(chunks[0], _fixed_vector(""))
             altered["payload"] = {**altered["payload"], "acl_version": 7}
             self.client.upsert(self.collection, [
                 {"id": stranger_id, "vector": {"dense": _fixed_vector("")},
                  "payload": {"tenant_id": "alpha", "document_id": "intrus"}},
+                {"id": integer_stranger_id, "vector": {"dense": _fixed_vector("")},
+                 "payload": {"tenant_id": "alpha", "document_id": "intrus-entier"}},
                 altered,
             ])
             plan = plan_canonical_index_reconciliation(
@@ -602,7 +607,8 @@ class QdrantRepositoryIntegrationTests(unittest.TestCase):
                 collection=self.collection, chunker=chunk_document, page_size=1,
             )
             self.assertFalse(plan.is_clean)
-            self.assertEqual(plan.unexpected_point_ids, (stranger_id,))
+            self.assertEqual(set(plan.unexpected_point_ids), {stranger_id, "42"})
+            self.assertIn("  - 42", "\n".join(render_divergence_report(plan)))
             self.assertEqual(plan.divergent_points, ((expected_id, ("acl_version",)),))
             self.assertEqual(plan.missing_point_ids, ())
             # The same divergence must still FAIL the audit gate.
