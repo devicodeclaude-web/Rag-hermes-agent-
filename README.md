@@ -143,8 +143,15 @@ clos.
 **Lecteur d'audit.** Le scroll non filtré appartient au seul
 `QdrantAuditClient` (`rag_hermes/qdrant_rest.py`), qui ne détient qu'un
 transport HTTP : aucune méthode de mutation n'existe dans son graphe d'objets
-et il n'hérite plus du client lecture/écriture. La fenêtre auditée
-`run_audited_g1_candidate_window` exige deux identifiants de **lecture**
+et il n'hérite plus du client lecture/écriture. La fenêtre auditée a deux
+points d'entrée publics sur un moteur privé partagé —
+`run_audited_g1_candidate_window`, qui rend des candidats reclassés, et
+`run_audited_g1_answer`, voie **pilote** qui génère en plus une réponse citée
+entre le reranking et l'audit de clôture (rendu partagé
+`rag_hermes/answering.py`, marqueurs `[Sn]` résolus sur cette seule fenêtre en
+mode strict, fenêtre vide refusée au lieu de devenir une abstention ; ni
+calibration, ni reçu G1, modèles factices en CPU). Les deux exigent deux
+identifiants de **lecture**
 distincts, `audit_api_key` et `query_api_key`, refusés s'ils ne portent pas
 exactement le droit `r` sur la collection, s'ils sont identiques, ou si un seul
 des deux est fourni ; les deux peuvent rester vides uniquement face à une

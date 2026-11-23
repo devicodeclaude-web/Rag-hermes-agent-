@@ -71,13 +71,23 @@ def answer_from_evidence(
     a published answer whose text shows an unresolved marker misleads a reader
     and inflates structural-citation metrics computed on resolved citations
     only. `RagService` opts out explicitly for backward compatibility.
+
+    Citations are materialised AFTER the generator returns, from the very Chunk
+    objects it received: a hostile generator can rewrite a quote via
+    `object.__setattr__` (frozen dataclasses are not immune). Rebinding the
+    evidence to a trusted manifest after generation is the CALLER's job; the
+    audited G1 window does exactly that.
     """
     if not evidence:
         # SERVER-side invariant breach, not a bad client request: GenerationError
         # maps to HTTP 502. A bare ValueError would surface as 400 and blame the
         # caller for an empty pipeline window.
         raise GenerationError("no verified evidence in candidate window")
-    if not generator:
+    # `is None`, NOT falsiness: a CALLABLE generator whose `__bool__` returns
+    # False (or whose `__len__` returns 0) would otherwise silently fall back to
+    # the extractive branch, publishing a passage while the caller believes the
+    # configured generator ran.
+    if generator is None:
         # Extractive default: single best chunk with its citation.
         top = evidence[0]
         response = AnswerResponse(
@@ -94,6 +104,12 @@ def answer_from_evidence(
         )
         return AnswerTrace(response, tuple(evidence), (top,))
     answer = generator(question, evidence)
+    # Validate the TYPE before any comparison: a str subclass with a lying
+    # `__eq__` compared equal to the abstention sentinel, which skipped both the
+    # marker guard and the zero-citation guard and published arbitrary text as
+    # an abstention. `type(x) is str` also rejects bytes and non-strings.
+    if type(answer) is not str:
+        raise GenerationError("generated answer must be a plain string")
     if answer == ABSTENTION_ANSWER:
         response = AnswerResponse(answer=answer, abstained=True, citations=())
         return AnswerTrace(response, tuple(evidence), ())

@@ -1,4 +1,4 @@
-"""Fenêtre candidate-only auditée, sans génération ni abstention."""
+"""Fenêtre G1 auditée : candidats seuls, et voie pilote de réponse citée."""
 from __future__ import annotations
 
 from dataclasses import asdict, replace
@@ -330,6 +330,77 @@ class AuditedG1CandidateWindowTests(unittest.TestCase):
         with patch("rag_hermes.g1_audited_candidates.answer_from_evidence", return_value=None):
             with self.assertRaisesRegex(GenerationError, "produced no answer trace"):
                 self.run_answer(lambda q, evidence: "Installez avec pipx [S1].")
+
+    def test_multi_chunk_window_lets_the_second_marker_resolve(self):
+        # La revendication « les marqueurs sont résolus sur CETTE fenêtre »
+        # exige une fenêtre multi-chunks : avec top_k=1 une troncature de
+        # l'évidence resterait invisible.
+        second = replace(self.document, document_id="other", content="Autre preuve canonique.")
+        self.path.write_text("".join(
+            json.dumps(asdict(doc)) + "\n" for doc in (self.document, second)
+        ), encoding="utf-8")
+        self.source_sha = hashlib.sha256(self.path.read_bytes()).hexdigest()
+        self.chunks = [chunk_document(doc)[0] for doc in (self.document, second)]
+        self.points = [chunk_to_point(chunk, [1.0, 0.0]) for chunk in self.chunks]
+        self.manifest_sha = verify_index_snapshot(self.chunks, self.points).payload_sha256
+        self.audit.points = self.points
+        self.query.points = self.points
+
+        seen = []
+        def generate(question, evidence):
+            seen.append([chunk.document_id for chunk in evidence])
+            return "La seconde preuve [S2] le dit."
+
+        result = self.run_answer(generate, top_k=2)
+        self.assertEqual(seen, [["guide", "other"]])
+        self.assertEqual(len(result.candidates), 2)
+        self.assertEqual(result.trace.response.citations[0].document_id, "other")
+        self.assertEqual(result.trace.response.citations[0].quote, second.content)
+
+    def test_generator_mutating_a_chunk_cannot_rewrite_the_published_citation(self):
+        # Les citations sont matérialisées APRÈS le retour du générateur, depuis
+        # les objets Chunk qu'il a reçus : un générateur hostile pouvait réécrire
+        # le texte cité pendant que l'audit de clôture passait (il compare les
+        # payloads de l'index au manifeste, pas les objets candidats).
+        def mutate(question, evidence):
+            object.__setattr__(evidence[0], "text", "TEXTE INJECTE APRES L'AUDIT")
+            return "Installez avec pipx [S1]."
+
+        with self.assertRaisesRegex(PermissionError, "audited manifest"):
+            self.run_answer(mutate)
+        self.assertEqual([event[0] for event in self.events], [
+            "schema", "audit", "dense", "sparse", "rerank",
+        ])
+
+    def test_interruption_during_generation_leaves_the_session_terminal(self):
+        # `except BaseException` : un Ctrl-C ou un SystemExit doit rendre la
+        # session terminale comme une exception ordinaire. `except Exception`
+        # laisserait la session réutilisable.
+        from rag_hermes.index_integrity import AuditedIndexSession
+        real, built = AuditedIndexSession, []
+
+        def make_session(*args, **kwargs):
+            session = real(*args, **kwargs)
+            built.append(session)
+            return session
+
+        for failure in (KeyboardInterrupt, SystemExit, GeneratorExit):
+            with self.subTest(failure=failure.__name__):
+                built.clear()
+                self.events.clear()
+                def explode(question, evidence, failure=failure):
+                    raise failure()
+                with patch("rag_hermes.g1_audited_candidates.AuditedIndexSession",
+                           side_effect=make_session):
+                    with self.assertRaises(failure):
+                        self.run_answer(explode)
+                self.assertEqual([event[0] for event in self.events], [
+                    "schema", "audit", "dense", "sparse", "rerank",
+                ])
+                with self.assertRaises(ValueError):
+                    built[0].close()
+                with self.assertRaises(ValueError):
+                    built[0].open()
 
     def test_session_is_unusable_after_a_generator_failure(self):
         from rag_hermes.index_integrity import AuditedIndexSession

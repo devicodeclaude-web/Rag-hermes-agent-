@@ -1,4 +1,9 @@
-"""One-shot, candidate-only G1 window bracketed by two Qdrant payload audits.
+"""One-shot G1 window bracketed by two Qdrant payload audits.
+
+Two public entry points share one private engine: `run_audited_g1_candidate_window`
+releases reranked candidates only, and `run_audited_g1_answer` additionally runs a
+pilot cited-answer generation INSIDE the audited window (between the reranking and
+the closing audit). Neither is a calibrated G1 receipt.
 
 Neither audit freezes writes, checks vectors, or proves the query saw the same
 snapshot. An empty candidate window is NOT an honest abstention verdict.
@@ -65,7 +70,7 @@ class AuditedG1Answer:
 
 
 def _dense_only_disabled(_query: str) -> list[float]:
-    raise ValueError("this candidate-only path requires a hybrid encoder")
+    raise ValueError("the audited G1 window requires a hybrid encoder")
 
 
 def _run_audited_g1_window(
@@ -174,6 +179,16 @@ def _run_audited_g1_window(
     try:
         candidates = stage.candidates(question, context=context)
         trace = answer_fn(tuple(candidates)) if answer_fn is not None else None
+        if trace is not None:
+            # Citations, cited_chunks and the published window are materialised
+            # from the very Chunk objects the generator received, AFTER it
+            # returns. A generator mutating one of them (frozen dataclasses are
+            # not immune to `object.__setattr__`) could rewrite the quote while
+            # the closing audit still passed, since that audit compares index
+            # payloads to the canonical manifest, not these objects. Rebind every
+            # candidate to the manifest once more before releasing anything.
+            for candidate in candidates:
+                require_manifest_member(candidate)
         closing = session.close()
     except BaseException:
         # No second scroll on an abort or Ctrl-C, and no partial window escapes

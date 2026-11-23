@@ -5,9 +5,12 @@ Deux points d'entrée publics partagent le même moteur privé
 précédentes sans les brancher à `RagService` :
 `run_audited_g1_candidate_window`, qui rend des candidats, et
 `run_audited_g1_answer`, qui rend une réponse citée. Le rappel de génération
-n'est **pas** exposé sur une signature publique : il le serait, un appelant
-obtiendrait les deux vrais rapports d'audit autour d'une réponse fabriquée tout
-en contournant les gardes du pilote.
+n'est **pas sur la surface publique** : il le serait, un appelant obtiendrait
+les deux vrais rapports d'audit autour d'une réponse fabriquée tout en
+contournant les gardes du pilote. Le préfixe `_` du moteur reste une
+**convention**, pas une barrière : du code exécuté dans le même processus peut
+l'importer, comme il peut forger l'objet de résultat directement. La frontière
+de confiance est le processus, pas ce nom.
 
 1. charge un JSONL documentaire et vérifie son SHA-256 attendu, puis reconstruit
    les chunks via un chunker fourni par l'opérateur ;
@@ -38,6 +41,16 @@ rendue à l'appelant et la session devient terminale, mais le texte est déjà
 sorti. Ce qui est garanti avant tout appel au modèle ou au générateur : ACL et
 provenance canoniques, et appartenance de chaque candidat au manifeste audité.
 
+Après le retour du générateur et **avant** l'audit de clôture, chaque candidat
+est **relié une seconde fois** au manifeste : les citations et la fenêtre
+publiée sont matérialisées depuis les objets `Chunk` que le générateur a reçus,
+et un générateur hostile pouvait en réécrire le texte par `object.__setattr__`
+pendant que l'audit de clôture passait (il compare les payloads de l'index au
+manifeste, pas ces objets). Le type de la réponse est aussi vérifié
+(`type(answer) is str`) : une sous-classe de `str` au `__eq__` menteur se
+faisait passer pour l'abstention exacte et court-circuitait les deux gardes de
+citation.
+
 Le type `AuditedCandidateWindow` contient une liste immuable de candidats et
 les deux rapports d'audit. Il ne contient ni réponse, ni citation, ni décision
 `abstained`. **Une fenêtre vide n'est pas une abstention honnête** : les top-40
@@ -57,6 +70,9 @@ une attestation** : `object.__new__`, `dataclasses.replace`, `pickle` et
 d'audit authentiques. Un reçu G1 devra le verrouiller par une empreinte
 recalculable, pas accepter l'objet. Son `repr` ne recopie ni le texte des
 preuves ni celui des citations ; les attributs bruts, eux, restent sensibles.
+`AuditedCandidateWindow`, lui, n'a **pas** de `repr` masquant : son `repr` par
+défaut recopie le texte des chunks. Asymétrie assumée tant qu'aucun des deux
+types n'est journalisé ; à harmoniser avant tout reçu G1.
 
 Bornes de la preuve : les deux rapports dérivent du **même** manifeste ; leur
 égalité n'est pas une confirmation indépendante. L'audit lit les IDs/payloads,
