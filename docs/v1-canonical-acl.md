@@ -292,13 +292,17 @@ révocation valable.
   la même empreinte d'ancre approuvée et le même rejeu : pour un point
   divergent le plan en mémoire ne contient que les **noms de champs** en
   écart, jamais une valeur. `repr(plan)` et `str(plan)` sont réduits à des
-  compteurs, mais ne pas journaliser/sérialiser (`asdict`, attributs bruts)
-  le plan en mémoire : un nom de clé Qdrant inconnu peut lui-même contenir
-  un secret. Le rendu CLI imprime **tous les champs du schéma canonique
-  connus** (ACL comprise) même si de nombreuses clés inconnues les précèdent ;
-  les clés inconnues ne sont **jamais imprimées**, seulement comptées par point.
-  Les identifiants de points viennent aussi de l'index : ils sont assainis
-  avant impression (jeu de caractères restreint, sinon un marqueur compté).
+  compteurs validés (une valeur forgée de mauvais type est masquée), mais ne
+  pas journaliser/sérialiser (`asdict`, attributs bruts) le plan en mémoire :
+  un nom de clé Qdrant inconnu peut lui-même contenir un secret. Le rendu CLI
+  imprime **tous les champs du schéma canonique connus** (ACL comprise) même si
+  de nombreuses clés inconnues les précèdent ; les clés inconnues ne sont
+  **jamais imprimées**, seulement comptées par point. Les identifiants de
+  points viennent aussi de l'index : seules les formes UUID et entières non
+  signées (64 bits) sont affichées ; toute autre chaîne, même imprimable, est
+  remplacée par un marqueur compté. Une valeur secrète qui aurait elle-même
+  la forme d'un ID valide reste affichable : la sortie ne doit pas être traitée
+  comme déclassifiée.
   Le nombre de lignes affichées et la longueur de chaque ligne sont bornés
   par les champs canoniques fixes, afin d'empêcher une clé malveillante de
   fabriquer de fausses lignes ou de gonfler le journal. Toute évolution du

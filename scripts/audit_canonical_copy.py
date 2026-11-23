@@ -26,9 +26,9 @@ from rag_hermes.token_chunking_profile import LockedTokenChunker
 
 
 def _print_plan(plan) -> None:
-    # Point IDs come from the index and need sanitising. Unknown payload
-    # field names may be secrets even when printable: the renderer prints
-    # only canonical field names and counts all unknown keys.
+    # Point IDs come from the index: only UUID and unsigned integer forms
+    # are displayed, all other labels masked even if printable. Unknown
+    # payload keys may be secrets too: count them without printing names.
     for line in render_divergence_report(plan):
         print(line)
 

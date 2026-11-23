@@ -475,6 +475,31 @@ class ReconciliationPlanTests(unittest.TestCase):
         self.assertNotIn("PRIVATE_TOKEN_abcd1234", printed)
         self.assertNotIn("0_extra_", printed)
 
+    def test_cli_plan_masks_printable_non_qdrant_point_ids(self):
+        from scripts import audit_canonical_copy as command
+        token = mint_collection_token(
+            "fixture", collection="chunks", access="r", ttl_seconds=600,
+        )
+        secret = "PRIVATE_TOKEN_abcd1234"
+        self.client.points = list(self.points) + [
+            {"id": secret, "payload": {"tenant_id": "beta"}},
+            {"id": 42, "payload": {"tenant_id": "beta"}},
+        ]
+        args = ["audit_canonical_copy.py", "--plan", "--copy", str(self.store),
+                "--anchor-sha256", self.anchor_digest,
+                "--qdrant-url", "http://127.0.0.1:6333", "--collection", "chunks",
+                "--tokenizer-lock", "lock.json", "--tokenizer-file", "tokenizer.json"]
+        with (patch("sys.argv", args),
+              patch.dict(os.environ, {"RAG_QDRANT_G1_AUDIT_API_KEY": token}, clear=True),
+              patch.object(command, "QdrantAuditClient", return_value=self.client),
+              patch.object(command, "LockedTokenChunker", return_value=chunk_document),
+              patch("sys.stdout", new_callable=StringIO) as output):
+            self.assertEqual(command.main(), 1)
+        printed = output.getvalue()
+        self.assertNotIn(secret, printed)
+        self.assertIn("identifiant masqué", printed)
+        self.assertIn("42", printed)
+
 class DivergenceRenderingTests(unittest.TestCase):
     """Index-controlled labels must never forge report lines on an operator's screen."""
 
@@ -495,13 +520,13 @@ class DivergenceRenderingTests(unittest.TestCase):
         # be able to add a line, whatever it contains.
         self.assertEqual(len(lines), 5)
         self.assertTrue(all("\n" not in line for line in lines))
-        self.assertIn("non imprimable", rendered)
+        self.assertIn("identifiant masqué", rendered)
 
     def test_an_overlong_field_name_is_replaced_not_truncated_into_nonsense(self):
         lines = render_divergence_report(self.hostile_plan("a" * 200))
         rendered = "\n".join(lines)
         self.assertNotIn("a" * 65, rendered)
-        self.assertIn("non imprimable", rendered)
+        self.assertIn("identifiant masqué", rendered)
 
     def test_ordinary_names_and_ids_are_shown_verbatim(self):
         plan = CanonicalIndexDivergence(
@@ -516,6 +541,24 @@ class DivergenceRenderingTests(unittest.TestCase):
         self.assertIn("22222222-2222-4222-8222-222222222222", rendered)
         self.assertIn("acl_version, allowed_user_ids", rendered)
         self.assertNotIn("non imprimable", rendered)
+
+    def test_only_qdrant_point_id_forms_are_printed(self):
+        uuid_id = "11111111-1111-4111-8111-111111111111"
+        allowed = (uuid_id, uuid_id.upper(), uuid_id.replace("-", ""),
+                   "urn:uuid:" + uuid_id, "0", str(2**64 - 1))
+        masked = ("PRIVATE_TOKEN_abcd1234", "42extra", "00042", str(2**64),
+                  "1\x1b[32m", "\u0661", "urn:uuid:" + uuid_id + "suffix")
+        plan = CanonicalIndexDivergence(
+            expected_point_count=1, observed_point_count=len(allowed) + len(masked),
+            missing_point_ids=(), unexpected_point_ids=allowed + masked,
+            divergent_points=(),
+        )
+        printed = "\n".join(render_divergence_report(plan))
+        for point_id in allowed:
+            self.assertIn("  - " + point_id, printed)
+        for point_id in masked:
+            self.assertNotIn("  - " + point_id, printed)
+        self.assertEqual(printed.count("identifiant masqué"), len(masked))
 
     def test_unknown_fields_are_counted_without_printing_their_names(self):
         fields = tuple(f"0_extra_{index:03d}" for index in range(100)) + (
@@ -570,6 +613,19 @@ class DivergenceRenderingTests(unittest.TestCase):
             self.assertIn("unexpected_count=1", rendered)
             self.assertIn("divergent_count=1", rendered)
         self.assertEqual(plan.divergent_points[0][1][-1], secret)
+
+    def test_plan_repr_masks_manually_forged_counters(self):
+        secret = "\nPRIVATE_TOKEN_abcd1234\x1b[32m"
+        plan = CanonicalIndexDivergence(
+            expected_point_count=secret, observed_point_count=True,
+            missing_point_ids=(), unexpected_point_ids=(), divergent_points=(),
+        )
+        for rendered in (repr(plan), str(plan), repr([plan])):
+            self.assertNotIn(secret, rendered)
+            self.assertNotIn("\n", rendered)
+            self.assertNotIn("\x1b", rendered)
+            self.assertIn("expected_point_count=<invalide>", rendered)
+            self.assertIn("observed_point_count=<invalide>", rendered)
 
     def test_the_number_of_printed_lines_is_bounded(self):
         many = tuple(f"00000000-0000-4000-8000-{index:012d}" for index in range(500))

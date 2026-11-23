@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 import re
 from typing import Any, Callable
+import uuid
 
 from .acl import Chunk
 from .canonical_registry import (
@@ -142,10 +143,11 @@ class CanonicalIndexDivergence:
 
     Point identifiers and payload FIELD NAMES only: no document text or ACL
     values. The in-memory plan can contain hostile unknown field names;
-    its repr/str are redacted to counts, but do not serialise/log its raw
-    attributes or dataclasses.asdict(plan). Use render_divergence_report for
-    a safe operator-facing view. An empty plan is not proof of concordance
-    either: only `audit_canonical_copy_index` is the fail-closed gate.
+    its repr/str are redacted to validated counts (even for forged counter
+    types), but do not serialise/log its raw attributes or
+    dataclasses.asdict(plan). Use render_divergence_report for a safe
+    operator-facing view. An empty plan is not proof of concordance either:
+    only `audit_canonical_copy_index` is the fail-closed gate.
     """
 
     expected_point_count: int
@@ -162,11 +164,17 @@ class CanonicalIndexDivergence:
     def __repr__(self) -> str:
         # Dataclass' default repr would log hostile index-controlled field
         # names and point IDs. Preserve the full plan for programmatic repair,
-        # but make accidental logging show only counts.
+        # but make accidental logging show only safe, bounded counts. A caller
+        # may also instantiate this public dataclass with forged counter types.
+        def safe_count(value: Any) -> str:
+            if type(value) is int and 0 <= value <= 1_000_000_000_000:
+                return str(value)
+            return "<invalide>"
+
         return (
             "CanonicalIndexDivergence("
-            f"expected_point_count={self.expected_point_count}, "
-            f"observed_point_count={self.observed_point_count}, "
+            f"expected_point_count={safe_count(self.expected_point_count)}, "
+            f"observed_point_count={safe_count(self.observed_point_count)}, "
             f"missing_count={len(self.missing_point_ids)}, "
             f"unexpected_count={len(self.unexpected_point_ids)}, "
             f"divergent_count={len(self.divergent_points)})"
@@ -185,8 +193,6 @@ def _canonical_json(value: Any) -> str:
         raise ValueError("invalid indexed payload encoding") from exc
 
 
-_PRINTABLE_LABEL = re.compile(r"[A-Za-z0-9_.:+-]{1,64}")
-
 # Fixed service schema, not obtained from the index. Keep this list in sync
 # with chunk_to_point's payload (the regression test checks all its keys).
 # Unknown index keys can themselves be secrets and must not reach CLI logs.
@@ -200,17 +206,27 @@ _CANONICAL_PAYLOAD_FIELDS = frozenset({
 
 
 def _safe_label(value: Any, kind: str, index: int) -> str:
-    """Render an INDEX-CONTROLLED label without letting it forge a report.
+    """Show only a Qdrant point-ID shape, never an arbitrary printable label.
 
-    Point identifiers come from whoever can write to the collection — the
-    adversary this diagnostic looks for. Printed verbatim, an id holding
-    newlines and ANSI escapes could forge report lines on the operator's
-    screen. Unknown payload field names are NOT passed here: they are counted
-    without printing, because even a printable name can contain a secret.
+    The plan normalises integer IDs to decimal strings. Both unsigned 64-bit
+    integers and UUIDs are legitimate point IDs; everything else is masked,
+    including printable secrets supplied by a hostile or broken index client.
+    UUID forms are exact (hex, hyphenated, URN), not merely parseable prefixes.
     """
-    if type(value) is str and _PRINTABLE_LABEL.fullmatch(value):
-        return value
-    return f"<{kind} non imprimable n°{index}>"
+    if type(value) is str:
+        if value.isascii() and value.isdecimal() and len(value) <= 20:
+            number = int(value)
+            if number < 2**64 and str(number) == value:
+                return value
+        if len(value) in (32, 36, 45):
+            try:
+                parsed = uuid.UUID(value)
+            except ValueError:
+                pass
+            else:
+                if value.lower() in (parsed.hex, str(parsed), f"urn:uuid:{parsed}"):
+                    return value
+    return f"<{kind} masqué n°{index}>"
 
 
 def render_divergence_report(
