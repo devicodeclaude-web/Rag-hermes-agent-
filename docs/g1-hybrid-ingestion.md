@@ -210,10 +210,14 @@ un alias différent contourne la sérialisation.
 conteneur non raccordé au **même verrou local** peut réutiliser un ID périmé
 pendant le remplacement. Ce verrou consultatif ne protège que les processus
 coopérants du même hôte ; il ne constitue **pas** un verrou distribué ni une
-preuve de conservation durable face aux écrivains externes. La politique de
-tombstone/suppression explicite reste à définir et l'API de suppression n'est
-pas exposée. Garder #71 ouverte jusqu'à la revue indépendante et l'intégration
-Qdrant réelle de cette tranche.
+preuve de conservation durable face aux écrivains externes. Les tests de
+concurrence inter-processus et les scénarios Qdrant réels du remplacement ont
+été exécutés en CI lors de la tranche mono-hôte (voir l'historique de #71) :
+ils ne prouvent ni une suppression explicite ni une coordination multi-hôtes.
+Le propriétaire a retenu un **masquage réversible sur un seul hôte** comme
+prochaine cible ; le contrat proposé, ses migrations et ses portes d'activation
+sont dans `docs/issue71-reversible-delete-contract.md`. Rien de cela n'est
+encore implémenté : l'API de suppression reste absente et #71 reste ouverte.
 
 Un encodeur qui renvoie un `numpy.ndarray` est refusé (`vector must be a
 nonempty list or tuple of numbers`) : le point doit être sérialisable en JSON,
