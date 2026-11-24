@@ -627,6 +627,165 @@ class DivergenceRenderingTests(unittest.TestCase):
             self.assertIn("expected_point_count=<invalide>", rendered)
             self.assertIn("observed_point_count=<invalide>", rendered)
 
+    def test_plan_repr_masks_forged_collection_fields_and_never_raises(self):
+        # Les trois compteurs de collections passaient par un `len()` NU : un
+        # champ forgé fuitait sa longueur, un entier faisait lever le repr
+        # (`TypeError`), et un `__len__` hostile recopiait son message — donc
+        # le passage — dans la trace mise en journal. Même garde que les deux
+        # types G1 audités, qui revendiquent cette politique de représentation.
+        forged_text = "\nPASSAGE_FORGE_abcd1234\x1b[32m"
+
+        class HostileLength(tuple):
+            def __len__(self):
+                raise ValueError(forged_text)
+
+        plan = CanonicalIndexDivergence(1, 1, (), (), ())
+        for field in ("missing_point_ids", "unexpected_point_ids", "divergent_points"):
+            count = field.replace("_point_ids", "_count").replace(
+                "divergent_points", "divergent_count")
+            for forgery in (forged_text, 5, HostileLength()):
+                with self.subTest(field=field, forgery=type(forgery).__name__):
+                    forged = replace(plan, **{field: forgery})
+                    for rendered in (repr(forged), str(forged), repr([forged])):
+                        self.assertIn(f"{count}=<invalide>", rendered)
+                        self.assertNotIn(forged_text.strip(), rendered)
+                        self.assertNotIn("\n", rendered)
+                        self.assertNotIn("\x1b", rendered)
+
+        # Un plan sans aucun champ ne doit pas faire lever le repr : une
+        # exception pendant la mise en forme d'une trace masque l'erreur réelle.
+        self.assertEqual(
+            repr(object.__new__(CanonicalIndexDivergence)),
+            "CanonicalIndexDivergence(expected_point_count=<invalide>, "
+            "observed_point_count=<invalide>, missing_count=<invalide>, "
+            "unexpected_count=<invalide>, divergent_count=<invalide>)",
+        )
+
+    def test_cli_renderer_refuses_forged_collection_fields_instead_of_raising(self):
+        # `render_divergence_report` est la vue « sûre » destinée à l'opérateur
+        # et au ticket : elle levait un `TypeError` sur un entier forgé et un
+        # `IndexError` sur une chaîne dans `divergent_points`, et un objet
+        # hostile pouvait fabriquer des lignes de rapport supplémentaires.
+        # DÉFENSE EN PROFONDEUR : le constructeur du plan n'émet que des tuples
+        # exacts, donc un index hostile — qui ne contrôle que des valeurs — ne
+        # produit pas un tel plan ; seul du code dans le processus le peut.
+        plan = CanonicalIndexDivergence(1, 1, (), (), ())
+
+        class HostileLength(tuple):
+            def __len__(self):
+                raise ValueError("\nPASSAGE_FORGE_abcd1234\x1b[32m")
+
+        for field, forgery in (
+            ("missing_point_ids", 7),
+            ("unexpected_point_ids", "ab"),
+            ("divergent_points", "ab"),
+            ("divergent_points", (("id", 5),)),
+            ("divergent_points", ("pas-un-couple",)),
+            # Sous-classe de `tuple` : `isinstance` la laisserait passer, puis
+            # son `__len__` hostile relèverait son message — donc le passage —
+            # dans la trace. Seul le contrôle de TYPE exact la refuse.
+            ("missing_point_ids", HostileLength()),
+        ):
+            with self.subTest(field=field, forgery=forgery):
+                forged = replace(plan, **{field: forgery})
+                with self.assertRaisesRegex(ValueError, "plan de divergence invalide"):
+                    render_divergence_report(forged)
+
+    def test_cli_renderer_reads_each_plan_field_exactly_once(self):
+        # Le contrôle de forme lisait par `getattr`, puis les champs étaient
+        # RELUS 2 à 3 fois pour mesurer, trancher et formater : un descripteur
+        # rendant un tuple à la validation et autre chose au formatage
+        # franchissait la garde, et l'`IndexError` qui suivait s'échappait de
+        # la vue « sûre ». L'invariant épinglé ici est direct — UNE lecture par
+        # champ — car un test qui se contente de basculer un seul champ laisse
+        # survivre la relecture des autres.
+        reads: dict[str, int] = {}
+
+        class CountingField:
+            def __init__(self, name: str, value: object) -> None:
+                self.name, self.value = name, value
+                reads[name] = 0
+
+            def __get__(self, obj, owner=None):
+                reads[self.name] += 1
+                return self.value
+
+        counted = type("CountedPlan", (CanonicalIndexDivergence,), {
+            "expected_point_count": CountingField("expected_point_count", 2),
+            "observed_point_count": CountingField("observed_point_count", 1),
+            "missing_point_ids": CountingField("missing_point_ids", ("11",)),
+            "unexpected_point_ids": CountingField("unexpected_point_ids", ()),
+            "divergent_points": CountingField(
+                "divergent_points", (("12", ("text",)),)),
+        })
+        lines = render_divergence_report(object.__new__(counted))
+        self.assertEqual(
+            reads,
+            {
+                "expected_point_count": 1, "observed_point_count": 1,
+                "missing_point_ids": 1, "unexpected_point_ids": 1,
+                "divergent_points": 1,
+            },
+        )
+        # Le rendu reste correct : la lecture unique ne doit pas perdre le
+        # contenu réel du plan.
+        self.assertEqual(lines[0], "Points attendus : 2 ; observés : 1.")
+        self.assertIn("Points manquants dans l'index (1) :", lines)
+        self.assertIn("Points inattendus dans l'index (0) :", lines)
+        self.assertIn("Points divergents (1) :", lines)
+        self.assertIn("  - 12 : text", lines)
+
+        # Les deux compteurs d'en-tête sont lus défensivement : un plan aux
+        # collections VALIDES mais sans attribut de compteur franchit le
+        # contrôle de forme, donc une lecture directe y lèverait une
+        # `AttributeError` au lieu de masquer.
+        headless = object.__new__(CanonicalIndexDivergence)
+        for name in ("missing_point_ids", "unexpected_point_ids", "divergent_points"):
+            object.__setattr__(headless, name, ())
+        self.assertEqual(
+            render_divergence_report(headless)[0],
+            "Points attendus : <invalide> ; observés : <invalide>.",
+        )
+
+    def test_cli_renderer_refuses_a_field_that_changes_between_reads(self):
+        # Corollaire observable de la lecture unique : un descripteur qui
+        # bascule après la validation ne doit JAMAIS faire sortir une
+        # exception de forme ni fabriquer de ligne d'entrée.
+        class FlipFlop:
+            def __init__(self, allowed: int) -> None:
+                self.allowed, self.reads = allowed, 0
+
+            def __get__(self, obj, owner=None):
+                self.reads += 1
+                return () if self.reads <= self.allowed else "ab"
+
+        for field in ("missing_point_ids", "unexpected_point_ids", "divergent_points"):
+            for allowed in (0, 1, 2, 3):
+                with self.subTest(champ=field, lectures_sures=allowed):
+                    others = {
+                        name: () for name in
+                        ("missing_point_ids", "unexpected_point_ids", "divergent_points")
+                        if name != field
+                    }
+                    flipping = type("FlippingPlan", (CanonicalIndexDivergence,),
+                                    {field: FlipFlop(allowed)})
+                    forged = object.__new__(flipping)
+                    for name, value in (
+                        ("expected_point_count", 1), ("observed_point_count", 1),
+                        *others.items(),
+                    ):
+                        object.__setattr__(forged, name, value)
+                    try:
+                        lines = render_divergence_report(forged)
+                    except ValueError as exc:
+                        self.assertIn("plan de divergence invalide", str(exc))
+                    else:
+                        # Aucune ligne d'entrée fabriquée : seuls l'en-tête et
+                        # les trois titres de section, tous à zéro.
+                        self.assertEqual(len(lines), 4, lines)
+                        self.assertTrue(
+                            all("(0) :" in line for line in lines[1:]), lines)
+
     def test_cli_renderer_masks_forged_counters_too(self):
         from scripts import audit_canonical_copy as command
         secret = "\nPoints manquants dans l'index (0) :\x1b[31mSECRET"

@@ -73,9 +73,36 @@ une attestation** : `object.__new__`, `dataclasses.replace`, `pickle` et
 d'audit authentiques. Un reçu G1 devra le verrouiller par une empreinte
 recalculable, pas accepter l'objet. Son `repr` ne recopie ni le texte des
 preuves ni celui des citations ; les attributs bruts, eux, restent sensibles.
-`AuditedCandidateWindow`, lui, n'a **pas** de `repr` masquant : son `repr` par
-défaut recopie le texte des chunks. Asymétrie assumée tant qu'aucun des deux
-types n'est journalisé ; à harmoniser avant tout reçu G1.
+`AuditedCandidateWindow` applique désormais **la même politique** : son `repr`
+ne rend que des comptes (candidats, points des deux audits), car cette fenêtre
+transporte exactement les mêmes passages autorisés que la voie réponse. Les
+deux types passent chaque champ par la garde **partagée** avec les plans de
+divergence (`rag_hermes/redacted_repr.py`), qui refuse un compteur d'un type
+inattendu : sans ce contrôle, un objet reconstruit par `replace`,
+`object.__new__` ou `pickle` ferait appeler le `__format__` d'un champ forgé —
+donc recopier un texte arbitraire, sauts de ligne et séquences ANSI compris,
+qui fabriquent de fausses lignes de journal — ou lever en pleine mise en forme
+d'une trace.
+
+Ce masquage ne vise que le `repr` **accidentel** (ligne de journal, f-string,
+trace) : ce n'est **pas** une frontière de sécurité. Restent révélateurs, et
+donc à ne jamais journaliser :
+
+- les attributs bruts, lisibles sans restriction ;
+- le `repr` par défaut des éléments contenus — `RerankedCandidate` et `Chunk`
+  pour la fenêtre, auxquels s'ajoutent `AnswerTrace`, `AnswerResponse` et
+  `Citation` pour la voie réponse. Celui de `Chunk` recopie **ses vingt
+  champs** : le texte du passage, mais aussi **toute son ACL** (`tenant_id`,
+  `visibility`, `allowed_groups`, `allowed_users`, `owner_id`,
+  `classification`), `source_sha`, `content_hash`, les offsets et le profil de
+  tokenizer. `IndexSnapshotReport` recopie l'empreinte `payload_sha256`.
+  Journaliser `window.candidates`, `window.opening` ou
+  `answer.trace.response` reste donc une fuite ;
+- `dataclasses.asdict()` sur l'un des deux types, qui rend le texte intégral ;
+- les **variables locales** du moteur audité. Les chunks et le JSON du
+  manifeste sont vivants quand une exception se propage : un formateur de trace
+  qui capture les locals (Sentry `with_locals`, `rich`, `cgitb`) recopie les
+  passages dans le journal, et aucun `__repr__` ne ferme ce chemin.
 
 Bornes de la preuve : les deux rapports dérivent du **même** manifeste ; leur
 égalité n'est pas une confirmation indépendante. L'audit lit les IDs/payloads,

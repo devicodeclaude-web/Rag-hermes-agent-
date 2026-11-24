@@ -14,7 +14,7 @@ import json
 import os
 from pathlib import Path
 import re
-from typing import Any, Callable
+from typing import Any, Callable, cast
 import uuid
 
 from .acl import Chunk
@@ -27,6 +27,7 @@ from .canonical_registry import (
 from .index_integrity import IndexSnapshotReport, audit_qdrant_index
 from .ingestion import Document
 from .qdrant_store import chunk_to_point
+from .redacted_repr import safe_count, safe_length
 
 
 @contextmanager
@@ -137,11 +138,11 @@ def audit_canonical_copy_index(
         return report
 
 
-def _safe_count(value: Any) -> str:
-    """Render a count without invoking formatting on an untrusted object."""
-    if type(value) is int and 0 <= value <= 1_000_000_000_000:
-        return str(value)
-    return "<invalide>"
+# Alias d'identité sur la garde PARTAGÉE (`rag_hermes/redacted_repr.py`), pas
+# une copie : les types de résultat G1 audités revendiquent la même politique
+# de représentation, et deux implémentations privées pourraient rediverger en
+# silence. Un test `assertIs` épingle cette identité.
+_safe_count = safe_count
 
 
 @dataclass(frozen=True)
@@ -172,14 +173,18 @@ class CanonicalIndexDivergence:
         # Dataclass' default repr would log hostile index-controlled field
         # names and point IDs. Preserve the full plan for programmatic repair,
         # but make accidental logging show only safe, bounded counts. A caller
-        # may also instantiate this public dataclass with forged counter types.
+        # may also instantiate this public dataclass with forged counter types,
+        # so EVERY field goes through the shared guard: a bare `len()` leaked a
+        # forged string's length, raised `TypeError` on an int, and copied a
+        # hostile `__len__`'s message — hence the index's text — into the
+        # traceback that gets logged.
         return (
             "CanonicalIndexDivergence("
-            f"expected_point_count={_safe_count(self.expected_point_count)}, "
-            f"observed_point_count={_safe_count(self.observed_point_count)}, "
-            f"missing_count={len(self.missing_point_ids)}, "
-            f"unexpected_count={len(self.unexpected_point_ids)}, "
-            f"divergent_count={len(self.divergent_points)})"
+            f"expected_point_count={_safe_count(getattr(self, 'expected_point_count', None))}, "
+            f"observed_point_count={_safe_count(getattr(self, 'observed_point_count', None))}, "
+            f"missing_count={safe_length(getattr(self, 'missing_point_ids', None))}, "
+            f"unexpected_count={safe_length(getattr(self, 'unexpected_point_ids', None))}, "
+            f"divergent_count={safe_length(getattr(self, 'divergent_points', None))})"
         )
 
 
@@ -237,9 +242,31 @@ def render_divergence_report(
     """One safe line per entry, bounded, for an operator or a ticket."""
     if type(max_entries) is not int or not 1 <= max_entries <= 10_000:
         raise ValueError("max_entries must be a bounded positive int")
+    # The plan is a PUBLIC dataclass, rebuildable with forged fields. Validate
+    # the shape before measuring or slicing anything: a bare `len()`/`[:]` on a
+    # forged field raised TypeError/IndexError out of the operator's "safe"
+    # view, and a hostile `__len__`/`__getitem__` could fabricate extra report
+    # lines. Fail closed with a fixed message instead of rendering a doubtful
+    # report. Each field is read EXACTLY ONCE into a local: re-reading after
+    # the check let a descriptor return a tuple at validation time and
+    # something else at formatting time, which put the IndexError back.
+    missing = getattr(plan, "missing_point_ids", None)
+    unexpected = getattr(plan, "unexpected_point_ids", None)
+    divergent = getattr(plan, "divergent_points", None)
+    if any(type(field) is not tuple for field in (missing, unexpected, divergent)):
+        raise ValueError("plan de divergence invalide")
+    missing = cast(tuple, missing)
+    unexpected = cast(tuple, unexpected)
+    divergent = cast(tuple, divergent)
+    for entry in divergent:
+        if (
+            type(entry) is not tuple or len(entry) != 2
+            or type(entry[1]) is not tuple
+        ):
+            raise ValueError("plan de divergence invalide")
     lines = [
-        f"Points attendus : {_safe_count(plan.expected_point_count)} ; "
-        f"observés : {_safe_count(plan.observed_point_count)}."
+        f"Points attendus : {_safe_count(getattr(plan, 'expected_point_count', None))} ; "
+        f"observés : {_safe_count(getattr(plan, 'observed_point_count', None))}."
     ]
 
     def section(title: str, entries: tuple, formatter) -> None:
@@ -250,9 +277,9 @@ def render_divergence_report(
         if hidden > 0:
             lines.append(f"  … et {hidden} autres non affichés")
 
-    section("Points manquants dans l'index", plan.missing_point_ids,
+    section("Points manquants dans l'index", missing,
             lambda index, point_id: _safe_label(point_id, "identifiant", index))
-    section("Points inattendus dans l'index", plan.unexpected_point_ids,
+    section("Points inattendus dans l'index", unexpected,
             lambda index, point_id: _safe_label(point_id, "identifiant", index))
     def format_divergent(index: int, entry: tuple[str, tuple[str, ...]]) -> str:
         # Show ALL approved fields (including ACL) even when unknown index
@@ -268,7 +295,7 @@ def render_divergence_report(
             shown += f" ; {unknown_count} {noun}" if shown else f"{unknown_count} {noun}"
         return f"{_safe_label(entry[0], 'identifiant', index)} : {shown}"
 
-    section("Points divergents", plan.divergent_points, format_divergent)
+    section("Points divergents", divergent, format_divergent)
     return lines
 
 
