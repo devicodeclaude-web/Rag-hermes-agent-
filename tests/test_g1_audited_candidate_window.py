@@ -1,4 +1,4 @@
-"""Fenêtre candidate-only auditée, sans génération ni abstention."""
+"""Fenêtre G1 auditée : candidats seuls, et voie pilote de réponse citée."""
 from __future__ import annotations
 
 from dataclasses import asdict, replace
@@ -241,6 +241,328 @@ class AuditedG1CandidateWindowTests(unittest.TestCase):
         self.assertEqual([event[0] for event in self.events], [
             "schema", "audit", "dense", "sparse", "audit",
         ])
+
+    def run_answer(self, generator, **overrides):
+        from rag_hermes.g1_audited_candidates import run_audited_g1_answer
+        parameters = dict(
+            base_url="http://localhost:6333", collection="audited_chunks",
+            source_path=self.path, expected_source_sha256=self.source_sha,
+            expected_manifest_sha256=self.manifest_sha, chunker=chunk_document,
+            embed_hybrid=lambda question: ([1.0, 0.0], {"7": 0.5}),
+            reranker=self.model, tokenizer=FakeTokenizer(),
+            question="comment installer ?", context=self.context,
+            generator=generator,
+        )
+        parameters.update(overrides)
+        # side_effect, PAS return_value : les fabriques alimentent self.urls, donc
+        # une assertion « aucun client construit » porte réellement une preuve.
+        def make_audit(url, *, api_key=""):
+            self.urls.append(("audit", url, api_key))
+            return self.audit
+        def make_query(url, *, api_key=""):
+            self.urls.append(("query", url, api_key))
+            return self.query
+        with patch("rag_hermes.g1_audited_candidates.QdrantAuditClient", side_effect=make_audit), patch(
+            "rag_hermes.g1_audited_candidates.QdrantRestClient", side_effect=make_query
+        ):
+            return run_audited_g1_answer(**parameters)
+
+    def test_cited_answer_is_generated_between_two_audits(self):
+        def generate(question, evidence):
+            self.events.append(("generate", [chunk.chunk_id for chunk in evidence]))
+            return "Installez avec pipx [S1]."
+
+        result = self.run_answer(generate)
+        self.assertFalse(result.trace.response.abstained)
+        self.assertEqual(result.trace.response.citations[0].chunk_id, self.chunks[0].chunk_id)
+        self.assertEqual([chunk.chunk_id for chunk in result.trace.retrieved_chunks], [self.chunks[0].chunk_id])
+        self.assertEqual(result.trace.cited_chunks, result.trace.retrieved_chunks)
+        self.assertEqual([event[0] for event in self.events], [
+            "schema", "audit", "dense", "sparse", "rerank", "generate", "audit",
+        ])
+        self.assertEqual(self.urls, [
+            ("audit", "http://localhost:6333", ""),
+            ("query", "http://localhost:6333", ""),
+        ])
+        # La fenêtre reclassée qui a produit la réponse reste attachée au
+        # résultat : un reçu G1 doit pouvoir la reconstituer.
+        self.assertEqual(
+            [item.chunk.chunk_id for item in result.candidates],
+            [self.chunks[0].chunk_id],
+        )
+
+    def test_public_candidate_window_takes_no_answer_callback(self):
+        # Un paramètre de rappel sur la fonction PUBLIQUE permettrait d'obtenir
+        # un résultat porteur des deux VRAIS rapports d'audit tout en
+        # contournant les gardes du pilote (générateur appelable, citations
+        # strictes) : la voie réponse doit passer par son propre point d'entrée.
+        import inspect
+        from rag_hermes.g1_audited_candidates import (
+            AuditedCandidateWindow, run_audited_g1_candidate_window,
+        )
+        signature = inspect.signature(run_audited_g1_candidate_window)
+        self.assertEqual(
+            {name for name in signature.parameters
+             if "answer" in name or "generator" in name},
+            set(),
+        )
+        self.assertEqual(signature.return_annotation, "AuditedCandidateWindow")
+        window = self.run_window()
+        self.assertIs(type(window), AuditedCandidateWindow)
+
+    def test_answer_result_repr_does_not_expose_evidence_or_citations(self):
+        # Même politique de représentation que les plans de divergence : un
+        # repr accidentel (journal, trace) ne doit pas recopier le texte des
+        # preuves ni des citations.
+        result = self.run_answer(lambda q, evidence: "Installez avec pipx [S1].")
+        rendered = repr(result)
+        self.assertNotIn(self.document.content, rendered)
+        self.assertNotIn("pipx", rendered)
+        self.assertIn("AuditedG1Answer", rendered)
+        self.assertIn("citations=1", rendered)
+
+    def test_missing_answer_trace_fails_closed_instead_of_asserting(self):
+        # Garde de défense en profondeur : inatteignable par la surface publique
+        # (le rappel interne rend toujours une trace), mais un `assert` à sa
+        # place disparaîtrait sous `python -O` et laisserait sortir un objet
+        # annoncé comme une réponse sans en être une.
+        from rag_hermes.generator import GenerationError
+        with patch("rag_hermes.g1_audited_candidates.answer_from_evidence", return_value=None):
+            with self.assertRaisesRegex(GenerationError, "produced no answer trace"):
+                self.run_answer(lambda q, evidence: "Installez avec pipx [S1].")
+
+    def test_multi_chunk_window_lets_the_second_marker_resolve(self):
+        # La revendication « les marqueurs sont résolus sur CETTE fenêtre »
+        # exige une fenêtre multi-chunks : avec top_k=1 une troncature de
+        # l'évidence resterait invisible.
+        second = replace(self.document, document_id="other", content="Autre preuve canonique.")
+        self.path.write_text("".join(
+            json.dumps(asdict(doc)) + "\n" for doc in (self.document, second)
+        ), encoding="utf-8")
+        self.source_sha = hashlib.sha256(self.path.read_bytes()).hexdigest()
+        self.chunks = [chunk_document(doc)[0] for doc in (self.document, second)]
+        self.points = [chunk_to_point(chunk, [1.0, 0.0]) for chunk in self.chunks]
+        self.manifest_sha = verify_index_snapshot(self.chunks, self.points).payload_sha256
+        self.audit.points = self.points
+        self.query.points = self.points
+
+        seen = []
+        def generate(question, evidence):
+            seen.append([chunk.document_id for chunk in evidence])
+            return "La seconde preuve [S2] le dit."
+
+        result = self.run_answer(generate, top_k=2)
+        self.assertEqual(seen, [["guide", "other"]])
+        self.assertEqual(len(result.candidates), 2)
+        self.assertEqual(result.trace.response.citations[0].document_id, "other")
+        self.assertEqual(result.trace.response.citations[0].quote, second.content)
+
+    def test_generator_retained_chunk_mutated_during_closing_audit_is_not_published(self):
+        # Le générateur garde une référence au Chunk ; un autre fil peut le
+        # modifier APRES le recheck, pendant le scroll final. Le scroll ne
+        # regarde que Qdrant, pas les objets Python transmis au générateur.
+        retained = []
+        original_scroll = self.audit.scroll_page
+        scrolls = 0
+
+        def scroll_with_late_mutation(collection, *, limit, offset=None):
+            nonlocal scrolls
+            scrolls += 1
+            if scrolls == 2:
+                self.assertEqual(len(retained), 1)
+                object.__setattr__(retained[0], "source_uri", "local://forged")
+                object.__setattr__(retained[0], "text", "TEXTE FORGE")
+            return original_scroll(collection, limit=limit, offset=offset)
+
+        def generate(question, evidence):
+            retained.extend(evidence)
+            return "Installez avec pipx [S1]."
+
+        with patch.object(self.audit, "scroll_page", side_effect=scroll_with_late_mutation):
+            result = self.run_answer(generate)
+        self.assertEqual(scrolls, 2)
+        self.assertEqual(retained[0].source_uri, "local://forged")
+        self.assertEqual(result.trace.response.citations[0].source_uri, "local://guide")
+        self.assertEqual(result.trace.response.citations[0].quote, self.document.content)
+        self.assertEqual(result.trace.cited_chunks[0].source_uri, "local://guide")
+        self.assertEqual(result.trace.retrieved_chunks[0].source_uri, "local://guide")
+        self.assertEqual(result.candidates[0].chunk.source_uri, "local://guide")
+        self.assertIsNot(result.candidates[0].chunk, retained[0])
+
+    def test_generator_mutating_a_chunk_cannot_rewrite_the_published_citation(self):
+        # Les citations sont matérialisées APRÈS le retour du générateur, depuis
+        # les objets Chunk qu'il a reçus : un générateur hostile pouvait réécrire
+        # le texte cité pendant que l'audit de clôture passait (il compare les
+        # payloads de l'index au manifeste, pas les objets candidats).
+        def mutate(question, evidence):
+            object.__setattr__(evidence[0], "text", "TEXTE INJECTE APRES L'AUDIT")
+            return "Installez avec pipx [S1]."
+
+        with self.assertRaisesRegex(PermissionError, "audited manifest"):
+            self.run_answer(mutate)
+        self.assertEqual([event[0] for event in self.events], [
+            "schema", "audit", "dense", "sparse", "rerank",
+        ])
+
+    def test_interruption_during_generation_leaves_the_session_terminal(self):
+        # `except BaseException` : un Ctrl-C ou un SystemExit doit rendre la
+        # session terminale comme une exception ordinaire. `except Exception`
+        # laisserait la session réutilisable.
+        from rag_hermes.index_integrity import AuditedIndexSession
+        real, built = AuditedIndexSession, []
+
+        def make_session(*args, **kwargs):
+            session = real(*args, **kwargs)
+            built.append(session)
+            return session
+
+        for failure in (KeyboardInterrupt, SystemExit, GeneratorExit):
+            with self.subTest(failure=failure.__name__):
+                built.clear()
+                self.events.clear()
+                def explode(question, evidence, failure=failure):
+                    raise failure()
+                with patch("rag_hermes.g1_audited_candidates.AuditedIndexSession",
+                           side_effect=make_session):
+                    with self.assertRaises(failure):
+                        self.run_answer(explode)
+                self.assertEqual([event[0] for event in self.events], [
+                    "schema", "audit", "dense", "sparse", "rerank",
+                ])
+                with self.assertRaises(ValueError):
+                    built[0].close()
+                with self.assertRaises(ValueError):
+                    built[0].open()
+
+    def test_session_is_unusable_after_a_generator_failure(self):
+        from rag_hermes.index_integrity import AuditedIndexSession
+        built = []
+        real = AuditedIndexSession
+
+        def make_session(*args, **kwargs):
+            session = real(*args, **kwargs)
+            built.append(session)
+            return session
+
+        def explode(question, evidence):
+            raise RuntimeError("generator exploded")
+
+        with patch("rag_hermes.g1_audited_candidates.AuditedIndexSession", side_effect=make_session):
+            with self.assertRaisesRegex(RuntimeError, "generator exploded"):
+                self.run_answer(explode)
+        self.assertEqual(len(built), 1)
+        # Pas de second scroll sur abandon, et la session reste terminale : un
+        # retry de l'appelant ne doit pas pouvoir bénir une fenêtre ultérieure.
+        self.assertEqual([event[0] for event in self.events], [
+            "schema", "audit", "dense", "sparse", "rerank",
+        ])
+        with self.assertRaises(ValueError):
+            built[0].close()
+        with self.assertRaises(ValueError):
+            built[0].open()
+
+    def test_empty_bounded_window_is_not_reported_as_abstention(self):
+        self.query.points = []
+        calls = []
+        # Panne SERVEUR, pas requête client invalide : la couche HTTP traduit
+        # GenerationError en 502. Un ValueError nu deviendrait un 400 et
+        # imputerait au demandeur une fenêtre vide du pipeline.
+        from rag_hermes.generator import GenerationError
+        with self.assertRaises(GenerationError) as caught:
+            self.run_answer(lambda q, evidence: calls.append(evidence) or "fake [S1]")
+        self.assertIn("no verified evidence", str(caught.exception))
+        self.assertEqual(calls, [])
+        self.assertEqual([event[0] for event in self.events], [
+            "schema", "audit", "dense", "sparse",
+        ])
+
+    def test_generator_without_valid_citation_aborts_without_closing_audit(self):
+        from rag_hermes.generator import GenerationError
+        with self.assertRaisesRegex(GenerationError, "zero valid citations"):
+            self.run_answer(lambda q, evidence: "Unsourced answer")
+        self.assertEqual([event[0] for event in self.events], [
+            "schema", "audit", "dense", "sparse", "rerank",
+        ])
+
+    def test_mixed_valid_and_invalid_citation_does_not_escape_the_audit(self):
+        from rag_hermes.generator import GenerationError
+        with self.assertRaisesRegex(GenerationError, "invalid citation"):
+            self.run_answer(lambda q, evidence: "Une preuve [S1] et une invention [S99].")
+        self.assertEqual([event[0] for event in self.events], [
+            "schema", "audit", "dense", "sparse", "rerank",
+        ])
+
+    def test_closing_divergence_withholds_generated_answer(self):
+        def generate(question, evidence):
+            self.events.append(("generate", question))
+            self.audit.points = [{**self.points[0], "payload": {
+                **self.points[0]["payload"], "owner_id": "bob",
+            }}]
+            return "Installez avec pipx [S1]."
+
+        with self.assertRaisesRegex(AuditedIndexSessionError, "closing audit failed"):
+            self.run_answer(generate)
+        self.assertEqual([event[0] for event in self.events], [
+            "schema", "audit", "dense", "sparse", "rerank", "generate", "audit",
+        ])
+
+    def test_forged_query_hit_never_reaches_generator(self):
+        forged = replace(self.chunks[0], chunk_id="invented")
+        self.query.points = [chunk_to_point(forged, [1.0, 0.0])]
+        calls = []
+        with self.assertRaisesRegex(PermissionError, "audited manifest"):
+            self.run_answer(lambda q, evidence: calls.append(evidence) or "fake [S1]")
+        self.assertEqual(calls, [])
+        self.assertEqual([event[0] for event in self.events], [
+            "schema", "audit", "dense", "sparse",
+        ])
+
+    def test_generator_receives_reranked_chunks_not_index_order(self):
+        second = replace(self.document, document_id="other", content="Autre preuve indépendante.")
+        self.path.write_text("".join(
+            json.dumps(asdict(doc)) + "\n" for doc in (self.document, second)
+        ), encoding="utf-8")
+        self.source_sha = hashlib.sha256(self.path.read_bytes()).hexdigest()
+        self.chunks = [chunk_document(doc)[0] for doc in (self.document, second)]
+        self.points = [chunk_to_point(chunk, [1.0, 0.0]) for chunk in self.chunks]
+        self.manifest_sha = verify_index_snapshot(self.chunks, self.points).payload_sha256
+        self.audit.points = self.points
+        self.query.points = self.points
+
+        class ReverseReranker:
+            def compute_score(inner_self, pairs, **kwargs):
+                self.assertEqual(
+                    [passage for _, passage in pairs],
+                    [second.content, self.document.content],
+                )
+                return [0.1, 0.9]
+
+        seen = []
+        def generate(question, evidence):
+            seen.extend(chunk.document_id for chunk in evidence)
+            return "Autre preuve [S1]."
+
+        result = self.run_answer(generate, reranker=ReverseReranker(), top_k=1)
+        self.assertEqual(seen, ["guide"])
+        self.assertEqual(result.trace.response.citations[0].document_id, "guide")
+        self.assertEqual(result.trace.cited_chunks[0].text, self.document.content)
+
+    def test_generator_abstention_is_preserved_as_generator_decision(self):
+        from rag_hermes.generator import ABSTENTION_ANSWER
+        result = self.run_answer(lambda q, evidence: ABSTENTION_ANSWER)
+        self.assertTrue(result.trace.response.abstained)
+        self.assertEqual(result.trace.response.citations, ())
+        self.assertEqual(len(result.trace.retrieved_chunks), 1)
+        self.assertEqual([event[0] for event in self.events][-1], "audit")
+
+    def test_non_callable_generator_is_refused_before_any_read(self):
+        # Sans cette garde, l'échec ne sort qu'APRÈS schéma, audit d'ouverture,
+        # deux voies de requête et le modèle de reranking, sous forme de
+        # TypeError : un câblage invalide consommerait l'index et le modèle.
+        with self.assertRaisesRegex(ValueError, "generator must be callable"):
+            self.run_answer(object())
+        self.assertEqual(self.events, [])
+        self.assertEqual(self.urls, [])
 
     def test_duplicate_point_in_canonical_manifest_refused_before_any_io(self):
         # Un chunker qui émet deux chunks au MÊME point_id empoisonnerait le

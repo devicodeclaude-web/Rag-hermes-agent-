@@ -235,6 +235,13 @@ Seuils (valeurs cibles conservées sauf mention) :
 - **Validité structurelle des citations** — **100 % exact, sans IC**
   (déterministe, machine-vérifiable : identifiant résolvable + passage présent
   dans le contexte fourni). *`[G1]`*
+  Réserve de mesure (voir `acceptance-criteria.md`) : cette métrique est
+  calculée sur les citations **résolues**, pas sur le texte publié. Le mode de
+  rendu permissif (`strict_citations=False`, actif sur `RagService`) retire du
+  dict de citations un marqueur `[Sn]` hors fenêtre tout en le laissant dans le
+  texte : 1,00 peut alors coexister avec un marqueur non résolu à l'écran. Un
+  run n'est éligible à ce seuil que si le mode strict est actif ou si le
+  générateur échoue fermé d'abord (c'est le cas du générateur fourni).
 - **Complétude des citations** — borne basse IC **≥ 90 %**. *(jugé humainement)
   `[G1]`*
 - **Affirmations critiques non soutenues** — **0 observé**, borne haute `3/N`

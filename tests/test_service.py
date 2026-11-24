@@ -9,6 +9,25 @@ from rag_hermes.ingestion import Document, chunk_document_tokens
 from rag_hermes.service import RagService
 
 
+class SharedAnsweringReexportTests(unittest.TestCase):
+    """Surface de compatibilité : `service` réexporte les types déplacés.
+
+    Un nettoyage d'imports morts (ruff/flake8 F401) retirerait `Citation`,
+    utilisé nulle part ailleurs dans `service`, et casserait silencieusement
+    les appelants historiques. Le commentaire du module ne suffit pas.
+    """
+
+    def test_service_still_exposes_the_moved_answering_symbols(self) -> None:
+        from rag_hermes import answering, service
+        for name in (
+            "Citation", "AnswerResponse", "AnswerTrace",
+            "ABSTENTION_ANSWER", "answer_from_evidence",
+        ):
+            with self.subTest(name=name):
+                self.assertTrue(hasattr(service, name))
+                self.assertIs(getattr(service, name), getattr(answering, name))
+
+
 class RagServiceTests(unittest.TestCase):
     def setUp(self) -> None:
         self.context = AuthorizationContext(
@@ -283,6 +302,78 @@ class RagServiceTests(unittest.TestCase):
 
         with self.assertRaises(GenerationError):
             service.answer("Comment installer Hermes ?", context=self.context)
+
+    def test_shared_renderer_defaults_to_the_strict_citation_mode(self) -> None:
+        # Le mode SÛR est le défaut du module partagé : un nouvel appelant qui
+        # oublie l'option ne doit pas hériter de la tolérance historique de V1.
+        # RagService, lui, opte explicitement pour le mode permissif.
+        from rag_hermes.answering import answer_from_evidence
+        from rag_hermes.ingestion import chunk_document
+        evidence = tuple(chunk_document(self.document)[:1])
+
+        with self.assertRaisesRegex(GenerationError, "invalid citation"):
+            answer_from_evidence(
+                "q", evidence, generator=lambda q, e: "Preuve [S1] et [S42].",
+            )
+        lenient = answer_from_evidence(
+            "q", evidence, generator=lambda q, e: "Preuve [S1] et [S42].",
+            strict_citations=False,
+        )
+        self.assertEqual(len(lenient.response.citations), 1)
+        self.assertIn("[S42]", lenient.response.answer)
+        self.assertEqual(lenient.response.citations[0].chunk_id, evidence[0].chunk_id)
+
+    def test_shared_renderer_refuses_an_answer_that_is_not_a_plain_string(self) -> None:
+        # Un générateur injecté rendant une SOUS-CLASSE de str au `__eq__`
+        # menteur était reconnu comme l'abstention exacte : la garde des
+        # marqueurs ET celle du « zéro citation » étaient toutes deux
+        # court-circuitées, et un texte arbitraire sortait avec abstained=True.
+        from rag_hermes.answering import answer_from_evidence
+        from rag_hermes.ingestion import chunk_document
+
+        class LyingStr(str):
+            def __eq__(self, other):
+                return True
+            def __hash__(self):
+                return hash(str(self))
+
+        evidence = tuple(chunk_document(self.document)[:1])
+        for answer in (LyingStr("Texte arbitraire."), 42, None, b"octets"):
+            with self.subTest(answer=type(answer).__name__):
+                with self.assertRaisesRegex(GenerationError, "must be a plain string"):
+                    answer_from_evidence(
+                        "q", evidence, generator=lambda q, e, a=answer: a,
+                    )
+
+    def test_shared_renderer_calls_a_callable_generator_that_is_falsy(self) -> None:
+        # `if not generator` déclenchait le repli extractif pour un générateur
+        # APPELABLE mais falsy (`__bool__` -> False) : le système publiait une
+        # réponse extractive en laissant croire que le générateur avait tourné.
+        from rag_hermes.answering import answer_from_evidence
+        from rag_hermes.ingestion import chunk_document
+
+        class FalsyGenerator:
+            def __init__(self):
+                self.calls = 0
+            def __bool__(self):
+                return False
+            def __call__(self, question, evidence):
+                self.calls += 1
+                return "Reponse du generateur [S1]."
+
+        generator = FalsyGenerator()
+        trace = answer_from_evidence(
+            "q", tuple(chunk_document(self.document)[:1]), generator=generator,
+        )
+        self.assertEqual(generator.calls, 1)
+        self.assertEqual(trace.response.answer, "Reponse du generateur [S1].")
+
+    def test_shared_renderer_refuses_an_empty_window_as_a_server_failure(self) -> None:
+        # Fenêtre vide = panne serveur (502), jamais une requête client invalide
+        # (400) ni une abstention fabriquée.
+        from rag_hermes.answering import answer_from_evidence
+        with self.assertRaisesRegex(GenerationError, "no verified evidence"):
+            answer_from_evidence("q", (), generator=None)
 
     def test_only_out_of_range_markers_fail_closed(self) -> None:
         def generate(question, evidence):
