@@ -25,9 +25,22 @@ from .qdrant_repository import HybridCandidate, QdrantChunkRepository
 from .qdrant_identity import validate_audit_tokens
 from .qdrant_rest import QdrantAuditClient, QdrantRestClient
 from .qdrant_store import chunk_to_point
+from .redacted_repr import REDACTED, safe_count, safe_length
 from .retrieval import CanonicalAclError
 from .answering import AnswerTrace, answer_from_evidence
 from .generator import GenerationError
+
+
+def _audited_points(report: object) -> str:
+    """Render an audit report's point count even when the report is forged.
+
+    The exact type is checked before the attribute is read, and the attribute
+    is read defensively: `object.__new__(IndexSnapshotReport)` passes the type
+    check with no field set at all.
+    """
+    if type(report) is not IndexSnapshotReport:
+        return REDACTED
+    return safe_count(getattr(report, "point_count", None))
 
 
 @dataclass(frozen=True)
@@ -37,6 +50,23 @@ class AuditedCandidateWindow:
     candidates: tuple[RerankedCandidate, ...]
     opening: IndexSnapshotReport
     closing: IndexSnapshotReport
+
+    def __repr__(self) -> str:
+        # Same representation policy as `AuditedG1Answer` and the divergence
+        # plans, including their shared redaction helper: this window carries
+        # the SAME authorized passages as the answer path, so an accidental
+        # repr (log line, f-string, traceback) must not copy their text,
+        # offsets or source digests. Every field is type-checked before being
+        # interpolated, because this public dataclass can be rebuilt with
+        # forged fields. Masking the repr is NOT a security boundary: the raw
+        # attributes stay readable, and the elements keep their own revealing
+        # reprs.
+        return (
+            "AuditedCandidateWindow("
+            f"candidates={safe_length(getattr(self, 'candidates', None))}, "
+            f"opening_points={_audited_points(getattr(self, 'opening', None))}, "
+            f"closing_points={_audited_points(getattr(self, 'closing', None))})"
+        )
 
 
 @dataclass(frozen=True)
@@ -60,12 +90,20 @@ class AuditedG1Answer:
         # Same representation policy as the divergence plans: an accidental
         # repr (log line, traceback) must not copy evidence or citation text.
         # The raw attributes stay available for controlled programmatic use.
+        # Each field is type-checked before interpolation: this dataclass is
+        # rebuildable with forged fields (see the class docstring), and a
+        # hostile counter's `__format__` would otherwise print anything or
+        # raise while a traceback is being formatted.
+        trace = getattr(self, "trace", None)
+        response = getattr(trace, "response", None) if type(trace) is AnswerTrace else None
+        abstained = getattr(response, "abstained", None)
         return (
-            f"AuditedG1Answer(abstained={self.trace.response.abstained!r}, "
-            f"citations={len(self.trace.response.citations)}, "
-            f"candidates={len(self.candidates)}, "
-            f"opening_points={self.opening.point_count}, "
-            f"closing_points={self.closing.point_count})"
+            "AuditedG1Answer("
+            f"abstained={abstained if type(abstained) is bool else REDACTED}, "
+            f"citations={safe_length(getattr(response, 'citations', None))}, "
+            f"candidates={safe_length(getattr(self, 'candidates', None))}, "
+            f"opening_points={_audited_points(getattr(self, 'opening', None))}, "
+            f"closing_points={_audited_points(getattr(self, 'closing', None))})"
         )
 
 

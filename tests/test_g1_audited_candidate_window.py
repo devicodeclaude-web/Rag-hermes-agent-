@@ -321,6 +321,185 @@ class AuditedG1CandidateWindowTests(unittest.TestCase):
         self.assertIn("AuditedG1Answer", rendered)
         self.assertIn("citations=1", rendered)
 
+    def test_answer_result_repr_masks_manually_forged_fields(self):
+        # Même garde que la fenêtre : la docstring de ce type dit elle-même que
+        # `replace`/`object.__new__`/`pickle` le reconstruisent avec n'importe
+        # quels champs. Le repr ne doit donc jamais appeler le `__format__`
+        # d'un champ non vérifié — sinon il recopie un texte arbitraire (sauts
+        # de ligne et séquences ANSI compris, qui fabriquent de fausses lignes
+        # de journal) ou lève pendant la mise en forme d'une trace.
+        from rag_hermes.g1_audited_candidates import AuditedG1Answer
+        forged_text = "\nPASSAGE_FORGE_abcd1234\x1b[32m"
+        result = self.run_answer(lambda q, evidence: "Installez avec pipx [S1].")
+        response = result.trace.response
+
+        forgeries = {
+            "opening_points": replace(
+                result, opening=replace(result.opening, point_count=forged_text),
+            ),
+            "closing_points": replace(
+                result, closing=replace(result.closing, point_count=forged_text),
+            ),
+            "candidates": replace(result, candidates=forged_text),
+            "citations": replace(
+                result,
+                trace=replace(result.trace, response=replace(response, citations=forged_text)),
+            ),
+            "abstained": replace(
+                result,
+                trace=replace(result.trace, response=replace(response, abstained=forged_text)),
+            ),
+        }
+        for field, forged in forgeries.items():
+            with self.subTest(field=field):
+                for rendered in (repr(forged), str(forged), repr([forged])):
+                    self.assertNotIn(forged_text.strip(), rendered)
+                    self.assertNotIn("\n", rendered)
+                    self.assertNotIn("\x1b", rendered)
+                    self.assertIn(f"{field}=<invalide>", rendered)
+
+        # Une trace entièrement forgée prive le repr de SES DEUX champs dérivés.
+        blind = repr(replace(result, trace=forged_text))
+        self.assertIn("abstained=<invalide>", blind)
+        self.assertIn("citations=<invalide>", blind)
+        self.assertNotIn(forged_text.strip(), blind)
+
+        empty = object.__new__(AuditedG1Answer)
+        self.assertEqual(
+            repr(empty),
+            "AuditedG1Answer(abstained=<invalide>, citations=<invalide>, "
+            "candidates=<invalide>, opening_points=<invalide>, "
+            "closing_points=<invalide>)",
+        )
+
+    def test_candidate_window_repr_does_not_expose_evidence(self):
+        # Asymétrie que le doc G1 annonçait « à harmoniser avant tout reçu » :
+        # `AuditedG1Answer` masquait déjà son repr, mais le repr PAR DÉFAUT de
+        # `AuditedCandidateWindow` recopiait le texte de CHAQUE chunk dans un
+        # journal, une f-string ou une trace — alors que la fenêtre transporte
+        # exactement les mêmes passages autorisés que la voie réponse.
+        # Premier rendu sur le corpus d'origine (UN seul point audité) : sans
+        # lui, un compte de points écrit en dur survivrait à la mutation.
+        narrow = repr(self.run_window())
+        self.assertIn("candidates=1", narrow)
+        self.assertIn("opening_points=1", narrow)
+        self.assertIn("closing_points=1", narrow)
+        self.assertNotIn(self.document.content, narrow)
+
+        second = replace(
+            self.document, document_id="other", content="Autre preuve canonique.",
+        )
+        self.path.write_text("".join(
+            json.dumps(asdict(doc)) + "\n" for doc in (self.document, second)
+        ), encoding="utf-8")
+        self.source_sha = hashlib.sha256(self.path.read_bytes()).hexdigest()
+        self.chunks = [chunk_document(doc)[0] for doc in (self.document, second)]
+        self.points = [chunk_to_point(chunk, [1.0, 0.0]) for chunk in self.chunks]
+        self.manifest_sha = verify_index_snapshot(self.chunks, self.points).payload_sha256
+        self.audit.points = self.points
+        self.query.points = self.points
+
+        window = self.run_window(top_k=1)
+        # Égalité EXACTE, pas une simple absence de texte : un repr qui
+        # ajouterait `payload_sha256`, `chunk_id`, `source_sha` ou les offsets
+        # survivrait à un `assertNotIn` sur le seul contenu du document.
+        # Trois rendus, comme le précédent du dépôt pour les plans de
+        # divergence : un `__str__` séparé qui recopierait le texte survivrait
+        # à un test qui n'appelle que `repr`.
+        for rendered in (repr(window), str(window), repr([window])):
+            self.assertIn(
+                "AuditedCandidateWindow(candidates=1, opening_points=2, "
+                "closing_points=2)",
+                rendered,
+            )
+            self.assertNotIn(self.document.content, rendered)
+            self.assertNotIn(second.content, rendered)
+            self.assertNotIn("pipx", rendered)
+        # Second rendu avec une AUTRE taille de fenêtre : sans lui, un compte
+        # écrit en dur survivrait à la mutation.
+        wider = self.run_window(top_k=2)
+        self.assertEqual(
+            repr(wider),
+            "AuditedCandidateWindow(candidates=2, opening_points=2, "
+            "closing_points=2)",
+        )
+        # Limite assumée et écrite : seul le repr ACCIDENTEL est masqué, les
+        # attributs bruts portent toujours le passage — ce n'est pas une
+        # frontière de sécurité.
+        self.assertIn(
+            window.candidates[0].chunk.text,
+            (self.document.content, second.content),
+        )
+
+    def test_candidate_window_repr_masks_manually_forged_fields(self):
+        # Le doc assume que `replace`, `object.__new__`, `pickle` et `deepcopy`
+        # reconstruisent ce type avec n'importe quels champs : le repr doit donc
+        # masquer un compteur FORGÉ au lieu d'appeler son `__format__` (fuite)
+        # ou d'échouer en pleine mise en forme de trace. Même garde partagée
+        # que les plans de divergence.
+        from rag_hermes.g1_audited_candidates import AuditedCandidateWindow
+        forged_text = "\nPASSAGE_FORGE_abcd1234\x1b[32m"
+        window = self.run_window()
+
+        forgeries = {
+            "opening_points": replace(
+                window, opening=replace(window.opening, point_count=forged_text),
+            ),
+            "closing_points": replace(
+                window, closing=replace(window.closing, point_count=forged_text),
+            ),
+            "candidates": replace(window, candidates=forged_text),
+        }
+        for field, forged in forgeries.items():
+            with self.subTest(field=field):
+                for rendered in (repr(forged), str(forged), repr([forged])):
+                    self.assertNotIn(forged_text.strip(), rendered)
+                    self.assertNotIn("\n", rendered)
+                    self.assertNotIn("\x1b", rendered)
+                    self.assertIn(f"{field}=<invalide>", rendered)
+
+        # `True` n'est pas un compte : `isinstance(True, int)` est vrai, donc
+        # seul un contrôle de TYPE exact le refuse.
+        boolean = replace(window, opening=replace(window.opening, point_count=True))
+        self.assertIn("opening_points=<invalide>", repr(boolean))
+
+        # Rapport FORGÉ : `getattr(..., défaut)` n'intercepte qu'une
+        # AttributeError, donc une propriété qui lève autre chose ferait
+        # échouer le repr si le type du rapport n'était pas contrôlé d'abord.
+        class HostileReport:
+            @property
+            def point_count(self):
+                raise ValueError(forged_text)
+
+        hostile = replace(window, opening=HostileReport())
+        self.assertIn("opening_points=<invalide>", repr(hostile))
+        self.assertNotIn(forged_text.strip(), repr(hostile))
+
+        # Rapport du BON type mais sans aucun champ : il franchit le contrôle
+        # de type, donc l'attribut doit être lu défensivement.
+        from rag_hermes.index_integrity import IndexSnapshotReport
+        fieldless = replace(window, closing=object.__new__(IndexSnapshotReport))
+        self.assertIn("closing_points=<invalide>", repr(fieldless))
+
+        # Un objet forgé sans aucun champ ne doit pas faire LEVER le repr :
+        # une exception pendant la mise en forme d'une trace masque l'erreur
+        # réelle que l'opérateur cherchait.
+        empty = object.__new__(AuditedCandidateWindow)
+        self.assertEqual(
+            repr(empty),
+            "AuditedCandidateWindow(candidates=<invalide>, "
+            "opening_points=<invalide>, closing_points=<invalide>)",
+        )
+
+    def test_redaction_helper_is_shared_with_the_divergence_plan_renderer(self):
+        # Garde PARTAGÉE : si la fenêtre G1 recopiait sa propre version du
+        # masquage, les deux chemins pourraient rediverger en silence, et la
+        # revendication « même politique de représentation » deviendrait fausse.
+        from rag_hermes import canonical_reconciliation, g1_audited_candidates
+        from rag_hermes.redacted_repr import safe_count
+        self.assertIs(g1_audited_candidates.safe_count, safe_count)
+        self.assertIs(canonical_reconciliation._safe_count, safe_count)
+
     def test_missing_answer_trace_fails_closed_instead_of_asserting(self):
         # Garde de défense en profondeur : inatteignable par la surface publique
         # (le rappel interne rend toujours une trace), mais un `assert` à sa

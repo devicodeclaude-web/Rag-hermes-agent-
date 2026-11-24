@@ -27,6 +27,7 @@ from .canonical_registry import (
 from .index_integrity import IndexSnapshotReport, audit_qdrant_index
 from .ingestion import Document
 from .qdrant_store import chunk_to_point
+from .redacted_repr import safe_count
 
 
 @contextmanager
@@ -137,11 +138,11 @@ def audit_canonical_copy_index(
         return report
 
 
-def _safe_count(value: Any) -> str:
-    """Render a count without invoking formatting on an untrusted object."""
-    if type(value) is int and 0 <= value <= 1_000_000_000_000:
-        return str(value)
-    return "<invalide>"
+# Alias d'identité sur la garde PARTAGÉE (`rag_hermes/redacted_repr.py`), pas
+# une copie : les types de résultat G1 audités revendiquent la même politique
+# de représentation, et deux implémentations privées pourraient rediverger en
+# silence. Un test `assertIs` épingle cette identité.
+_safe_count = safe_count
 
 
 @dataclass(frozen=True)
