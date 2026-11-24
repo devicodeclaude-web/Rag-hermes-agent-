@@ -143,6 +143,64 @@ class QdrantSemanticsClient(FakeQdrantClient):
         return matches[:limit]
 
 
+class QdrantPayloadDecodeLeakTests(unittest.TestCase):
+    """Un index altéré ne doit pas faire écrire ses valeurs dans un journal."""
+
+    def payload(self, **overrides) -> dict:
+        base = {
+            "chunk_id": "c1", "document_id": "d1", "text": "t", "tenant_id": "alpha",
+            "visibility": "private", "allowed_group_ids": [], "allowed_user_ids": [],
+            "owner_id": "alice", "classification": 1, "doc_version": 1,
+            "acl_version": 1, "source_sha": "a" * 64, "source_uri": "u",
+            "section": "", "start_offset": 0, "end_offset": 1, "token_count": 0,
+            "tokenizer_name": "", "tokenizer_revision": "", "content_hash": "",
+            "tombstone": False,
+        }
+        base.update(overrides)
+        return base
+
+    def test_decode_failure_never_echoes_an_index_controlled_value(self) -> None:
+        # `raise ValueError(f"... {exc}")` recopiait la cause : sur un champ
+        # numérique, `int()` place la VALEUR littérale dans son message, donc
+        # un index altéré faisait écrire son contenu dans le message ET dans la
+        # trace de l'appelant. `from None` est nécessaire en plus du message
+        # fixe : `from exc` laisse la chaîne de cause imprimer la valeur.
+        import traceback
+        forged = "PASSAGE-CONFIDENTIEL-hunter2"
+        for field in ("classification", "doc_version", "acl_version",
+                      "start_offset", "end_offset", "token_count"):
+            with self.subTest(field=field):
+                point = {"id": "x", "payload": self.payload(**{field: forged})}
+                with self.assertRaises(ValueError) as caught:
+                    QdrantChunkRepository._chunk_from_point(point)
+                exc = caught.exception
+                self.assertEqual(str(exc), "invalid Qdrant candidate payload")
+                self.assertIsNone(exc.__cause__)
+                rendered = "".join(
+                    traceback.format_exception(type(exc), exc, exc.__traceback__)
+                )
+                self.assertNotIn(forged, rendered)
+
+    def test_decode_failure_on_a_missing_field_keeps_the_same_fixed_message(self) -> None:
+        # Le chemin KeyError doit rendre le MEME message fixe : un message
+        # distinct par cause redonnerait à l'index un canal d'information.
+        import traceback
+        payload = self.payload()
+        del payload["chunk_id"]
+        with self.assertRaises(ValueError) as caught:
+            QdrantChunkRepository._chunk_from_point({"id": "x", "payload": payload})
+        self.assertEqual(str(caught.exception), "invalid Qdrant candidate payload")
+        self.assertIsNone(caught.exception.__cause__)
+
+    def test_a_valid_payload_still_decodes(self) -> None:
+        # Contrôle positif : le durcissement ne doit pas refuser un point sain.
+        chunk = QdrantChunkRepository._chunk_from_point(
+            {"id": "x", "payload": self.payload()}
+        )
+        self.assertEqual(chunk.chunk_id, "c1")
+        self.assertEqual(chunk.classification, 1)
+
+
 class QdrantChunkRepositoryTests(unittest.TestCase):
     def setUp(self) -> None:
         self.client = FakeQdrantClient()
