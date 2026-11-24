@@ -485,55 +485,7 @@ class CanonicalDocumentRegistry:
         les deux laisse l'ancre en avance, donc un refus de démarrage qui
         exige une reprise hors ligne.
         """
-        payload = json.dumps(
-            anchor, sort_keys=True, separators=(",", ":"), allow_nan=False,
-            ensure_ascii=True,
-        ).encode("ascii")
-        if _validated_anchor(json.loads(payload)) != _validated_anchor(dict(anchor)):
-            raise ValueError("canonical anchor does not round-trip")
-        temporary = f"{_ANCHOR_FILENAME}.new"
-        # O_EXCL sur un temporaire neuf : jamais de réutilisation d'un inode
-        # laissé en place, et O_NONBLOCK pour qu'un FIFO échoue au lieu de
-        # bloquer en tenant le verrou exclusif. Le descripteur est validé
-        # (fichier régulier, propriétaire, droits) avant toute écriture.
-        flags = (
-            os.O_WRONLY | os.O_CREAT | os.O_EXCL
-            | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK
-        )
-        try:
-            try:
-                os.unlink(temporary, dir_fd=dir_fd)
-            except FileNotFoundError:
-                pass
-            file_fd = os.open(temporary, flags, 0o600, dir_fd=dir_fd)
-            try:
-                info = os.fstat(file_fd)
-                if not stat.S_ISREG(info.st_mode):
-                    raise CanonicalStoreError("canonical anchor must be a regular file")
-                if info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) & 0o7077:
-                    raise CanonicalStoreError("canonical anchor has unsafe permissions")
-                with os.fdopen(file_fd, "wb", closefd=False) as handle:
-                    handle.write(payload)
-                    handle.flush()
-                    os.fsync(handle.fileno())
-            finally:
-                os.close(file_fd)
-            os.rename(temporary, _ANCHOR_FILENAME, src_dir_fd=dir_fd, dst_dir_fd=dir_fd)
-            os.fsync(dir_fd)
-        except BaseException as exc:
-            # Le nettoyage doit couvrir le cas ATTENDU (écriture ou rename en
-            # échec) : un `except OSError` suivi d'un `except BaseException`
-            # frère ne l'attrape pas, le second ne voyant pas ce que lève le
-            # premier. Un seul gestionnaire, puis reclassement.
-            with contextlib.suppress(OSError):
-                os.unlink(temporary, dir_fd=dir_fd)
-            if isinstance(exc, OSError):
-                # Sans ancre publiée, l'append ne doit PAS avoir lieu : un
-                # fichier en avance sur son repère rouvrirait la fenêtre de recul.
-                raise CanonicalStoreError(
-                    "canonical anchor cannot be published"
-                ) from exc
-            raise
+        _publish_anchor(dir_fd, anchor)
 
     @property
     def authority(self) -> CanonicalAclAuthority:
@@ -1019,6 +971,183 @@ def verify_anchor_recovery_candidate(store_dir: str | Path, candidate: bytes) ->
     """Prouver sans écriture qu'une ligne précise comble une ancre en avance."""
     with _verified_anchor_snapshot(store_dir, candidate):
         pass
+
+
+def _publish_anchor(dir_fd: int, anchor: Mapping[str, Any]) -> None:
+    """Publier le repère par remplacement atomique, sous le verrou exclusif.
+
+    Extrait de `_write_anchor` pour que l'écriture traversante ET l'outil de
+    migration hors ligne partagent exactement la même publication durable.
+    """
+    payload = json.dumps(
+        anchor, sort_keys=True, separators=(",", ":"), allow_nan=False,
+        ensure_ascii=True,
+    ).encode("ascii")
+    if _validated_anchor(json.loads(payload)) != _validated_anchor(dict(anchor)):
+        raise ValueError("canonical anchor does not round-trip")
+    temporary = f"{_ANCHOR_FILENAME}.new"
+    # O_EXCL sur un temporaire neuf : jamais de réutilisation d'un inode
+    # laissé en place, et O_NONBLOCK pour qu'un FIFO échoue au lieu de
+    # bloquer en tenant le verrou exclusif. Le descripteur est validé
+    # (fichier régulier, propriétaire, droits) avant toute écriture.
+    flags = (
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL
+        | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK
+    )
+    try:
+        try:
+            os.unlink(temporary, dir_fd=dir_fd)
+        except FileNotFoundError:
+            pass
+        file_fd = os.open(temporary, flags, 0o600, dir_fd=dir_fd)
+        try:
+            info = os.fstat(file_fd)
+            if not stat.S_ISREG(info.st_mode):
+                raise CanonicalStoreError("canonical anchor must be a regular file")
+            if info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) & 0o7077:
+                raise CanonicalStoreError("canonical anchor has unsafe permissions")
+            with os.fdopen(file_fd, "wb", closefd=False) as handle:
+                handle.write(payload)
+                handle.flush()
+                os.fsync(handle.fileno())
+        finally:
+            os.close(file_fd)
+        os.rename(temporary, _ANCHOR_FILENAME, src_dir_fd=dir_fd, dst_dir_fd=dir_fd)
+        os.fsync(dir_fd)
+    except BaseException as exc:
+        # Le nettoyage doit couvrir le cas ATTENDU (écriture ou rename en
+        # échec) : un `except OSError` suivi d'un `except BaseException`
+        # frère ne l'attrape pas, le second ne voyant pas ce que lève le
+        # premier. Un seul gestionnaire, puis reclassement.
+        with contextlib.suppress(OSError):
+            os.unlink(temporary, dir_fd=dir_fd)
+        if isinstance(exc, OSError):
+            # Sans ancre publiée, l'append ne doit PAS avoir lieu : un
+            # fichier en avance sur son repère rouvrirait la fenêtre de recul.
+            raise CanonicalStoreError(
+                "canonical anchor cannot be published"
+            ) from exc
+        raise
+
+
+def _validated_anchor_attestation(
+    attestation: object,
+) -> tuple[int, dict[str, tuple[int, int]]]:
+    """Attestation INDÉPENDANTE de l'opérateur : compte + versions par document.
+
+    Même rigueur que l'ancre : jeu de clés exact, aucune coercition,
+    `type(x) is int` (donc `bool` refusé), entiers non négatifs. La valeur
+    provient d'une source externe à l'hôte ; elle n'est JAMAIS dérivée du
+    JSONL présent, sinon la migration bénirait un recul.
+    """
+    if type(attestation) is not dict or set(attestation) != {"records", "documents"}:
+        raise CanonicalStoreError(
+            "anchor attestation must carry exactly records and documents"
+        )
+    records = attestation["records"]
+    if type(records) is not int or records < 1:
+        raise CanonicalStoreError(
+            "anchor attestation records must be a positive exact int"
+        )
+    entries = attestation["documents"]
+    if type(entries) is not dict or not entries:
+        raise CanonicalStoreError(
+            "anchor attestation documents must be a non-empty object"
+        )
+    marks: dict[str, tuple[int, int]] = {}
+    for document_id, mark in entries.items():
+        if type(document_id) is not str or not document_id:
+            raise CanonicalStoreError(
+                "anchor attestation document_id must be a non-empty str"
+            )
+        if type(mark) is not dict or set(mark) != {"doc_version", "acl_version"}:
+            raise CanonicalStoreError(
+                "anchor attestation mark must carry exactly both versions"
+            )
+        if any(type(mark[field]) is not int or mark[field] < 0 for field in mark):
+            raise CanonicalStoreError(
+                "anchor attestation versions must be non-negative exact ints"
+            )
+        marks[document_id] = (mark["doc_version"], mark["acl_version"])
+    return records, marks
+
+
+def bootstrap_canonical_anchor(store_dir: str | Path, attestation: object) -> None:
+    """Recréer HORS LIGNE une ancre manquante, gardée par une attestation.
+
+    Un registre non vide sans ancre échoue fermé (`_check_against_anchor`) :
+    une installation historique est indiscernable d'une ancre publiée puis
+    supprimée après une révocation. Cet outil laisse l'opérateur republier
+    une ancre, mais JAMAIS en bénissant aveuglément le JSONL : il exige une
+    attestation indépendante (nombre d'enregistrements ET versions par
+    document, depuis une source externe) et n'écrit l'ancre QUE si le fichier
+    courant la respecte EXACTEMENT. Un backup restauré à des versions plus
+    anciennes diverge donc et est refusé.
+
+    À exécuter service arrêté. Ne réconcilie PAS Qdrant : l'opérateur doit le
+    faire séparément avant de remettre le service en route.
+    """
+    expected_records, expected_marks = _validated_anchor_attestation(attestation)
+    path = Path(store_dir)
+    if not path.is_absolute():
+        raise CanonicalStoreError("absolute store path required")
+    try:
+        dir_fd = _open_private_dir(path)
+    except (OSError, ValueError):
+        raise CanonicalStoreError("canonical store unavailable") from None
+    try:
+        # Double contrôle d'ancre existante : (1) rejet rapide avant de prendre
+        # le verrou, (2) revérification SOUS le verrou contre un TOCTOU (un
+        # service relancé par erreur publierait une ancre entre les deux). Les
+        # deux ne sont tués ENSEMBLE que par mutation (M8) ; retirer l'un seul
+        # survit en mono-fil car l'autre rattrape — défense en profondeur, pas
+        # un trou de couverture. Ne jamais écraser une ancre vivante.
+        if CanonicalDocumentRegistry._anchor_identity(dir_fd) is not None:
+            raise CanonicalStoreError("canonical anchor already present")
+        try:
+            file_fd, lease_token = _open_tracked_private_file(
+                dir_fd, write=True, create=False
+            )
+        except FileNotFoundError:
+            raise CanonicalStoreError("canonical store history is missing") from None
+        except (OSError, ValueError):
+            raise CanonicalStoreError("canonical store unavailable") from None
+        try:
+            fcntl.flock(file_fd, fcntl.LOCK_EX)
+            # Revérifier SOUS le verrou : une ancre a pu apparaître entre le
+            # premier contrôle et l'acquisition (un service relancé par erreur).
+            if CanonicalDocumentRegistry._anchor_identity(dir_fd) is not None:
+                raise CanonicalStoreError("canonical anchor already present")
+            try:
+                documents, records, _, running = (
+                    CanonicalDocumentRegistry._read_documents(file_fd)
+                )
+            except (OSError, ValueError, UnicodeError) as exc:
+                raise CanonicalStoreError("canonical store history is invalid") from exc
+            if records == 0:
+                raise CanonicalStoreError(
+                    "empty canonical store needs no anchor migration"
+                )
+            actual_marks = {
+                document_id: (document.doc_version, document.acl_version)
+                for document_id, document in documents.items()
+            }
+            if records != expected_records or actual_marks != expected_marks:
+                # Divergence = backup restauré, troncature ou attestation
+                # erronée : refuser plutôt que bénir un état non attesté.
+                raise CanonicalStoreError(
+                    "canonical history does not match the operator attestation"
+                )
+            _publish_anchor(
+                dir_fd,
+                _anchor_from_documents(
+                    documents, records=records, digest=running.hexdigest()
+                ),
+            )
+        finally:
+            _close_tracked_private_file(lease_token)
+    finally:
+        os.close(dir_fd)
 
 
 def _write_recovery_file(dir_fd: int, name: str, payload: bytes) -> None:

@@ -200,11 +200,16 @@ révocation valable.
   vide peut faire son premier enregistrement sans ancre, qui est alors publiée
   avant la ligne JSONL. L'absence d'ancre après une révocation était autrement
   indiscernable d'un vrai magasin ancien et réadmettait l'ancienne ACL au
-  redémarrage. **Aucune migration automatique ni outil de restauration d'un
-  registre historique sans ancre n'est livré ici** : arrêter le service,
-  préserver les originaux et définir une migration hors ligne adossée à une
-  preuve de confiance indépendante avant de tenter de le rouvrir ; ne jamais
-  générer aveuglément une ancre à partir du JSONL présent. Une ancre illisible,
+  redémarrage. **La migration n'est pas automatique** : un outil HORS LIGNE
+  gardé par attestation (`scripts/migrate_canonical_anchor.py`, fonction
+  `bootstrap_canonical_anchor`) republie une ancre pour un registre historique
+  UNIQUEMENT si le JSONL courant correspond exactement à l'attestation
+  indépendante de l'opérateur — nombre d'enregistrements ET, par document,
+  `(doc_version, acl_version)`, fournis depuis une source externe à l'hôte. Un
+  backup restauré à des versions plus anciennes diverge et est refusé ; l'outil
+  ne reconstruit JAMAIS l'ancre à partir du seul fichier, refuse d'écraser une
+  ancre existante et n'opère qu'avec le service arrêté. Il ne réconcilie pas
+  Qdrant : à faire séparément avant tout redémarrage. Une ancre illisible,
   exposée, symbolique ou malformée échoue également fermé, sans réparation
   silencieuse. Un repère vivant dans le même répertoire et sous le même UID ne
   protège toujours pas d'un adversaire qui réécrirait **les deux fichiers**
