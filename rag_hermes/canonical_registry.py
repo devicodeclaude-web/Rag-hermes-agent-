@@ -693,8 +693,15 @@ class CanonicalDocumentRegistry:
         versions atteintes par document.
         """
         if anchor is None:
-            # Installation antérieure à ce lot : rien à comparer. Équivalent à
-            # une ancre vide, écrit explicitement pour que la raison soit lue.
+            # Une installation legacy non vide est indiscernable d'un magasin
+            # moderne dont l'ancre a été supprimée après une révocation. En
+            # acceptant automatiquement le JSONL, un redémarrage réadmettrait
+            # son ancienne ACL. Ne bénis PAS les octets présents par une ancre
+            # reconstruite à partir du même fichier : une migration hors ligne
+            # exige une preuve indépendante de l'état attendu. Un magasin
+            # réellement neuf et vide peut toujours faire son premier import.
+            if records:
+                raise CanonicalStoreError("canonical anchor required for nonempty history")
             return
         anchored_records, anchored_digest, marks = anchor
         # L'ancre est publiée AVANT l'append, donc le fichier n'est jamais

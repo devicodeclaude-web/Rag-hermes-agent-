@@ -914,27 +914,31 @@ class RegistryStoreTests(unittest.TestCase):
             CanonicalDocumentRegistry(self.store)
         self.assertEqual(decoy.read_bytes(), b"unchanged")
 
-    def test_a_store_predating_the_anchor_keeps_working_then_gains_one(self) -> None:
-        """Compatibilité : une installation sans ancre démarre, puis en gagne une."""
+    def test_nonempty_history_without_anchor_refuses_restart_and_live_reads(self) -> None:
+        """Une ancre disparue ne peut pas être distinguée d'un vieux magasin.
+
+        Accepter automatiquement l'ancien JSONL après suppression de l'ancre
+        peut réadmettre une ACL périmée après un crash. Les magasins historiques
+        exigent une migration HORS LIGNE explicite, jamais un démarrage qui
+        « fabrique » une nouvelle ancre depuis des octets non authentifiés.
+        """
         registry = CanonicalDocumentRegistry(self.store)
-        revoked = document(allowed_users=(), acl_version=2)
         registry.register(document(allowed_users=("bob",), acl_version=1))
-        registry.register(revoked)
+        registry.register(document(allowed_users=(), acl_version=2))
+        peer = CanonicalDocumentRegistry(self.store)
+        current = peer.source("doc-1")
+        self.assertIsNotNone(current)
+        assert current is not None
+        self.assertEqual(current.acl_version, 2)
         registry.anchor_path.unlink()
 
-        # Sans ancre, la protection au redémarrage n'existe pas encore.
-        reopened = CanonicalDocumentRegistry(self.store)
-        self.assertEqual(reopened.source("doc-1"), revoked)
-        self.assertFalse(reopened.anchor_path.exists())
-
-        # Le premier enregistrement la publie, et elle protège ensuite.
-        reopened.register(document(allowed_users=(), acl_version=3))
-        self.assertTrue(reopened.anchor_path.exists())
-        backup = reopened.path.read_bytes()
-        reopened.register(document(allowed_users=(), acl_version=4))
-        reopened.path.write_bytes(backup)
+        with self.assertRaises(CanonicalStoreError):
+            peer.authority.policy_for("doc-1")
         with self.assertRaises(CanonicalStoreError):
             CanonicalDocumentRegistry(self.store)
+        with self.assertRaises(CanonicalStoreError):
+            registry.register(document(allowed_users=(), acl_version=3))
+        self.assertFalse(registry.anchor_path.exists())
 
     def test_anchor_survives_a_refused_registration(self) -> None:
         registry = CanonicalDocumentRegistry(self.store)
