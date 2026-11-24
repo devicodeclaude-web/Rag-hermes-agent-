@@ -638,8 +638,16 @@ class QdrantChunkRepository:
                 content_hash=str(payload.get("content_hash", "")),
                 acl_version=int(payload.get("acl_version", 1)),
             )
-        except (KeyError, TypeError, ValueError) as exc:
-            raise ValueError(f"invalid Qdrant candidate payload: {exc}") from exc
+        except (KeyError, TypeError, ValueError):
+            # Fixed message, and `from None` rather than `from exc`: the cause
+            # is index-controlled. `int()` puts the offending LITERAL in its
+            # own message, so a tampered payload wrote its content into this
+            # message and — through the chained traceback — into the caller's
+            # log. Dropping the chain costs the operator the cause's text; the
+            # discriminating information (which point) is already the caller's.
+            # A per-cause message would hand the index an information channel
+            # back, so every decode failure reports the same thing.
+            raise ValueError("invalid Qdrant candidate payload") from None
 
     def _verified_query_point(self, point: object) -> tuple[str, Chunk, str]:
         """Check a raw query hit before ACL filtering can hide corruption."""
