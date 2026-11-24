@@ -75,8 +75,8 @@ def answer_from_evidence(
     Citations are materialised AFTER the generator returns, from the very Chunk
     objects it received: a hostile generator can rewrite a quote via
     `object.__setattr__` (frozen dataclasses are not immune). Rebinding the
-    evidence to a trusted manifest after generation is the CALLER's job; the
-    audited G1 window does exactly that.
+    evidence to a trusted manifest after generation AND snapshotting it before
+    the closing audit is the CALLER's job; the audited G1 window does both.
     """
     if not evidence:
         # SERVER-side invariant breach, not a bad client request: GenerationError

@@ -42,14 +42,17 @@ sorti. Ce qui est garanti avant tout appel au modèle ou au générateur : ACL e
 provenance canoniques, et appartenance de chaque candidat au manifeste audité.
 
 Après le retour du générateur et **avant** l'audit de clôture, chaque candidat
-est **relié une seconde fois** au manifeste : les citations et la fenêtre
-publiée sont matérialisées depuis les objets `Chunk` que le générateur a reçus,
-et un générateur hostile pouvait en réécrire le texte par `object.__setattr__`
-pendant que l'audit de clôture passait (il compare les payloads de l'index au
-manifeste, pas ces objets). Le type de la réponse est aussi vérifié
-(`type(answer) is str`) : une sous-classe de `str` au `__eq__` menteur se
-faisait passer pour l'abstention exacte et court-circuitait les deux gardes de
-citation.
+est **relié une seconde fois** au manifeste. Le générateur conserve pourtant
+les références aux `Chunk` reçus et peut les modifier même **après** ce contrôle,
+pendant le scroll final (`object.__setattr__` contourne `frozen=True`). La voie
+réponse crée donc des **copies privées** des candidats, vérifie aussi chaque
+copie contre le manifeste, et reconstruit les citations et la trace à partir de
+ces copies sans rappeler le générateur. Une mutation ultérieure des objets que
+ce dernier détient ne réécrit plus la fenêtre, le passage cité ou sa provenance
+publiés. Le scroll ne vérifie toujours que l'index, pas ces objets Python.
+Le type de la réponse est aussi vérifié (`type(answer) is str`) : une sous-classe
+de `str` au `__eq__` menteur se faisait passer pour l'abstention exacte et
+court-circuitait les deux gardes de citation.
 
 Le type `AuditedCandidateWindow` contient une liste immuable de candidats et
 les deux rapports d'audit. Il ne contient ni réponse, ni citation, ni décision

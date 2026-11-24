@@ -357,6 +357,38 @@ class AuditedG1CandidateWindowTests(unittest.TestCase):
         self.assertEqual(result.trace.response.citations[0].document_id, "other")
         self.assertEqual(result.trace.response.citations[0].quote, second.content)
 
+    def test_generator_retained_chunk_mutated_during_closing_audit_is_not_published(self):
+        # Le générateur garde une référence au Chunk ; un autre fil peut le
+        # modifier APRES le recheck, pendant le scroll final. Le scroll ne
+        # regarde que Qdrant, pas les objets Python transmis au générateur.
+        retained = []
+        original_scroll = self.audit.scroll_page
+        scrolls = 0
+
+        def scroll_with_late_mutation(collection, *, limit, offset=None):
+            nonlocal scrolls
+            scrolls += 1
+            if scrolls == 2:
+                self.assertEqual(len(retained), 1)
+                object.__setattr__(retained[0], "source_uri", "local://forged")
+                object.__setattr__(retained[0], "text", "TEXTE FORGE")
+            return original_scroll(collection, limit=limit, offset=offset)
+
+        def generate(question, evidence):
+            retained.extend(evidence)
+            return "Installez avec pipx [S1]."
+
+        with patch.object(self.audit, "scroll_page", side_effect=scroll_with_late_mutation):
+            result = self.run_answer(generate)
+        self.assertEqual(scrolls, 2)
+        self.assertEqual(retained[0].source_uri, "local://forged")
+        self.assertEqual(result.trace.response.citations[0].source_uri, "local://guide")
+        self.assertEqual(result.trace.response.citations[0].quote, self.document.content)
+        self.assertEqual(result.trace.cited_chunks[0].source_uri, "local://guide")
+        self.assertEqual(result.trace.retrieved_chunks[0].source_uri, "local://guide")
+        self.assertEqual(result.candidates[0].chunk.source_uri, "local://guide")
+        self.assertIsNot(result.candidates[0].chunk, retained[0])
+
     def test_generator_mutating_a_chunk_cannot_rewrite_the_published_citation(self):
         # Les citations sont matérialisées APRÈS le retour du générateur, depuis
         # les objets Chunk qu'il a reçus : un générateur hostile pouvait réécrire

@@ -320,6 +320,8 @@ class RagServiceTests(unittest.TestCase):
             strict_citations=False,
         )
         self.assertEqual(len(lenient.response.citations), 1)
+        self.assertIn("[S42]", lenient.response.answer)
+        self.assertEqual(lenient.response.citations[0].chunk_id, evidence[0].chunk_id)
 
     def test_shared_renderer_refuses_an_answer_that_is_not_a_plain_string(self) -> None:
         # Un générateur injecté rendant une SOUS-CLASSE de str au `__eq__`

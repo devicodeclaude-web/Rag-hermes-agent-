@@ -11,7 +11,7 @@ snapshot. An empty candidate window is NOT an honest abstention verdict.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import json
 from pathlib import Path
 
@@ -164,7 +164,7 @@ def _run_audited_g1_window(
             point["payload"], sort_keys=True, allow_nan=False,
         )
 
-    def require_manifest_member(candidate: HybridCandidate) -> None:
+    def require_manifest_member(candidate: HybridCandidate | RerankedCandidate) -> None:
         point = chunk_to_point(candidate.chunk, [1.0])
         payload = json.dumps(point["payload"], sort_keys=True, allow_nan=False)
         if manifest_points.get(point["id"]) != payload:
@@ -180,15 +180,26 @@ def _run_audited_g1_window(
         candidates = stage.candidates(question, context=context)
         trace = answer_fn(tuple(candidates)) if answer_fn is not None else None
         if trace is not None:
-            # Citations, cited_chunks and the published window are materialised
-            # from the very Chunk objects the generator received, AFTER it
-            # returns. A generator mutating one of them (frozen dataclasses are
-            # not immune to `object.__setattr__`) could rewrite the quote while
-            # the closing audit still passed, since that audit compares index
-            # payloads to the canonical manifest, not these objects. Rebind every
-            # candidate to the manifest once more before releasing anything.
+            if type(trace) is not AnswerTrace:
+                raise GenerationError("audited G1 answer path produced no answer trace")
+            # The generator can retain and mutate its Chunk objects even AFTER
+            # this check, while the closing scroll is in flight. Snapshot every
+            # published candidate into a private object, bind BOTH the original
+            # and the copy to the pinned manifest, and rebuild the trace from
+            # those copies. This never calls the generator a second time.
+            published = []
             for candidate in candidates:
                 require_manifest_member(candidate)
+                copy = replace(candidate, chunk=replace(candidate.chunk))
+                require_manifest_member(copy)
+                published.append(copy)
+            candidates = published
+            answer_text = trace.response.answer
+            trace = answer_from_evidence(
+                question, tuple(candidate.chunk for candidate in candidates),
+                generator=lambda _question, _evidence: answer_text,
+                strict_citations=True,
+            )
         closing = session.close()
     except BaseException:
         # No second scroll on an abort or Ctrl-C, and no partial window escapes

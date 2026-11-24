@@ -27,7 +27,10 @@ Le smoke set actuel valide le câblage, pas la qualité statistique. Une campagn
   ce cas est inatteignable** : `generator.py` échoue fermé sur un marqueur hors
   fenêtre avant que le service n'applique son mode permissif ; il faut un
   générateur INJECTÉ pour l'observer. Un seuil de validité à 1,00
-  n'est donc une preuve de citations propres que si le mode strict est actif.
+  n'est une preuve de citations propres que si le mode strict est actif **ou**
+  si le générateur échoue fermé sur tout marqueur hors fenêtre avant le rendu
+  (cas du générateur fourni). Pour un générateur injecté, cette propriété doit
+  être prouvée ; le seul seuil calculé sur les citations résolues ne suffit pas.
   La voie pilote G1 (`run_audited_g1_answer`) exige, elle, le mode strict :
   tout marqueur hors fenêtre fait échouer la requête. Avant le gel, trancher
   si V1 doit basculer en strict ; ce choix est un acte humain.
