@@ -14,7 +14,7 @@ import json
 import os
 from pathlib import Path
 import re
-from typing import Any, Callable
+from typing import Any, Callable, cast
 import uuid
 
 from .acl import Chunk
@@ -247,11 +247,18 @@ def render_divergence_report(
     # forged field raised TypeError/IndexError out of the operator's "safe"
     # view, and a hostile `__len__`/`__getitem__` could fabricate extra report
     # lines. Fail closed with a fixed message instead of rendering a doubtful
-    # report — this view is reached from the operator CLI.
-    for field in ("missing_point_ids", "unexpected_point_ids", "divergent_points"):
-        if type(getattr(plan, field, None)) is not tuple:
-            raise ValueError("plan de divergence invalide")
-    for entry in plan.divergent_points:
+    # report. Each field is read EXACTLY ONCE into a local: re-reading after
+    # the check let a descriptor return a tuple at validation time and
+    # something else at formatting time, which put the IndexError back.
+    missing = getattr(plan, "missing_point_ids", None)
+    unexpected = getattr(plan, "unexpected_point_ids", None)
+    divergent = getattr(plan, "divergent_points", None)
+    if any(type(field) is not tuple for field in (missing, unexpected, divergent)):
+        raise ValueError("plan de divergence invalide")
+    missing = cast(tuple, missing)
+    unexpected = cast(tuple, unexpected)
+    divergent = cast(tuple, divergent)
+    for entry in divergent:
         if (
             type(entry) is not tuple or len(entry) != 2
             or type(entry[1]) is not tuple
@@ -270,9 +277,9 @@ def render_divergence_report(
         if hidden > 0:
             lines.append(f"  … et {hidden} autres non affichés")
 
-    section("Points manquants dans l'index", plan.missing_point_ids,
+    section("Points manquants dans l'index", missing,
             lambda index, point_id: _safe_label(point_id, "identifiant", index))
-    section("Points inattendus dans l'index", plan.unexpected_point_ids,
+    section("Points inattendus dans l'index", unexpected,
             lambda index, point_id: _safe_label(point_id, "identifiant", index))
     def format_divergent(index: int, entry: tuple[str, tuple[str, ...]]) -> str:
         # Show ALL approved fields (including ACL) even when unknown index
@@ -288,7 +295,7 @@ def render_divergence_report(
             shown += f" ; {unknown_count} {noun}" if shown else f"{unknown_count} {noun}"
         return f"{_safe_label(entry[0], 'identifiant', index)} : {shown}"
 
-    section("Points divergents", plan.divergent_points, format_divergent)
+    section("Points divergents", divergent, format_divergent)
     return lines
 
 

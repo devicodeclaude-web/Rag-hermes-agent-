@@ -527,9 +527,11 @@ class AuditedG1CandidateWindowTests(unittest.TestCase):
         # masquage, les deux chemins pourraient rediverger en silence, et la
         # revendication « même politique de représentation » deviendrait fausse.
         from rag_hermes import canonical_reconciliation, g1_audited_candidates
-        from rag_hermes.redacted_repr import safe_count
+        from rag_hermes.redacted_repr import safe_count, safe_length
         self.assertIs(g1_audited_candidates.safe_count, safe_count)
+        self.assertIs(g1_audited_candidates.safe_length, safe_length)
         self.assertIs(canonical_reconciliation._safe_count, safe_count)
+        self.assertIs(canonical_reconciliation.safe_length, safe_length)
 
     def test_missing_answer_trace_fails_closed_instead_of_asserting(self):
         # Garde de défense en profondeur : inatteignable par la surface publique

@@ -91,10 +91,13 @@ donc à ne jamais journaliser :
 - les attributs bruts, lisibles sans restriction ;
 - le `repr` par défaut des éléments contenus — `RerankedCandidate` et `Chunk`
   pour la fenêtre, auxquels s'ajoutent `AnswerTrace`, `AnswerResponse` et
-  `Citation` pour la voie réponse — qui recopie le texte des passages, et pour
-  `Chunk` aussi son `source_sha` et ses offsets ; de même `IndexSnapshotReport`
-  recopie l'empreinte `payload_sha256`. Journaliser `window.candidates`,
-  `window.opening` ou `answer.trace.response` reste donc une fuite ;
+  `Citation` pour la voie réponse. Celui de `Chunk` recopie **ses vingt
+  champs** : le texte du passage, mais aussi **toute son ACL** (`tenant_id`,
+  `visibility`, `allowed_groups`, `allowed_users`, `owner_id`,
+  `classification`), `source_sha`, `content_hash`, les offsets et le profil de
+  tokenizer. `IndexSnapshotReport` recopie l'empreinte `payload_sha256`.
+  Journaliser `window.candidates`, `window.opening` ou
+  `answer.trace.response` reste donc une fuite ;
 - `dataclasses.asdict()` sur l'un des deux types, qui rend le texte intégral ;
 - les **variables locales** du moteur audité. Les chunks et le JSON du
   manifeste sont vivants quand une exception se propage : un formateur de trace

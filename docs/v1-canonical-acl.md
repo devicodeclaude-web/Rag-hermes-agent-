@@ -291,13 +291,22 @@ révocation valable.
   **manquants**, **inattendus** et **divergents** sous le même bail partagé,
   la même empreinte d'ancre approuvée et le même rejeu : pour un point
   divergent le plan en mémoire ne contient que les **noms de champs** en
-  écart, jamais une valeur. `repr(plan)`, `str(plan)` et l'en-tête du rendu
-  CLI limitent **chacun des cinq champs** à un entier validé par la garde
-  partagée `rag_hermes/redacted_repr.py` (un champ forgé est masqué et ne peut
-  ni fuiter sa longueur ni faire lever le rendu), et `render_divergence_report`
-  **échoue fermé** (`plan de divergence invalide`) sur un plan dont la forme
-  est forgée, au lieu de rendre un rapport douteux. Mais ne pas
-  journaliser/sérialiser (`asdict`, attributs
+  écart, jamais une valeur. `repr(plan)` et `str(plan)` limitent **chacun des
+  cinq champs** à un entier validé par la garde partagée
+  `rag_hermes/redacted_repr.py` (un champ forgé est masqué et ne peut ni
+  fuiter sa longueur ni faire lever le rendu). `render_divergence_report` est
+  plus strict : son en-tête masque les **deux** compteurs de la même façon,
+  mais les **trois champs de collection** sont *refusés* en échec fermé
+  (`plan de divergence invalide`) si leur forme est forgée, chaque champ étant
+  lu une seule fois ; sur un plan valide leurs comptes viennent d'un `len()`
+  sur tuple réel. Cette branche d'échec est de la **défense en profondeur** :
+  le constructeur du plan n'émet que des tuples exacts, donc un index hostile,
+  qui ne contrôle que des *valeurs*, ne l'atteint pas.
+  Limites restant ouvertes, bornées par la **frontière de processus** : une
+  *sous-classe* du plan dont un compteur est une propriété qui lève fait lever
+  `repr`, et `is_clean` n'est pas durci (un `__bool__` hostile propage son
+  message). Les deux exigent du code attaquant dans le processus, pas un index
+  hostile. Ne pas journaliser/sérialiser (`asdict`, attributs
   bruts) le plan en mémoire :
   un nom de clé Qdrant inconnu peut lui-même contenir un secret. Le rendu CLI
   imprime **tous les champs du schéma canonique connus** (ACL comprise) même si
