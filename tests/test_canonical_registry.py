@@ -19,6 +19,8 @@ import os
 from pathlib import Path
 import signal
 import stat
+import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -1452,6 +1454,198 @@ class RegistryStoreTests(unittest.TestCase):
         registry.register(document())
 
         self.assertIsNotNone(authority.policy_for("doc-1"))
+
+
+class AnchorMigrationTests(unittest.TestCase):
+    """Recréer hors ligne une ancre manquante sur un vrai registre ancien.
+
+    L'attestation indépendante fournie par l'opérateur est : le nombre
+    d'enregistrements ET, par document, `(doc_version, acl_version)` attendus.
+    L'outil n'écrit l'ancre QUE si le JSONL courant les respecte exactement ;
+    il ne reconstruit jamais une ancre depuis le seul fichier (un backup
+    restauré à des versions plus anciennes doit être refusé).
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.store = Path(self._tmp.name)
+
+    def _legacy_store_without_anchor(self) -> CanonicalDocumentRegistry:
+        registry = CanonicalDocumentRegistry(self.store)
+        registry.register(document(allowed_users=("bob",), acl_version=1))
+        registry.register(document(allowed_users=(), acl_version=2))
+        registry.anchor_path.unlink()
+        return registry
+
+    def test_matching_attestation_publishes_an_anchor_and_unblocks_restart(self) -> None:
+        from rag_hermes.canonical_registry import bootstrap_canonical_anchor
+
+        self._legacy_store_without_anchor()
+        self.assertFalse((self.store / "canonical_anchor.json").exists())
+        # Le compte de lignes est 2 (deux révisions de doc-1), l'état final à
+        # acl_version=2. L'opérateur l'atteste depuis une source externe.
+        bootstrap_canonical_anchor(
+            self.store,
+            {"records": 2, "documents": {"doc-1": {"doc_version": 1, "acl_version": 2}}},
+        )
+        self.assertTrue((self.store / "canonical_anchor.json").exists())
+        reopened = CanonicalDocumentRegistry(self.store).source("doc-1")
+        assert reopened is not None
+        self.assertEqual(reopened.acl_version, 2)
+        self.assertEqual(reopened.allowed_users, ())
+
+    def test_rolled_back_backup_is_refused_and_no_anchor_is_written(self) -> None:
+        from rag_hermes.canonical_registry import bootstrap_canonical_anchor
+
+        registry = self._legacy_store_without_anchor()
+        # L'opérateur atteste l'état réel (acl_version=2), mais quelqu'un a
+        # restauré un backup antérieur (une seule révision, acl_version=1).
+        registry.path.write_bytes(
+            registry.path.read_bytes().splitlines(keepends=True)[0]
+        )
+        with self.assertRaises(CanonicalStoreError) as caught:
+            bootstrap_canonical_anchor(
+                self.store,
+                {"records": 2, "documents": {"doc-1": {"doc_version": 1, "acl_version": 2}}},
+            )
+        self.assertIn("does not match the operator attestation", str(caught.exception))
+        self.assertFalse((self.store / "canonical_anchor.json").exists())
+        # Le registre reste bloqué au démarrage : aucun recul béni.
+        with self.assertRaises(CanonicalStoreError):
+            CanonicalDocumentRegistry(self.store)
+
+    def test_wrong_record_count_is_refused(self) -> None:
+        from rag_hermes.canonical_registry import bootstrap_canonical_anchor
+
+        self._legacy_store_without_anchor()
+        with self.assertRaises(CanonicalStoreError) as caught:
+            bootstrap_canonical_anchor(
+                self.store,
+                {"records": 3, "documents": {"doc-1": {"doc_version": 1, "acl_version": 2}}},
+            )
+        self.assertIn("does not match the operator attestation", str(caught.exception))
+        self.assertFalse((self.store / "canonical_anchor.json").exists())
+
+    def test_wrong_document_set_is_refused(self) -> None:
+        from rag_hermes.canonical_registry import bootstrap_canonical_anchor
+
+        self._legacy_store_without_anchor()
+        with self.assertRaises(CanonicalStoreError) as caught:
+            bootstrap_canonical_anchor(
+                self.store,
+                {
+                    "records": 2,
+                    "documents": {
+                        "doc-1": {"doc_version": 1, "acl_version": 2},
+                        "doc-2": {"doc_version": 1, "acl_version": 1},
+                    },
+                },
+            )
+        self.assertIn("does not match the operator attestation", str(caught.exception))
+        self.assertFalse((self.store / "canonical_anchor.json").exists())
+
+    def test_bool_version_in_attestation_is_refused_before_reading(self) -> None:
+        from rag_hermes.canonical_registry import bootstrap_canonical_anchor
+
+        self._legacy_store_without_anchor()
+        with self.assertRaises(CanonicalStoreError) as caught:
+            bootstrap_canonical_anchor(
+                self.store,
+                {"records": 2, "documents": {"doc-1": {"doc_version": 1, "acl_version": True}}},
+            )
+        self.assertIn("non-negative exact ints", str(caught.exception))
+        self.assertFalse((self.store / "canonical_anchor.json").exists())
+
+    def test_existing_anchor_is_never_overwritten(self) -> None:
+        from rag_hermes.canonical_registry import bootstrap_canonical_anchor
+
+        registry = CanonicalDocumentRegistry(self.store)
+        registry.register(document(allowed_users=("bob",), acl_version=1))
+        original_anchor = registry.anchor_path.read_bytes()
+        with self.assertRaises(CanonicalStoreError) as caught:
+            bootstrap_canonical_anchor(
+                self.store,
+                {"records": 1, "documents": {"doc-1": {"doc_version": 1, "acl_version": 1}}},
+            )
+        self.assertIn("already present", str(caught.exception))
+        self.assertEqual(registry.anchor_path.read_bytes(), original_anchor)
+
+    def test_empty_store_needs_no_migration(self) -> None:
+        from rag_hermes.canonical_registry import bootstrap_canonical_anchor
+
+        CanonicalDocumentRegistry(self.store)  # crée le répertoire, aucun record
+        # Fichier privé 0600 ne contenant qu'une ligne blanche : records == 0.
+        fd = os.open(
+            self.store / "canonical_documents.jsonl",
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600,
+        )
+        try:
+            os.write(fd, b"\n")
+        finally:
+            os.close(fd)
+        with self.assertRaises(CanonicalStoreError) as caught:
+            bootstrap_canonical_anchor(
+                self.store,
+                {"records": 1, "documents": {"doc-1": {"doc_version": 1, "acl_version": 1}}},
+            )
+        self.assertIn("needs no anchor migration", str(caught.exception))
+        self.assertFalse((self.store / "canonical_anchor.json").exists())
+
+    def test_missing_history_file_is_refused(self) -> None:
+        from rag_hermes.canonical_registry import bootstrap_canonical_anchor
+
+        CanonicalDocumentRegistry(self.store)  # répertoire sans JSONL encore créé
+        with self.assertRaises(CanonicalStoreError) as caught:
+            bootstrap_canonical_anchor(
+                self.store,
+                {"records": 1, "documents": {"doc-1": {"doc_version": 1, "acl_version": 1}}},
+            )
+        self.assertIn("history is missing", str(caught.exception))
+        self.assertFalse((self.store / "canonical_anchor.json").exists())
+
+    def test_cli_migrates_on_match_and_refuses_on_divergence(self) -> None:
+        registry = self._legacy_store_without_anchor()
+        root = Path(__file__).resolve().parents[1]
+        script = root / "scripts/migrate_canonical_anchor.py"
+        env = {**os.environ, "PYTHONPATH": str(root)}
+        attest = self.store / "attestation.json"
+        attest.write_bytes(
+            json.dumps(
+                {"records": 2, "documents": {"doc-1": {"doc_version": 1, "acl_version": 2}}}
+            ).encode("utf-8")
+        )
+        attest.chmod(0o600)
+
+        # Attestation divergente d'abord : refus, aucune ancre publiée.
+        wrong = self.store / "wrong.json"
+        wrong.write_bytes(
+            json.dumps(
+                {"records": 2, "documents": {"doc-1": {"doc_version": 1, "acl_version": 1}}}
+            ).encode("utf-8")
+        )
+        wrong.chmod(0o600)
+        refused = subprocess.run(
+            [sys.executable, str(script), "--store", str(self.store),
+             "--attestation", str(wrong)],
+            capture_output=True, text=True, check=False, env=env,
+        )
+        self.assertNotEqual(refused.returncode, 0)
+        self.assertIn("REFUS", refused.stdout)
+        self.assertFalse(registry.anchor_path.exists())
+
+        # Attestation correcte : ancre republiée, redémarrage débloqué.
+        ok = subprocess.run(
+            [sys.executable, str(script), "--store", str(self.store),
+             "--attestation", str(attest)],
+            capture_output=True, text=True, check=False, env=env,
+        )
+        self.assertEqual(ok.returncode, 0, ok.stderr)
+        self.assertIn("réconciliation Qdrant", ok.stdout)
+        self.assertTrue(registry.anchor_path.exists())
+        reopened = CanonicalDocumentRegistry(self.store).source("doc-1")
+        assert reopened is not None
+        self.assertEqual(reopened.acl_version, 2)
 
 
 class WriteThroughTests(unittest.TestCase):
