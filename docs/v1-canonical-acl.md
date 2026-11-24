@@ -117,11 +117,12 @@ plutôt que des documents, typage strict de l'ancre, `O_NONBLOCK` avant la
 validation `S_ISREG`, `O_EXCL` sur le temporaire et nettoyage de ce temporaire,
 distinction entre « rien n'a été écrit » et « seule la durabilité a échoué »,
 refus d'écriture sur un magasin déjà incohérent, et seconde observation du
-fichier absent — **tous tués**. Deux survivantes, gardées et annotées comme
-défense en profondeur parce qu'aucune sortie observable ne change : traiter une
-ancre absente comme une ancre vide est strictement équivalent, et le drapeau
-« magasin incohérent » en lecture est doublé par l'invalidation de la
-signature, qui force déjà un rejeu refusé.
+fichier absent — **tous tués dans le lot historique**. Les deux survivantes
+de ce lot étaient alors le cas « ancre absente équivaut à ancre vide » et le
+drapeau « magasin incohérent » doublé par l'invalidation de signature. **La
+politique a changé depuis** : une ancre absente avec un historique non vide
+est désormais refusée avant tout service ; ne pas réutiliser les anciens
+chiffres de mutants comme preuve de cette nouvelle garde.
 
 ## Comportements observables (testés)
 
@@ -150,10 +151,11 @@ révocation valable.
 - **Déni de service après révocation sans réindexation.** Tant que l'index
   porte l'ancien payload, le passage n'est plus servi à personne. C'est le prix
   du fail-closed ; la réindexation du document rétablit le service.
-- **Registre partagé local** : les lectures contrôlent le fichier sous `flock`
-  partagé et rejouent les lignes si l'identité du fichier a changé
-  (`st_dev`, inode, taille, mtime et ctime en nanosecondes) ; les écritures
-  rejouent toujours le fichier sous `flock` exclusif avant le contrôle monotone.
+- **Registre partagé local** : les lectures contrôlent le JSONL **et son
+  ancre** sous `flock` partagé et rejouent l'historique si l'identité de l'un
+  ou de l'autre change (`st_dev`, inode, taille, mtime et ctime en nanosecondes) ;
+  les écritures rejouent toujours le fichier sous `flock` exclusif avant le
+  contrôle monotone.
   Deux processus partageant le même inode sur un
   système de fichiers qui respecte `flock` ne peuvent plus rejouer une ancienne
   ACL à partir d'un cache obsolète ; un lecteur déjà démarré voit une révocation
@@ -193,16 +195,22 @@ révocation valable.
   volontairement : la lecture tient déjà le mutex d'instance alors que
   l'écriture prend le bail de transaction **avant** lui, donc y prendre le bail
   produirait un interblocage ABBA (constaté en revue sur un magasin neuf).
-  Limites assumées : une ancre absente signifie « installation antérieure à ce
-  lot », donc le démarrage est accepté et la protection ne commence qu'au
-  premier enregistrement suivant, qui publie l'ancre — **par construction,
-  supprimer le fichier d'ancre désactive donc cette garde** (une ancre
-  illisible, exposée, symbolique ou malformée échoue en revanche **fermé**,
-  sans réparation silencieuse) ; un repère vivant dans le même répertoire et
-  sous le même UID ne peut pas faire mieux, et une ancre hors de l'hôte reste
-  nécessaire contre un adversaire du même UID qui réécrirait les deux fichiers
-  de façon cohérente ; enfin la publication réécrit la carte complète des
-  documents à chaque enregistrement, coût proportionnel au nombre de documents.
+  Un registre **non vide sans ancre** échoue désormais fermé au démarrage,
+  même s'il vient d'une installation historique ; seul un magasin neuf et
+  vide peut faire son premier enregistrement sans ancre, qui est alors publiée
+  avant la ligne JSONL. L'absence d'ancre après une révocation était autrement
+  indiscernable d'un vrai magasin ancien et réadmettait l'ancienne ACL au
+  redémarrage. **Aucune migration automatique ni outil de restauration d'un
+  registre historique sans ancre n'est livré ici** : arrêter le service,
+  préserver les originaux et définir une migration hors ligne adossée à une
+  preuve de confiance indépendante avant de tenter de le rouvrir ; ne jamais
+  générer aveuglément une ancre à partir du JSONL présent. Une ancre illisible,
+  exposée, symbolique ou malformée échoue également fermé, sans réparation
+  silencieuse. Un repère vivant dans le même répertoire et sous le même UID ne
+  protège toujours pas d'un adversaire qui réécrirait **les deux fichiers**
+  de façon cohérente : il faudrait une ancre hors de l'hôte ; enfin la
+  publication réécrit la carte complète des documents à chaque enregistrement,
+  coût proportionnel au nombre de documents.
 - **Panne d'append après la publication de l'ancre** — pas seulement un crash :
   `ENOSPC`, `EIO`, un quota. Deux cas sont distingués en relisant le fichier
   sous le verrou exclusif encore tenu, au lieu de condamner sur la seule

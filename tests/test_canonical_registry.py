@@ -914,27 +914,31 @@ class RegistryStoreTests(unittest.TestCase):
             CanonicalDocumentRegistry(self.store)
         self.assertEqual(decoy.read_bytes(), b"unchanged")
 
-    def test_a_store_predating_the_anchor_keeps_working_then_gains_one(self) -> None:
-        """Compatibilité : une installation sans ancre démarre, puis en gagne une."""
+    def test_nonempty_history_without_anchor_refuses_restart_and_live_reads(self) -> None:
+        """Une ancre disparue ne peut pas être distinguée d'un vieux magasin.
+
+        Accepter automatiquement l'ancien JSONL après suppression de l'ancre
+        peut réadmettre une ACL périmée après un crash. Les magasins historiques
+        exigent une migration HORS LIGNE explicite, jamais un démarrage qui
+        « fabrique » une nouvelle ancre depuis des octets non authentifiés.
+        """
         registry = CanonicalDocumentRegistry(self.store)
-        revoked = document(allowed_users=(), acl_version=2)
         registry.register(document(allowed_users=("bob",), acl_version=1))
-        registry.register(revoked)
+        registry.register(document(allowed_users=(), acl_version=2))
+        peer = CanonicalDocumentRegistry(self.store)
+        current = peer.source("doc-1")
+        self.assertIsNotNone(current)
+        assert current is not None
+        self.assertEqual(current.acl_version, 2)
         registry.anchor_path.unlink()
 
-        # Sans ancre, la protection au redémarrage n'existe pas encore.
-        reopened = CanonicalDocumentRegistry(self.store)
-        self.assertEqual(reopened.source("doc-1"), revoked)
-        self.assertFalse(reopened.anchor_path.exists())
-
-        # Le premier enregistrement la publie, et elle protège ensuite.
-        reopened.register(document(allowed_users=(), acl_version=3))
-        self.assertTrue(reopened.anchor_path.exists())
-        backup = reopened.path.read_bytes()
-        reopened.register(document(allowed_users=(), acl_version=4))
-        reopened.path.write_bytes(backup)
+        with self.assertRaises(CanonicalStoreError):
+            peer.authority.policy_for("doc-1")
         with self.assertRaises(CanonicalStoreError):
             CanonicalDocumentRegistry(self.store)
+        with self.assertRaises(CanonicalStoreError):
+            registry.register(document(allowed_users=(), acl_version=3))
+        self.assertFalse(registry.anchor_path.exists())
 
     def test_anchor_survives_a_refused_registration(self) -> None:
         registry = CanonicalDocumentRegistry(self.store)
@@ -995,9 +999,58 @@ class RegistryStoreTests(unittest.TestCase):
                 registry.register(document(doc_version=2, content="nouveau"))
         self.assertEqual(registry.path.read_bytes(), before)
         self.assertEqual(registry.anchor_path.read_bytes(), anchor)
+        # Si la publication échoue AVANT le rename, la paire reste cohérente :
+        # invalider le cache ne doit pas briquer un registre sain.
+        self.assertIsNotNone(registry.source("doc-1"))
         reopened = CanonicalDocumentRegistry(self.store).source("doc-1")
         assert reopened is not None
         self.assertEqual(reopened.doc_version, 1)
+
+    def test_anchor_directory_fsync_failure_after_rename_invalidates_live_cache(self) -> None:
+        """L'ancre a changé mais l'append n'a pas démarré : ancien ACL interdit.
+
+        Un `fsync(dir_fd)` en erreur après `rename` laisse une ancre visible
+        en avance. La signature du JSONL est INCHANGÉE ; sans invalidation
+        explicite, l'instance vivante et ses pairs servent l'ancien cache alors
+        qu'un redémarrage refuse l'historique TANT QUE l'ancre est conservée.
+        Sa suppression rend de nouveau l'installation indiscernable d'un vieux
+        magasin sans ancre — limite de migration suivie dans #71.
+        """
+        registry = CanonicalDocumentRegistry(self.store)
+        registry.register(document(allowed_users=("bob",), acl_version=1))
+        peer = CanonicalDocumentRegistry(self.store)
+        peer_doc = peer.source("doc-1")
+        self.assertIsNotNone(peer_doc)
+        assert peer_doc is not None
+        self.assertEqual(peer_doc.allowed_users, ("bob",))
+        old_history = registry.path.read_bytes()
+        old_anchor = registry.anchor_path.read_bytes()
+        real_fsync = os.fsync
+        calls = 0
+
+        def fail_after_anchor_rename(fd):
+            nonlocal calls
+            calls += 1
+            if calls == 2:  # ancre temporaire, puis répertoire APRÈS rename
+                raise OSError(errno.EIO, "input/output error")
+            return real_fsync(fd)
+
+        with patch("rag_hermes.canonical_registry.os.fsync", fail_after_anchor_rename):
+            with self.assertRaises(CanonicalStoreError):
+                registry.register(document(allowed_users=(), acl_version=2))
+        self.assertEqual(calls, 2)
+        self.assertEqual(registry.path.read_bytes(), old_history)
+        self.assertNotEqual(registry.anchor_path.read_bytes(), old_anchor)
+        with self.assertRaises(CanonicalStoreError):
+            registry.source("doc-1")  # ne doit pas servir Bob depuis le cache
+        with self.assertRaises(CanonicalStoreError):
+            peer.source("doc-1")  # autre instance vivante, même inode JSONL
+        with self.assertRaises(CanonicalStoreError):
+            peer.authority.policy_for("doc-1")  # chemin ACL du service
+        with self.assertRaises(CanonicalStoreError):
+            registry.register(document(doc_version=3))
+        with self.assertRaises(CanonicalStoreError):
+            CanonicalDocumentRegistry(self.store)
 
     def test_a_blocking_node_in_place_of_the_anchor_fails_closed(self) -> None:
         """Un FIFO ne doit jamais suspendre lecture, démarrage ou publication."""

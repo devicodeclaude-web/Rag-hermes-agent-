@@ -403,6 +403,7 @@ class CanonicalDocumentRegistry:
         self._running = hashlib.sha256()
         self._broken: str | None = None
         self._signature: tuple[int, int, int, int, int] | None = None
+        self._anchor_signature: tuple[int, int, int, int, int] | None = None
         self._anchor_path = path / _ANCHOR_FILENAME
         self._authority = _LiveCanonicalAclAuthority(self)
         with _ACTIVE_TRANSACTION_FDS_LOCK:
@@ -418,6 +419,27 @@ class CanonicalDocumentRegistry:
     @property
     def anchor_path(self) -> Path:
         return self._anchor_path
+
+    @staticmethod
+    def _anchor_identity(dir_fd: int) -> tuple[int, int, int, int, int] | None:
+        """Cheap change detection even when the JSONL inode did not change.
+
+        A failed directory fsync after `rename(anchor)` can publish an anchor
+        ahead of the unchanged history. Every live registry (not just the
+        writer) must then replay or refuse rather than reuse its old ACL cache.
+        Open without following symlinks and validate ownership/mode just like
+        the full anchor reader before trusting the cached signature.
+        """
+        try:
+            file_fd = _open_private_file(
+                dir_fd, write=False, create=False, name=_ANCHOR_FILENAME
+            )
+        except FileNotFoundError:
+            return None
+        try:
+            return _file_identity(file_fd)
+        finally:
+            os.close(file_fd)
 
     def _read_anchor(
         self, dir_fd: int
@@ -609,10 +631,17 @@ class CanonicalDocumentRegistry:
                     try:
                         fcntl.flock(file_fd, fcntl.LOCK_SH)
                         signature = _file_identity(file_fd)
-                        if signature != self._signature:
+                        anchor_signature = self._anchor_identity(dir_fd)
+                        if self._anchor_signature is not None and anchor_signature is None:
+                            raise CanonicalStoreError("canonical anchor disappeared")
+                        if (
+                            signature != self._signature
+                            or anchor_signature != self._anchor_signature
+                        ):
                             fresh = self._fresh_verified(file_fd, dir_fd)
                             self._documents = fresh
                             self._signature = signature
+                            self._anchor_signature = anchor_signature
                         return
                     finally:
                         _close_tracked_private_file(lease_token)
@@ -664,8 +693,15 @@ class CanonicalDocumentRegistry:
         versions atteintes par document.
         """
         if anchor is None:
-            # Installation antérieure à ce lot : rien à comparer. Équivalent à
-            # une ancre vide, écrit explicitement pour que la raison soit lue.
+            # Une installation legacy non vide est indiscernable d'un magasin
+            # moderne dont l'ancre a été supprimée après une révocation. En
+            # acceptant automatiquement le JSONL, un redémarrage réadmettrait
+            # son ancienne ACL. Ne bénis PAS les octets présents par une ancre
+            # reconstruite à partir du même fichier : une migration hors ligne
+            # exige une preuve indépendante de l'état attendu. Un magasin
+            # réellement neuf et vide peut toujours faire son premier import.
+            if records:
+                raise CanonicalStoreError("canonical anchor required for nonempty history")
             return
         anchored_records, anchored_digest, marks = anchor
         # L'ancre est publiée AVANT l'append, donc le fichier n'est jamais
@@ -819,6 +855,10 @@ class CanonicalDocumentRegistry:
                     record_bytes = line.encode("ascii") + b"\n"
                     running = self._running.copy()
                     running.update(record_bytes)
+                    # A `rename(anchor)` followed by a failing directory fsync
+                    # can change the anchor while leaving the JSONL signature
+                    # unchanged. `_load()` compares BOTH file identities, even
+                    # in another live registry, before reusing an ACL cache.
                     self._write_anchor(
                         dir_fd,
                         _anchor_from_documents(
@@ -850,6 +890,7 @@ class CanonicalDocumentRegistry:
                             raise CanonicalStoreError(self._broken) from exc
                         self._documents = fresh
                         self._signature = _file_identity(file_fd)
+                        self._anchor_signature = self._anchor_identity(dir_fd)
                         raise CanonicalStoreError(
                             "canonical record durability is not confirmed"
                         ) from exc
@@ -857,6 +898,7 @@ class CanonicalDocumentRegistry:
                     self._records += 1
                     self._running = running
                     self._signature = _file_identity(file_fd)
+                    self._anchor_signature = self._anchor_identity(dir_fd)
                 finally:
                     _close_tracked_private_file(lease_token)
             finally:
