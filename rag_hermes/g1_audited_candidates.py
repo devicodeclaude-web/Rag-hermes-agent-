@@ -27,7 +27,7 @@ from .qdrant_rest import QdrantAuditClient, QdrantRestClient
 from .qdrant_store import chunk_to_point
 from .redacted_repr import REDACTED, safe_count, safe_length
 from .retrieval import CanonicalAclError
-from .answering import AnswerTrace, answer_from_evidence
+from .answering import AnswerResponse, AnswerTrace, answer_from_evidence
 from .generator import GenerationError
 
 
@@ -96,6 +96,12 @@ class AuditedG1Answer:
         # raise while a traceback is being formatted.
         trace = getattr(self, "trace", None)
         response = getattr(trace, "response", None) if type(trace) is AnswerTrace else None
+        if type(response) is not AnswerResponse:
+            # `AnswerTrace` is itself a dataclass, so an AUTHENTIC trace can
+            # carry a forged `response`: `getattr(..., default)` only swallows
+            # AttributeError, and a property raising anything else would put
+            # its message — the passage — into the logged traceback.
+            response = None
         abstained = getattr(response, "abstained", None)
         return (
             "AuditedG1Answer("

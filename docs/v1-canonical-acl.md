@@ -292,8 +292,12 @@ révocation valable.
   la même empreinte d'ancre approuvée et le même rejeu : pour un point
   divergent le plan en mémoire ne contient que les **noms de champs** en
   écart, jamais une valeur. `repr(plan)`, `str(plan)` et l'en-tête du rendu
-  CLI limitent les comptes à des entiers validés (une valeur forgée de mauvais
-  type est masquée), mais ne pas journaliser/sérialiser (`asdict`, attributs
+  CLI limitent **chacun des cinq champs** à un entier validé par la garde
+  partagée `rag_hermes/redacted_repr.py` (un champ forgé est masqué et ne peut
+  ni fuiter sa longueur ni faire lever le rendu), et `render_divergence_report`
+  **échoue fermé** (`plan de divergence invalide`) sur un plan dont la forme
+  est forgée, au lieu de rendre un rapport douteux. Mais ne pas
+  journaliser/sérialiser (`asdict`, attributs
   bruts) le plan en mémoire :
   un nom de clé Qdrant inconnu peut lui-même contenir un secret. Le rendu CLI
   imprime **tous les champs du schéma canonique connus** (ACL comprise) même si

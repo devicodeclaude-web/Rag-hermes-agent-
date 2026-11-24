@@ -627,6 +627,68 @@ class DivergenceRenderingTests(unittest.TestCase):
             self.assertIn("expected_point_count=<invalide>", rendered)
             self.assertIn("observed_point_count=<invalide>", rendered)
 
+    def test_plan_repr_masks_forged_collection_fields_and_never_raises(self):
+        # Les trois compteurs de collections passaient par un `len()` NU : un
+        # champ forgé fuitait sa longueur, un entier faisait lever le repr
+        # (`TypeError`), et un `__len__` hostile recopiait son message — donc
+        # le passage — dans la trace mise en journal. Même garde que les deux
+        # types G1 audités, qui revendiquent cette politique de représentation.
+        forged_text = "\nPASSAGE_FORGE_abcd1234\x1b[32m"
+
+        class HostileLength(tuple):
+            def __len__(self):
+                raise ValueError(forged_text)
+
+        plan = CanonicalIndexDivergence(1, 1, (), (), ())
+        for field in ("missing_point_ids", "unexpected_point_ids", "divergent_points"):
+            count = field.replace("_point_ids", "_count").replace(
+                "divergent_points", "divergent_count")
+            for forgery in (forged_text, 5, HostileLength()):
+                with self.subTest(field=field, forgery=type(forgery).__name__):
+                    forged = replace(plan, **{field: forgery})
+                    for rendered in (repr(forged), str(forged), repr([forged])):
+                        self.assertIn(f"{count}=<invalide>", rendered)
+                        self.assertNotIn(forged_text.strip(), rendered)
+                        self.assertNotIn("\n", rendered)
+                        self.assertNotIn("\x1b", rendered)
+
+        # Un plan sans aucun champ ne doit pas faire lever le repr : une
+        # exception pendant la mise en forme d'une trace masque l'erreur réelle.
+        self.assertEqual(
+            repr(object.__new__(CanonicalIndexDivergence)),
+            "CanonicalIndexDivergence(expected_point_count=<invalide>, "
+            "observed_point_count=<invalide>, missing_count=<invalide>, "
+            "unexpected_count=<invalide>, divergent_count=<invalide>)",
+        )
+
+    def test_cli_renderer_refuses_forged_collection_fields_instead_of_raising(self):
+        # `render_divergence_report` est la vue « sûre » destinée à l'opérateur
+        # et au ticket : elle levait un `TypeError` sur un entier forgé et un
+        # `IndexError` sur une chaîne dans `divergent_points`, et un objet
+        # hostile pouvait fabriquer des lignes de rapport supplémentaires.
+        # Atteignable depuis le CLI (`scripts/audit_canonical_copy.py`).
+        plan = CanonicalIndexDivergence(1, 1, (), (), ())
+
+        class HostileLength(tuple):
+            def __len__(self):
+                raise ValueError("\nPASSAGE_FORGE_abcd1234\x1b[32m")
+
+        for field, forgery in (
+            ("missing_point_ids", 7),
+            ("unexpected_point_ids", "ab"),
+            ("divergent_points", "ab"),
+            ("divergent_points", (("id", 5),)),
+            ("divergent_points", ("pas-un-couple",)),
+            # Sous-classe de `tuple` : `isinstance` la laisserait passer, puis
+            # son `__len__` hostile relèverait son message — donc le passage —
+            # dans la trace. Seul le contrôle de TYPE exact la refuse.
+            ("missing_point_ids", HostileLength()),
+        ):
+            with self.subTest(field=field, forgery=forgery):
+                forged = replace(plan, **{field: forgery})
+                with self.assertRaisesRegex(ValueError, "plan de divergence invalide"):
+                    render_divergence_report(forged)
+
     def test_cli_renderer_masks_forged_counters_too(self):
         from scripts import audit_canonical_copy as command
         secret = "\nPoints manquants dans l'index (0) :\x1b[31mSECRET"

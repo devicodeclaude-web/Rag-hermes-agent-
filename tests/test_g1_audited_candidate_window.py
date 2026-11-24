@@ -372,6 +372,37 @@ class AuditedG1CandidateWindowTests(unittest.TestCase):
             "closing_points=<invalide>)",
         )
 
+    def test_answer_result_repr_survives_a_hostile_response_on_a_real_trace(self):
+        # `type(trace) is AnswerTrace` ne protège PAS le champ `response` :
+        # `AnswerTrace` est un dataclass, donc une trace AUTHENTIQUE peut
+        # porter un objet `response` forgé dont la lecture d'attribut lève —
+        # et le message de cette exception (donc le passage) atterrit dans la
+        # trace mise en journal. `getattr(..., défaut)` n'intercepte qu'une
+        # AttributeError, d'où le contrôle de type avant la lecture.
+        from rag_hermes.answering import AnswerTrace
+        from rag_hermes.g1_audited_candidates import AuditedG1Answer
+        forged_text = "\nPASSAGE_FORGE_abcd1234\x1b[32m"
+
+        class HostileResponse:
+            @property
+            def abstained(self):
+                raise ValueError(forged_text)
+
+            @property
+            def citations(self):
+                raise ValueError(forged_text)
+
+        trace = object.__new__(AnswerTrace)
+        object.__setattr__(trace, "response", HostileResponse())
+        result = self.run_answer(lambda q, evidence: "Installez avec pipx [S1].")
+        forged = replace(result, trace=trace)
+        for rendered in (repr(forged), str(forged), repr([forged])):
+            self.assertIn("abstained=<invalide>", rendered)
+            self.assertIn("citations=<invalide>", rendered)
+            self.assertNotIn(forged_text.strip(), rendered)
+            self.assertNotIn("\n", rendered)
+            self.assertNotIn("\x1b", rendered)
+
     def test_candidate_window_repr_does_not_expose_evidence(self):
         # Asymétrie que le doc G1 annonçait « à harmoniser avant tout reçu » :
         # `AuditedG1Answer` masquait déjà son repr, mais le repr PAR DÉFAUT de
