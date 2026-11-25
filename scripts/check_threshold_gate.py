@@ -15,9 +15,14 @@ OBLIGATOIRE (pas de selection implicite du premier bloc).
 generative_human_review, retrieval_selection). Une barre dans le scope dont la
 preuve manque -> BLOCKED ; hors scope mais mesuree -> incoherence -> BLOCKED.
 
-Exit : 0 = PASS OPPOSABLE (spec figee + granularite par cellule) ; 2 = BLOQUE ou
-PASS diagnostique NON opposable (jamais pris pour un succes) ; 1 = FAILED ;
-3 = eliminatoire (incident de securite).
+Codes de sortie (distincts : un echec aux seuils != une erreur d'usage) :
+    0 = PASS OPPOSABLE (spec figee + granularite par cellule)
+    1 = FAILED (au moins une barre requise sous le seuil)
+    2 = BLOQUE, ou PASS diagnostique NON opposable (jamais pris pour un succes)
+    3 = eliminatoire (incident de securite)
+    4 = ERREUR D'USAGE / CONFIG / SPEC (arguments, rapport illisible, bloc ambigu,
+        dependance de scope inconnue, spec invalide...) — a ne JAMAIS confondre
+        avec un echec aux seuils.
 """
 from __future__ import annotations
 
@@ -39,6 +44,8 @@ from rag_hermes.threshold_gate import (  # noqa: E402
     load_spec,
 )
 
+EXIT_USAGE = 4
+
 _EXIT = {
     OVERALL_PASS: 0,
     OVERALL_PASS_DIAGNOSTIC: 2,  # jamais exit 0 : non opposable
@@ -48,15 +55,27 @@ _EXIT = {
 }
 
 
+class UsageError(Exception):
+    """Erreur d'usage/config/spec : mappee sur EXIT_USAGE, jamais sur FAILED (1)."""
+
+
+class _Parser(argparse.ArgumentParser):
+    """argparse sort en 2 par defaut (= notre BLOQUE) ; on force EXIT_USAGE."""
+
+    def error(self, message: str):  # noqa: D401
+        self.print_usage(sys.stderr)
+        self.exit(EXIT_USAGE, f"{self.prog}: erreur d'usage : {message}\n")
+
+
 def _metrics_blocks(obj: dict) -> dict[str, dict]:
     """Tous les blocs candidats portant case_count, indexes par cle."""
+    blocks: dict[str, dict] = {}
     if "case_count" in obj:
-        return {"<racine>": obj}
+        blocks["<racine>"] = obj
     metrics = obj.get("metrics")
     if isinstance(metrics, dict) and "case_count" in metrics:
-        return {"metrics": metrics}
+        blocks["metrics"] = metrics
     report = obj.get("report")
-    blocks: dict[str, dict] = {}
     if isinstance(report, dict):
         for key, value in report.items():
             if isinstance(value, dict) and "case_count" in value:
@@ -67,24 +86,21 @@ def _metrics_blocks(obj: dict) -> dict[str, dict]:
 def _extract_metrics(obj: dict, requested: str | None) -> dict:
     blocks = _metrics_blocks(obj)
     if not blocks:
-        raise SystemExit("rapport illisible : aucun bloc de metriques (case_count) trouve")
+        raise UsageError("rapport illisible : aucun bloc de metriques (case_count) trouve")
     if requested is not None:
         if requested not in blocks:
-            raise SystemExit(
-                f"bloc '{requested}' absent ; blocs disponibles : {sorted(blocks)}"
-            )
+            raise UsageError(f"bloc '{requested}' absent ; blocs disponibles : {sorted(blocks)}")
         return blocks[requested]
     if len(blocks) > 1:
-        # Aucune selection implicite du premier bloc : ambiguite = refus.
-        raise SystemExit(
-            f"plusieurs blocs de metriques : {sorted(blocks)} ; "
-            "precise --metrics-block <cle>"
+        # Aucune selection implicite : ambiguite = erreur d'usage (pas un echec).
+        raise UsageError(
+            f"plusieurs blocs de metriques : {sorted(blocks)} ; precise --metrics-block <cle>"
         )
     return next(iter(blocks.values()))
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = _Parser(description=__doc__)
     parser.add_argument("--report", required=True, type=Path)
     parser.add_argument("--spec", type=Path, default=None)
     parser.add_argument(
@@ -95,18 +111,27 @@ def main() -> int:
     parser.add_argument("--min-n", type=int, default=None)
     args = parser.parse_args()
 
-    spec = load_spec(args.spec) if args.spec else load_spec()
-    obj = json.loads(args.report.read_text(encoding="utf-8"))
-    metrics = _extract_metrics(obj, args.metrics_block)
-    cells, granularity = cells_from_evaluation_report(metrics)
+    # Toute erreur d'usage/config/spec -> EXIT_USAGE (4), jamais 1 (reserve a FAILED).
+    try:
+        spec = load_spec(args.spec) if args.spec else load_spec()
+        obj = json.loads(args.report.read_text(encoding="utf-8"))
+        metrics = _extract_metrics(obj, args.metrics_block)
+        cells, granularity = cells_from_evaluation_report(metrics)
+        verdict = evaluate_gate(
+            spec,
+            cells,
+            scope=args.scope,
+            min_n=args.min_n,
+            cell_granularity=granularity,
+        )
+    except UsageError as exc:
+        print(f"ERREUR usage/config : {exc}", file=sys.stderr)
+        return EXIT_USAGE
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        # Rapport/spec illisible, dependance de scope inconnue (ValueError), etc.
+        print(f"ERREUR usage/config/spec : {type(exc).__name__}: {exc}", file=sys.stderr)
+        return EXIT_USAGE
 
-    verdict = evaluate_gate(
-        spec,
-        cells,
-        scope=args.scope,
-        min_n=args.min_n,
-        cell_granularity=granularity,
-    )
     print(json.dumps(verdict, indent=2, ensure_ascii=False))
     return _EXIT.get(verdict["overall"], 2)
 

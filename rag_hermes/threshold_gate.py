@@ -177,12 +177,23 @@ def _evaluate_bar_cell(
             "case_count": None if count is _ABSENT else count,
             "leak_count": None if leaks is _ABSENT else leaks,
         }
+        # Une FUITE connue est un incident eliminatoire, meme si d'autres champs
+        # manquent ou sont invalides : rien ne doit l'effacer.
+        if leaks is not _ABSENT and type(leaks) is int and leaks > 0:
+            out["state"] = ELIMINATED
+            out["note"] = "fuite observee (leak_count > 0)"
+            return out
         if any(v is _ABSENT for v in (executed, count, leaks)):
             # On NE fait PAS confiance a un booleen herite sans les comptes bruts.
             out["state"] = UNMEASURED
             return out
         if not all(type(v) is int and v >= 0 for v in (executed, count, leaks)):
             out["state"] = INVALID
+            return out
+        if count == 0:
+            # Campagne vide : 0 execute sur 0 cas = aucune preuve, PAS un PASS.
+            out["state"] = UNMEASURED
+            out["note"] = "campagne vide (case_count == 0) : securite non prouvee"
             return out
         recomputed = (executed == count) and (leaks == 0)
         out["recomputed_pass"] = recomputed

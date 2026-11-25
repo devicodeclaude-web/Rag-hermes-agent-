@@ -2,6 +2,10 @@
 from __future__ import annotations
 
 import json
+import importlib.util
+import subprocess
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -191,6 +195,87 @@ class SecurityRecomputed(unittest.TestCase):
         cell = _cell(executed_case_count=5, case_count=10, leak_count=0, security_gate_passed=True)
         verdict = evaluate_gate(SPEC, [cell])
         self.assertEqual(_bar(verdict, "security_gate")["cells"][0]["state"], ELIMINATED)
+
+    def test_empty_campaign_is_not_a_security_pass(self):
+        # executed=case_count=leak=0 -> True naivement ; doit etre UNMEASURED, pas PASS.
+        cell = _cell(executed_case_count=0, case_count=0, leak_count=0)
+        verdict = evaluate_gate(SPEC, [cell])
+        self.assertEqual(_bar(verdict, "security_gate")["cells"][0]["state"], UNMEASURED)
+
+    def test_known_leak_is_eliminatory_even_without_other_counts(self):
+        cell = _cell(leak_count=1)  # executed/case_count absents
+        verdict = evaluate_gate(SPEC, [cell])
+        self.assertEqual(_bar(verdict, "security_gate")["cells"][0]["state"], ELIMINATED)
+
+
+class OverallPrecedence(unittest.TestCase):
+    def test_eliminated_wins_over_blocked(self):
+        # Une cellule declenche ELIMINATED (fuite) ET une barre requise est UNMEASURED
+        # (abstention_recall sans borne) -> le global DOIT etre eliminatoire, pas BLOCKED.
+        cell = _cell(
+            executed_case_count=60, case_count=60, leak_count=1,  # incident
+            abstention_precision=0.9, abstention_precision_lower_bound=0.85,
+        )
+        verdict = evaluate_gate(SPEC, [cell])
+        self.assertEqual(verdict["overall"], OVERALL_ELIMINATORY)
+
+
+class CliExitCodes(unittest.TestCase):
+    """Codes de sortie distincts : usage/config (4) != FAILED (1) != BLOQUE (2)."""
+
+    SCRIPT = REPO / "scripts" / "check_threshold_gate.py"
+
+    def _run(self, obj, *extra):
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as fh:
+            json.dump(obj, fh)
+            path = fh.name
+        return subprocess.run(
+            [sys.executable, str(self.SCRIPT), "--report", path, *extra],
+            capture_output=True, text=True,
+        )
+    def _cli_module(self):
+        spec = importlib.util.spec_from_file_location("_cli_gate", self.SCRIPT)
+        assert spec and spec.loader
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_exit_map_separates_failed_from_usage(self):
+        mod = self._cli_module()
+        self.assertEqual(mod.EXIT_USAGE, 4)
+        self.assertEqual(mod._EXIT[OVERALL_FAIL], 1)
+        self.assertEqual(mod._EXIT[OVERALL_BLOCKED], 2)
+        self.assertEqual(mod._EXIT[OVERALL_PASS_DIAGNOSTIC], 2)
+        self.assertEqual(mod._EXIT[OVERALL_ELIMINATORY], 3)
+        self.assertEqual(mod._EXIT[OVERALL_PASS], 0)
+
+    def test_ambiguous_blocks_is_usage_error_4(self):
+        obj = {"report": {"a": {"case_count": 60}, "b": {"case_count": 60}}}
+        res = self._run(obj)
+        self.assertEqual(res.returncode, 4, res.stderr)
+
+    def test_explicit_block_runs_and_blocks_2(self):
+        obj = {"report": {"a": {"case_count": 60}, "b": {"case_count": 60}}}
+        res = self._run(obj, "--metrics-block", "a")
+        self.assertEqual(res.returncode, 2, res.stderr)
+
+    def test_unknown_scope_dependency_is_usage_error_4(self):
+        obj = {"case_count": 60}
+        res = self._run(obj, "--scope", "inexistant")
+        self.assertEqual(res.returncode, 4, res.stderr)
+
+    def test_missing_required_argument_is_usage_error_4(self):
+        res = subprocess.run(
+            [sys.executable, str(self.SCRIPT)], capture_output=True, text=True
+        )
+        self.assertEqual(res.returncode, 4, res.stderr)
+
+    def test_unreadable_report_is_usage_error_4(self):
+        res = subprocess.run(
+            [sys.executable, str(self.SCRIPT), "--report", "/nonexistent/nope.json"],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(res.returncode, 4, res.stderr)
 
 
 class ScopeCoherence(unittest.TestCase):
