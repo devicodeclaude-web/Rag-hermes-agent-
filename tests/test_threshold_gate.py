@@ -222,13 +222,21 @@ class Adapter(unittest.TestCase):
         self.assertNotIn("abstention_recall_lower_bound", cells[0].values)
 
     def test_runs_on_a_committed_report_without_crashing(self):
-        path = REPO / "data" / "results" / "dense-qdrant-eval-report.json"
-        if not path.exists():
-            self.skipTest("rapport non present")
+        # Reçu committe porteur d'un bloc de metriques (case_count=154). On ne skip
+        # JAMAIS : la CI (job lock-install) traite tout skip comme un echec dur.
+        path = REPO / "data" / "results" / "bge_m3_human_154_execution_receipt.json"
+        self.assertTrue(path.exists(), "le reçu human-154 doit etre committe")
         obj = json.loads(path.read_text(encoding="utf-8"))
-        metrics = obj.get("metrics", obj)
-        if "case_count" not in metrics:
-            self.skipTest("bloc de metriques sans case_count")
+        metrics = None
+        if "case_count" in obj:
+            metrics = obj
+        else:
+            for value in obj.get("report", {}).values():
+                if isinstance(value, dict) and "case_count" in value:
+                    metrics = value
+                    break
+        self.assertIsNotNone(metrics, "bloc de metriques attendu dans le reçu")
+        assert metrics is not None
         cells, granularity = cells_from_evaluation_report(metrics)
         verdict = evaluate_gate(SPEC, cells, cell_granularity=granularity)
         self.assertIn(verdict["overall"], {OVERALL_PASS, OVERALL_FAIL, OVERALL_BLOCKED, OVERALL_ELIMINATORY})
