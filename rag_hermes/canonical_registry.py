@@ -32,6 +32,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 import contextlib
 import ctypes
+from dataclasses import replace
 import hashlib
 import json
 import errno
@@ -41,7 +42,7 @@ from pathlib import Path
 import stat
 import threading
 import weakref
-from typing import Any, Iterable, Mapping
+from typing import Any, Callable, Iterable, Mapping
 
 from .acl_authority import AclPolicy, CanonicalAclAuthority
 from .ingestion import Document
@@ -95,6 +96,19 @@ _LIST_FIELDS = ("allowed_groups", "allowed_users")
 _INT_FIELDS = ("classification", "doc_version", "acl_version")
 _IDENTITY_FIELDS = ("document_id", "tenant_id", "owner_id", "visibility")
 _RECORD_KEYS = frozenset(_TEXT_FIELDS + _LIST_FIELDS + _INT_FIELDS)
+
+# Suppression logique réversible (issue #71, Découpage A).
+_STATE_ACTIVE = "active"
+_STATE_INACTIVE = "inactive"
+_VALID_STATES = frozenset({_STATE_ACTIVE, _STATE_INACTIVE})
+# Jeu de clés d'un enregistrement MODERNE : les 11 clés legacy + `state`. Un
+# enregistrement legacy (sans `state`) se relit comme actif, mais toute NOUVELLE
+# écriture émet toujours `state` (y compris `active`) : une clé perdue par un
+# bug ne doit jamais se relire silencieusement comme `active`.
+_MODERN_RECORD_KEYS = _RECORD_KEYS | {"state"}
+# Version du schéma d'ancre moderne. Une ancre legacy (sans `schema_version`)
+# reste vérifiable mais ne peut attester QUE des historiques entièrement legacy.
+_ANCHOR_SCHEMA_VERSION = 2
 
 
 class CanonicalStoreError(RuntimeError):
@@ -205,24 +219,66 @@ def _close_tracked_private_file(token: int) -> None:
 def _anchor_from_documents(
     documents: Mapping[str, Document], *, records: int, digest: str
 ) -> dict[str, Any]:
+    """Ancre MODERNE : versionnée, et chaque marque porte l'état du document.
+
+    L'état devient un fait de sécurité de première classe de l'ancre, en plus
+    du compte de lignes, du digest de préfixe et des versions. Un `inactive`
+    ancré ne peut donc pas être « déschuchoté » par un retour en arrière du
+    seul JSONL.
+    """
     return {
+        "schema_version": _ANCHOR_SCHEMA_VERSION,
         "records": records,
         "digest": digest,
         "documents": {
             document_id: {
                 "doc_version": document.doc_version,
                 "acl_version": document.acl_version,
+                "state": document.state,
             }
             for document_id, document in documents.items()
         },
     }
 
 
-def _validated_anchor(payload: Any) -> tuple[int, str, dict[str, tuple[int, int]]]:
-    """Relire l'ancre aussi strictement que le registre : aucune coercition."""
-    if type(payload) is not dict or set(payload) != {"records", "digest", "documents"}:
+def _validated_anchor(
+    payload: Any,
+) -> tuple[int, str, dict[str, tuple[int, int, str]], bool]:
+    """Relire l'ancre aussi strictement que le registre : aucune coercition.
+
+    Deux formats, sans réinterprétation de l'un vers l'autre :
+
+    - LEGACY (ancre d'avant ce lot) : clés exactes ``{records, digest,
+      documents}``, chaque marque ``{doc_version, acl_version}``. Normalisée à
+      l'état ``active`` (le masquage n'existait pas), mais le drapeau legacy
+      remonté interdit à ``_check_against_anchor`` d'attester un historique
+      moderne avec elle.
+    - MODERNE : clés exactes ``{schema_version, records, digest, documents}``
+      avec ``schema_version == 2`` (int exact, pas ``bool``), chaque marque
+      ``{doc_version, acl_version, state}`` avec ``state`` dans le jeu autorisé.
+
+    Un format MIXTE (legacy avec un ``state`` dans une marque, ou moderne sans
+    ``state``) est refusé, jamais deviné.
+
+    Retourne ``(records, digest, marks, is_legacy_format)`` où ``marks`` associe
+    chaque ``document_id`` à ``(doc_version, acl_version, state)``.
+    """
+    if type(payload) is not dict:
+        raise ValueError("canonical anchor must be a JSON object")
+    keys = set(payload)
+    if keys == {"records", "digest", "documents"}:
+        is_legacy = True
+        mark_keys = {"doc_version", "acl_version"}
+    elif keys == {"schema_version", "records", "digest", "documents"}:
+        is_legacy = False
+        mark_keys = {"doc_version", "acl_version", "state"}
+        version = payload["schema_version"]
+        # `type(x) is int` exclut bool, que isinstance() accepterait.
+        if type(version) is not int or version != _ANCHOR_SCHEMA_VERSION:
+            raise ValueError("canonical anchor schema_version is unsupported")
+    else:
         raise ValueError(
-            "canonical anchor must carry exactly records, digest and documents"
+            "canonical anchor must carry a legacy or versioned key set"
         )
     records = payload["records"]
     if type(records) is not int or records < 0:
@@ -235,17 +291,26 @@ def _validated_anchor(payload: Any) -> tuple[int, str, dict[str, tuple[int, int]
     entries = payload["documents"]
     if type(entries) is not dict:
         raise ValueError("canonical anchor documents must be a JSON object")
-    marks: dict[str, tuple[int, int]] = {}
+    marks: dict[str, tuple[int, int, str]] = {}
     for document_id, mark in entries.items():
         if type(document_id) is not str or not document_id:
             raise ValueError("canonical anchor document_id must be a non-empty str")
-        if type(mark) is not dict or set(mark) != {"doc_version", "acl_version"}:
-            raise ValueError("canonical anchor mark must carry exactly both versions")
+        if type(mark) is not dict or set(mark) != mark_keys:
+            raise ValueError("canonical anchor mark must match its schema exactly")
         # `type(x) is int` exclut bool, que isinstance() accepterait.
-        if any(type(mark[field]) is not int or mark[field] < 0 for field in mark):
+        if any(
+            type(mark[field]) is not int or mark[field] < 0
+            for field in ("doc_version", "acl_version")
+        ):
             raise ValueError("canonical anchor versions must be non-negative exact ints")
-        marks[document_id] = (mark["doc_version"], mark["acl_version"])
-    return records, digest, marks
+        if is_legacy:
+            state = _STATE_ACTIVE
+        else:
+            state = mark["state"]
+            if type(state) is not str or state not in _VALID_STATES:
+                raise ValueError("canonical anchor state is unknown")
+        marks[document_id] = (mark["doc_version"], mark["acl_version"], state)
+    return records, digest, marks, is_legacy
 
 
 def _check_exact_str(value: object, field: str) -> str:
@@ -290,10 +355,15 @@ def _validated_document(document: Any) -> Document:
             raise ValueError(
                 f"canonical document field {field} must not contain control characters"
             )
+    if type(document.state) is not str or document.state not in _VALID_STATES:
+        raise ValueError("canonical document state must be 'active' or 'inactive'")
     return document
 
 
 def _record_from_document(document: Document) -> dict[str, Any]:
+    # Toute NOUVELLE écriture émet `state`, y compris `active` : une ligne
+    # active neuve n'est jamais identique octet-pour-octet à une ligne legacy,
+    # et une clé perdue par un bug est détectée (pas relue comme `active`).
     return {
         "document_id": document.document_id,
         "content": document.content,
@@ -306,7 +376,13 @@ def _record_from_document(document: Document) -> dict[str, Any]:
         "doc_version": document.doc_version,
         "acl_version": document.acl_version,
         "source_uri": document.source_uri,
+        "state": document.state,
     }
+
+
+def _record_is_modern(record: Mapping[str, Any]) -> bool:
+    """Vrai si l'enregistrement porte la clé `state` (schéma moderne)."""
+    return "state" in record
 
 
 def _document_from_record(record: Any) -> Document:
@@ -314,13 +390,22 @@ def _document_from_record(record: Any) -> Document:
 
     `dataset._build_document` coerce (`int(True) == 1`) : acceptable pour un
     corpus de bench, inacceptable pour une autorité de sécurité relue à chaud.
+
+    Deux schémas acceptés sans réinterprétation : LEGACY (11 clés, sans
+    `state`) relu comme `active`, ou MODERNE (11 clés + `state`).
     """
     if type(record) is not dict:
         raise ValueError("canonical record must be a JSON object")
     keys = set(record)
-    if keys != _RECORD_KEYS:
-        missing = sorted(_RECORD_KEYS - keys)
-        extra = sorted(keys - _RECORD_KEYS)
+    if keys == _RECORD_KEYS:
+        state = _STATE_ACTIVE
+    elif keys == _MODERN_RECORD_KEYS:
+        state = record["state"]
+        if type(state) is not str or state not in _VALID_STATES:
+            raise ValueError("canonical record state must be 'active' or 'inactive'")
+    else:
+        missing = sorted(_MODERN_RECORD_KEYS - keys)
+        extra = sorted(keys - _MODERN_RECORD_KEYS)
         raise ValueError(
             f"canonical record key set mismatch (missing={missing}, unexpected={extra})"
         )
@@ -340,6 +425,7 @@ def _document_from_record(record: Any) -> Document:
             doc_version=record["doc_version"],
             source_uri=record["source_uri"],
             acl_version=record["acl_version"],
+            state=state,
         )
     )
 
@@ -443,13 +529,13 @@ class CanonicalDocumentRegistry:
 
     def _read_anchor(
         self, dir_fd: int
-    ) -> tuple[int, str, dict[str, tuple[int, int]]] | None:
+    ) -> tuple[int, str, dict[str, tuple[int, int, str]], bool] | None:
         return self._read_anchor_file(dir_fd)
 
     @staticmethod
     def _read_anchor_file(
         dir_fd: int
-    ) -> tuple[int, str, dict[str, tuple[int, int]]] | None:
+    ) -> tuple[int, str, dict[str, tuple[int, int, str]], bool] | None:
         """Lire le repère persisté hors du JSONL, ou `None` s'il n'existe pas.
 
         Le descripteur de répertoire DÉJÀ validé par l'appelant est réutilisé :
@@ -606,8 +692,8 @@ class CanonicalDocumentRegistry:
         try:
             anchor = self._read_anchor(dir_fd)
             boundary = 0 if anchor is None else anchor[0]
-            fresh, records, prefix_digest, running = self._read_documents(
-                file_fd, digest_at=boundary
+            fresh, records, prefix_digest, running, history_is_modern = (
+                self._read_documents(file_fd, digest_at=boundary)
             )
             # The file may be truncated or restored from a valid old backup.
             # Replaying it internally is not enough: compare against every
@@ -618,7 +704,9 @@ class CanonicalDocumentRegistry:
                 if current is None:
                     raise CanonicalStoreError("canonical store lost a document")
                 self._check_against_previous(current, {document_id: previous})
-            self._check_against_anchor(anchor, fresh, records, prefix_digest)
+            self._check_against_anchor(
+                anchor, fresh, records, prefix_digest, history_is_modern
+            )
             self._records = records
             self._running = running
             return fresh
@@ -627,10 +715,11 @@ class CanonicalDocumentRegistry:
 
     @staticmethod
     def _check_against_anchor(
-        anchor: tuple[int, str, dict[str, tuple[int, int]]] | None,
+        anchor: tuple[int, str, dict[str, tuple[int, int, str]], bool] | None,
         fresh: Mapping[str, Document],
         records: int,
         prefix_digest: str | None,
+        history_is_modern: bool,
     ) -> None:
         """Repère PERSISTÉ : couvre le redémarrage, que le cache ne voit pas.
 
@@ -639,10 +728,11 @@ class CanonicalDocumentRegistry:
         un utilisateur révoqué. Le repère vit hors du JSONL, donc une
         restauration du seul JSONL est détectée.
 
-        Trois liens, du plus fort au plus faible : l'empreinte SHA-256 du
+        Quatre liens, du plus fort au plus faible : l'empreinte SHA-256 du
         PRÉFIXE ancré (toute réécriture d'une ligne déjà ancrée est détectée,
-        même à compte et versions constants), le nombre de lignes, puis les
-        versions atteintes par document.
+        même à compte et versions constants), le nombre de lignes, les versions
+        atteintes par document, puis l'ÉTAT (un `inactive` ancré ne peut jamais
+        redevenir `active`).
         """
         if anchor is None:
             # Une installation legacy non vide est indiscernable d'un magasin
@@ -655,7 +745,13 @@ class CanonicalDocumentRegistry:
             if records:
                 raise CanonicalStoreError("canonical anchor required for nonempty history")
             return
-        anchored_records, anchored_digest, marks = anchor
+        anchored_records, anchored_digest, marks, is_legacy = anchor
+        if is_legacy and history_is_modern:
+            # Une ancre legacy (sans état) ne peut PAS attester un historique
+            # moderne : la refuser explicitement, ne jamais deviner `active`.
+            raise CanonicalStoreError(
+                "legacy canonical anchor cannot attest a modern history"
+            )
         # L'ancre est publiée AVANT l'append, donc le fichier n'est jamais
         # légitimement en avance : l'égalité STRICTE est la bonne borne. Un
         # `>=` permissif laisserait ajouter une révision forgée à version
@@ -665,17 +761,23 @@ class CanonicalDocumentRegistry:
             raise CanonicalStoreError("canonical store record count differs from its anchor")
         if prefix_digest != anchored_digest:
             raise CanonicalStoreError("canonical store prefix does not match its anchor")
-        for document_id, (doc_version, acl_version) in marks.items():
+        for document_id, (doc_version, acl_version, state) in marks.items():
             current = fresh.get(document_id)
             if current is None:
                 raise CanonicalStoreError("canonical store lost an anchored document")
             if current.doc_version < doc_version or current.acl_version < acl_version:
                 raise CanonicalStoreError("canonical store regressed below its anchor")
+            if state == _STATE_INACTIVE and current.state != _STATE_INACTIVE:
+                # Suppression logique ancrée : un retour en arrière du seul JSONL
+                # qui la « déschuchoterait » est détecté et refusé fermé.
+                raise CanonicalStoreError(
+                    "canonical store reactivated a document below its anchor"
+                )
 
     @staticmethod
     def _read_documents(
         file_fd: int, *, digest_at: int = 0
-    ) -> tuple[dict[str, Document], int, str | None, Any]:
+    ) -> tuple[dict[str, Document], int, str | None, Any, bool]:
         # Relire depuis le descripteur vérifié, sans publier de demi-rejeu si
         # une ligne est corrompue ou si un invariant de version est violé.
         with os.fdopen(file_fd, "rb", closefd=False) as handle:
@@ -685,11 +787,22 @@ class CanonicalDocumentRegistry:
         records = 0
         running = hashlib.sha256()
         prefix_digest: str | None = running.hexdigest() if digest_at == 0 else None
+        history_is_modern = False
+        modern_documents: set[str] = set()
         for number, line in enumerate(payload.splitlines(), 1):
             if not line.strip():
                 continue
             try:
-                document = _document_from_record(json.loads(line))
+                parsed = json.loads(line)
+                is_modern = type(parsed) is dict and _record_is_modern(parsed)
+                document = _document_from_record(parsed)
+                # Monotonie de schéma : une ligne 11-clés (legacy) APRÈS une
+                # ligne 12-clés pour le MÊME document est un retour en arrière
+                # (clé `state` perdue), refusé — jamais relu comme `active`.
+                if document.document_id in modern_documents and not is_modern:
+                    raise ValueError(
+                        "canonical record schema regressed from modern to legacy"
+                    )
                 CanonicalDocumentRegistry._check_against_previous(document, documents)
             except (ValueError, PermissionError) as exc:
                 # Au démarrage, toute violation d'invariant est un refus de
@@ -698,6 +811,9 @@ class CanonicalDocumentRegistry:
                     f"invalid canonical document record at line {number}: {exc}"
                 ) from exc
             documents[document.document_id] = document
+            if is_modern:
+                modern_documents.add(document.document_id)
+                history_is_modern = True
             # Les lignes blanches ne comptent pas et n'entrent pas dans
             # l'empreinte : un bourrage ne doit pas casser la vérification,
             # seule la suite des ENREGISTREMENTS est liée.
@@ -705,7 +821,7 @@ class CanonicalDocumentRegistry:
             records += 1
             if records == digest_at:
                 prefix_digest = running.hexdigest()
-        return documents, records, prefix_digest, running
+        return documents, records, prefix_digest, running, history_is_modern
 
     @staticmethod
     def _check_against_previous(
@@ -741,13 +857,37 @@ class CanonicalDocumentRegistry:
             for field in ("visibility", "allowed_groups", "allowed_users", "classification")
         ):
             raise ValueError("canonical ACL change requires an incremented acl_version")
+        # Machine à états de la suppression logique réversible (issue #71).
+        # Valable aux DEUX usages de cette garde : rejeu de records consécutifs
+        # ET comparaison de l'état rejoué à l'état déjà observé. On interdit la
+        # seule transition dangereuse (réactivation = recul de révocation) et on
+        # exige un bump d'`acl_version` pour masquer. `inactive → inactive`
+        # (états égaux) est TOLÉRÉ ici : le document reste caché, c'est sûr ; le
+        # refus d'un second masquage est une règle d'API portée par
+        # `_mark_inactive_in_transaction`, pas un invariant d'intégrité.
+        if previous.state == _STATE_INACTIVE and document.state == _STATE_ACTIVE:
+            raise ValueError("cannot reactivate an inactive canonical document")
+        if (
+            previous.state == _STATE_ACTIVE
+            and document.state == _STATE_INACTIVE
+            and document.acl_version <= previous.acl_version
+        ):
+            raise ValueError(
+                "masking a canonical document requires an incremented acl_version"
+            )
 
     def source(self, document_id: str) -> Document | None:
         if type(document_id) is not str:
             return None
         with self._lock:
             self._load()
-            return self._documents.get(document_id)
+            document = self._documents.get(document_id)
+            # Un document `inactive` (suppression logique) est INVISIBLE à toute
+            # lecture V1 : `policy_for` (qui délègue ici), la génération et les
+            # citations le voient comme inconnu → abstention, jamais son texte.
+            if document is None or document.state != _STATE_ACTIVE:
+                return None
+            return document
 
     def documents(self) -> Mapping[str, Document]:
         with self._lock:
@@ -756,31 +896,71 @@ class CanonicalDocumentRegistry:
 
     def register(self, document: Any) -> Document:
         with self.write_guard():
-            return self._register_in_transaction(document)
+            validated = _validated_document(document)
+            return self._write_in_transaction(
+                lambda fresh: validated, create=not bool(self._documents)
+            )
 
-    def _register_in_transaction(self, document: Any) -> Document:
-        """Enregistrer la révision canonique AVANT toute écriture d'index.
+    def mark_inactive(self, document_id: str, *, owner_id: str) -> Document:
+        """Transition dédiée `active → inactive` (suppression logique, #71).
+
+        Seule voie qui produit un enregistrement `inactive` : un import ordinaire
+        ne peut JAMAIS basculer l'état. Append-only, sous le bail exclusif, avec
+        `acl_version` strictement incrémenté. AUCUNE mutation Qdrant, AUCUN
+        endpoint ici : l'exposition (tranches B/C) reste fermée tant que la
+        séquence complète n'est pas démontrée et contre-relue.
+
+        `owner_id` est une ENTRÉE d'autorisation vérifiée contre l'historique
+        canonique, PAS une preuve d'identité : l'authentification réelle du
+        demandeur est la responsabilité de la couche appelante (tranche C).
+        """
+        if type(document_id) is not str or type(owner_id) is not str:
+            raise ValueError("mark_inactive requires str document_id and owner_id")
+
+        def _build_masked(fresh: Mapping[str, Document]) -> Document:
+            current = fresh.get(document_id)
+            if current is None:
+                raise ValueError("unknown canonical document")
+            if current.owner_id != owner_id:
+                # PermissionError → 403 côté HTTP, comme le refus de changement
+                # de propriétaire ; ce n'est pas une erreur de saisie (400).
+                raise PermissionError("canonical owner_id mismatch")
+            if current.state != _STATE_ACTIVE:
+                # Second masquage refusé explicitement (règle d'API, pas un
+                # no-op silencieux) ; l'intégrité tolère deux lignes inactives.
+                raise ValueError("canonical document is already inactive")
+            return _validated_document(
+                replace(
+                    current,
+                    state=_STATE_INACTIVE,
+                    acl_version=current.acl_version + 1,
+                )
+            )
+
+        with self.write_guard():
+            return self._write_in_transaction(_build_masked, create=False)
+
+    def _write_in_transaction(
+        self,
+        build: "Callable[[Mapping[str, Document]], Document]",
+        *,
+        create: bool,
+    ) -> Document:
+        """Append canonique partagé : rejeu vérifié → ancre AVANT append → append.
+
+        Factorise la séquence durcie commune à `register` (le document est fourni)
+        et à `mark_inactive` (le document masqué est dérivé de l'état FRAIS sous le
+        bail). `build(fresh)` est appelé APRÈS la relecture vérifiée, donc il
+        décide sur l'état réel et non sur un cache possiblement périmé.
 
         Échoue fermé : rien n'est publié en mémoire avant que la ligne ne soit
         écrite, relue à l'identique et `fsync`-ée.
         """
-        validated = _validated_document(document)
         if self._broken is not None:
             # Écrire par-dessus un magasin déjà constaté incohérent avancerait
             # l'ancre sur un historique faux — et, via l'écriture traversante,
             # pousserait vers Qdrant un document que le registre refuse.
             raise CanonicalStoreError(self._broken)
-        line = json.dumps(
-            _record_from_document(validated),
-            sort_keys=True,
-            separators=(",", ":"),
-            allow_nan=False,
-            ensure_ascii=True,
-        )
-        # Valider la PROJECTION réellement persistée, pas seulement l'objet :
-        # c'est elle que relira le prochain démarrage.
-        if _document_from_record(json.loads(line)) != validated:
-            raise ValueError("canonical record does not round-trip")
         with self._lock:
             try:
                 dir_fd = _open_private_dir(self._store_dir)
@@ -789,7 +969,7 @@ class CanonicalDocumentRegistry:
             try:
                 try:
                     file_fd, lease_token = _open_tracked_private_file(
-                        dir_fd, write=True, create=not bool(self._documents)
+                        dir_fd, write=True, create=create
                     )
                 except (OSError, ValueError):
                     raise CanonicalStoreError("canonical store unavailable") from None
@@ -799,6 +979,20 @@ class CanonicalDocumentRegistry:
                     fcntl.flock(file_fd, fcntl.LOCK_EX)
                     fresh = self._fresh_verified(file_fd, dir_fd)
                     self._documents = fresh
+                    # Décider sur l'état FRAIS : pour un masquage, l'owner et la
+                    # version viennent de la relecture vérifiée, pas d'un cache.
+                    validated = build(fresh)
+                    line = json.dumps(
+                        _record_from_document(validated),
+                        sort_keys=True,
+                        separators=(",", ":"),
+                        allow_nan=False,
+                        ensure_ascii=True,
+                    )
+                    # Valider la PROJECTION réellement persistée, pas seulement
+                    # l'objet : c'est elle que relira le prochain démarrage.
+                    if _document_from_record(json.loads(line)) != validated:
+                        raise ValueError("canonical record does not round-trip")
                     self._check_against_previous(validated, fresh)
                     published = {**fresh, validated.document_id: validated}
                     # L'ancre est publiée AVANT l'append : elle ne doit jamais
@@ -831,7 +1025,9 @@ class CanonicalDocumentRegistry:
                         # est incohérent), soit la ligne EST là et seule la
                         # barrière de durabilité a échoué. Le verrou exclusif
                         # est toujours tenu : on relit pour trancher, au lieu de
-                        # condamner un magasin sain.
+                        # condamner un magasin sain. Dans les DEUX cas on LÈVE :
+                        # aucun succès (de masquage ou d'import) n'est annoncé,
+                        # et la lecture reste refusée fermée.
                         self._signature = None
                         try:
                             fresh = self._fresh_verified(file_fd, dir_fd)
@@ -899,9 +1095,22 @@ def _verified_anchor_snapshot(store_dir: str | Path, candidate: bytes):
     if candidate.count(b"\n") != 1 or not candidate.endswith(b"\n"):
         raise CanonicalStoreError("candidate must be exactly one canonical JSONL line")
     try:
-        document = _document_from_record(json.loads(candidate[:-1].decode("ascii")))
+        parsed_candidate = json.loads(candidate[:-1].decode("ascii"))
+        document = _document_from_record(parsed_candidate)
+        candidate_is_modern = (
+            type(parsed_candidate) is dict and _record_is_modern(parsed_candidate)
+        )
+        # Re-sérialiser dans le MÊME schéma que le candidat : un historique
+        # legacy (11 clés) doit pouvoir être récupéré avec ses octets exacts
+        # d'origine, sans les réécrire au format moderne. La correspondance du
+        # digest d'ancre confirmera ensuite que le schéma attendu est le bon.
+        expected_record = _record_from_document(document)
+        if not candidate_is_modern:
+            expected_record = {
+                key: value for key, value in expected_record.items() if key != "state"
+            }
         expected = (json.dumps(
-            _record_from_document(document), sort_keys=True, separators=(",", ":"),
+            expected_record, sort_keys=True, separators=(",", ":"),
             allow_nan=False, ensure_ascii=True,
         ) + "\n").encode("ascii")
         if candidate != expected:
@@ -941,7 +1150,7 @@ def _verified_anchor_snapshot(store_dir: str | Path, candidate: bytes):
                         existing = handle.read()
                     if existing and not existing.endswith(b"\n"):
                         raise CanonicalStoreError("canonical history has a partial trailing line")
-                    documents, count, _, running = CanonicalDocumentRegistry._read_documents(
+                    documents, count, _, running, _ = CanonicalDocumentRegistry._read_documents(
                         file_fd
                     )
                     if count + 1 != anchor[0]:
@@ -950,7 +1159,7 @@ def _verified_anchor_snapshot(store_dir: str | Path, candidate: bytes):
                     documents[document.document_id] = document
                     running.update(candidate)
                     marks = {
-                        key: (doc.doc_version, doc.acl_version)
+                        key: (doc.doc_version, doc.acl_version, doc.state)
                         for key, doc in documents.items()
                     }
                     if running.hexdigest() != anchor[1] or marks != anchor[2]:
@@ -1032,7 +1241,7 @@ def _publish_anchor(dir_fd: int, anchor: Mapping[str, Any]) -> None:
 
 def _validated_anchor_attestation(
     attestation: object,
-) -> tuple[int, dict[str, tuple[int, int]]]:
+) -> tuple[int, dict[str, tuple[int, int, str]], str | None, bool]:
     """Attestation INDÉPENDANTE de l'opérateur : compte + versions par document.
 
     Même rigueur que l'ancre : jeu de clés exact, aucune coercition,
@@ -1040,36 +1249,70 @@ def _validated_anchor_attestation(
     provient d'une source externe à l'hôte ; elle n'est JAMAIS dérivée du
     JSONL présent, sinon la migration bénirait un recul.
     """
-    if type(attestation) is not dict or set(attestation) != {"records", "documents"}:
+    if type(attestation) is not dict or set(attestation) not in (
+        {"records", "documents"},
+        {"records", "documents", "digest"},
+    ):
         raise CanonicalStoreError(
-            "anchor attestation must carry exactly records and documents"
+            "anchor attestation must carry records, documents and an optional digest"
         )
     records = attestation["records"]
     if type(records) is not int or records < 1:
         raise CanonicalStoreError(
             "anchor attestation records must be a positive exact int"
         )
+    digest: str | None = None
+    if "digest" in attestation:
+        digest = attestation["digest"]
+        if type(digest) is not str or len(digest) != 64 or any(
+            character not in "0123456789abcdef" for character in digest
+        ):
+            raise CanonicalStoreError(
+                "anchor attestation digest must be a lowercase sha256 hex digest"
+            )
     entries = attestation["documents"]
     if type(entries) is not dict or not entries:
         raise CanonicalStoreError(
             "anchor attestation documents must be a non-empty object"
         )
-    marks: dict[str, tuple[int, int]] = {}
+    marks: dict[str, tuple[int, int, str]] = {}
+    has_state: bool | None = None
     for document_id, mark in entries.items():
         if type(document_id) is not str or not document_id:
             raise CanonicalStoreError(
                 "anchor attestation document_id must be a non-empty str"
             )
-        if type(mark) is not dict or set(mark) != {"doc_version", "acl_version"}:
+        if type(mark) is not dict or set(mark) not in (
+            {"doc_version", "acl_version"},
+            {"doc_version", "acl_version", "state"},
+        ):
             raise CanonicalStoreError(
-                "anchor attestation mark must carry exactly both versions"
+                "anchor attestation mark must carry both versions and an optional state"
             )
-        if any(type(mark[field]) is not int or mark[field] < 0 for field in mark):
+        mark_has_state = "state" in mark
+        # Schéma d'attestation HOMOGÈNE : toutes les marques avec état, ou
+        # toutes sans. Un mélange est refusé, jamais deviné.
+        if has_state is None:
+            has_state = mark_has_state
+        elif has_state != mark_has_state:
+            raise CanonicalStoreError(
+                "anchor attestation marks must all carry state or none"
+            )
+        if any(
+            type(mark[field]) is not int or mark[field] < 0
+            for field in ("doc_version", "acl_version")
+        ):
             raise CanonicalStoreError(
                 "anchor attestation versions must be non-negative exact ints"
             )
-        marks[document_id] = (mark["doc_version"], mark["acl_version"])
-    return records, marks
+        if mark_has_state:
+            state = mark["state"]
+            if type(state) is not str or state not in _VALID_STATES:
+                raise CanonicalStoreError("anchor attestation state is unknown")
+        else:
+            state = _STATE_ACTIVE
+        marks[document_id] = (mark["doc_version"], mark["acl_version"], state)
+    return records, marks, digest, bool(has_state)
 
 
 def bootstrap_canonical_anchor(store_dir: str | Path, attestation: object) -> None:
@@ -1087,7 +1330,9 @@ def bootstrap_canonical_anchor(store_dir: str | Path, attestation: object) -> No
     À exécuter service arrêté. Ne réconcilie PAS Qdrant : l'opérateur doit le
     faire séparément avant de remettre le service en route.
     """
-    expected_records, expected_marks = _validated_anchor_attestation(attestation)
+    expected_records, expected_marks, expected_digest, attestation_has_state = (
+        _validated_anchor_attestation(attestation)
+    )
     path = Path(store_dir)
     if not path.is_absolute():
         raise CanonicalStoreError("absolute store path required")
@@ -1119,7 +1364,7 @@ def bootstrap_canonical_anchor(store_dir: str | Path, attestation: object) -> No
             if CanonicalDocumentRegistry._anchor_identity(dir_fd) is not None:
                 raise CanonicalStoreError("canonical anchor already present")
             try:
-                documents, records, _, running = (
+                documents, records, _, running, history_is_modern = (
                     CanonicalDocumentRegistry._read_documents(file_fd)
                 )
             except (OSError, ValueError, UnicodeError) as exc:
@@ -1128,8 +1373,23 @@ def bootstrap_canonical_anchor(store_dir: str | Path, attestation: object) -> No
                 raise CanonicalStoreError(
                     "empty canonical store needs no anchor migration"
                 )
+            # Historique MODERNE (au moins un état documentaire) : l'attestation
+            # doit attester l'ÉTAT de chaque document ET un digest liant les
+            # octets. Sans cela, la migration bénirait l'état porté par un JSONL
+            # possiblement altéré (le seul rempart de bootstrap étant la preuve
+            # externe). Un historique legacy (tout actif) reste migrable avec
+            # l'attestation versions-seules et produit une ancre moderne active.
+            if history_is_modern:
+                if not attestation_has_state:
+                    raise CanonicalStoreError(
+                        "modern canonical history requires document state in the attestation"
+                    )
+                if expected_digest is None:
+                    raise CanonicalStoreError(
+                        "modern canonical history requires an attested digest"
+                    )
             actual_marks = {
-                document_id: (document.doc_version, document.acl_version)
+                document_id: (document.doc_version, document.acl_version, document.state)
                 for document_id, document in documents.items()
             }
             if records != expected_records or actual_marks != expected_marks:
@@ -1137,6 +1397,12 @@ def bootstrap_canonical_anchor(store_dir: str | Path, attestation: object) -> No
                 # erronée : refuser plutôt que bénir un état non attesté.
                 raise CanonicalStoreError(
                     "canonical history does not match the operator attestation"
+                )
+            if expected_digest is not None and running.hexdigest() != expected_digest:
+                # Le digest attesté lie les OCTETS exacts : une réécriture en
+                # place à compte et marques constants est ainsi refusée.
+                raise CanonicalStoreError(
+                    "canonical history digest does not match the attestation"
                 )
             _publish_anchor(
                 dir_fd,
@@ -1286,13 +1552,15 @@ def prepare_anchor_recovery_copy(
                     raise CanonicalStoreError("recovery copy has no anchor")
                 copy_fd = _open_private_file(stage_fd, write=False, create=False)
                 try:
-                    docs, count, prefix, _ = CanonicalDocumentRegistry._read_documents(
-                        copy_fd, digest_at=anchor_view[0]
+                    docs, count, prefix, _, staged_modern = (
+                        CanonicalDocumentRegistry._read_documents(
+                            copy_fd, digest_at=anchor_view[0]
+                        )
                     )
                 finally:
                     os.close(copy_fd)
                 CanonicalDocumentRegistry._check_against_anchor(
-                    anchor_view, docs, count, prefix
+                    anchor_view, docs, count, prefix, staged_modern
                 )
                 expected = _document_from_record(json.loads(candidate[:-1]))
                 if docs.get(expected.document_id) != expected:

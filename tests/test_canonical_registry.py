@@ -1481,13 +1481,22 @@ class AnchorMigrationTests(unittest.TestCase):
     def test_matching_attestation_publishes_an_anchor_and_unblocks_restart(self) -> None:
         from rag_hermes.canonical_registry import bootstrap_canonical_anchor
 
-        self._legacy_store_without_anchor()
+        registry = self._legacy_store_without_anchor()
         self.assertFalse((self.store / "canonical_anchor.json").exists())
-        # Le compte de lignes est 2 (deux révisions de doc-1), l'état final à
-        # acl_version=2. L'opérateur l'atteste depuis une source externe.
+        # Historique MODERNE (créé via register, enregistrements porteurs de
+        # `state`) : l'attestation doit porter l'ÉTAT de chaque document ET un
+        # digest liant les octets. Le compte de lignes est 2 (deux révisions de
+        # doc-1), l'état final actif à acl_version=2.
+        digest = hashlib.sha256(registry.path.read_bytes()).hexdigest()
         bootstrap_canonical_anchor(
             self.store,
-            {"records": 2, "documents": {"doc-1": {"doc_version": 1, "acl_version": 2}}},
+            {
+                "records": 2,
+                "digest": digest,
+                "documents": {
+                    "doc-1": {"doc_version": 1, "acl_version": 2, "state": "active"}
+                },
+            },
         )
         self.assertTrue((self.store / "canonical_anchor.json").exists())
         reopened = CanonicalDocumentRegistry(self.store).source("doc-1")
@@ -1499,15 +1508,23 @@ class AnchorMigrationTests(unittest.TestCase):
         from rag_hermes.canonical_registry import bootstrap_canonical_anchor
 
         registry = self._legacy_store_without_anchor()
-        # L'opérateur atteste l'état réel (acl_version=2), mais quelqu'un a
-        # restauré un backup antérieur (une seule révision, acl_version=1).
+        # L'opérateur atteste l'état réel (2 lignes, acl_version=2) avec son
+        # digest, mais quelqu'un a restauré un backup antérieur (une seule
+        # révision, acl_version=1).
+        full_digest = hashlib.sha256(registry.path.read_bytes()).hexdigest()
         registry.path.write_bytes(
             registry.path.read_bytes().splitlines(keepends=True)[0]
         )
         with self.assertRaises(CanonicalStoreError) as caught:
             bootstrap_canonical_anchor(
                 self.store,
-                {"records": 2, "documents": {"doc-1": {"doc_version": 1, "acl_version": 2}}},
+                {
+                    "records": 2,
+                    "digest": full_digest,
+                    "documents": {
+                        "doc-1": {"doc_version": 1, "acl_version": 2, "state": "active"}
+                    },
+                },
             )
         self.assertIn("does not match the operator attestation", str(caught.exception))
         self.assertFalse((self.store / "canonical_anchor.json").exists())
@@ -1518,11 +1535,18 @@ class AnchorMigrationTests(unittest.TestCase):
     def test_wrong_record_count_is_refused(self) -> None:
         from rag_hermes.canonical_registry import bootstrap_canonical_anchor
 
-        self._legacy_store_without_anchor()
+        registry = self._legacy_store_without_anchor()
+        digest = hashlib.sha256(registry.path.read_bytes()).hexdigest()
         with self.assertRaises(CanonicalStoreError) as caught:
             bootstrap_canonical_anchor(
                 self.store,
-                {"records": 3, "documents": {"doc-1": {"doc_version": 1, "acl_version": 2}}},
+                {
+                    "records": 3,
+                    "digest": digest,
+                    "documents": {
+                        "doc-1": {"doc_version": 1, "acl_version": 2, "state": "active"}
+                    },
+                },
             )
         self.assertIn("does not match the operator attestation", str(caught.exception))
         self.assertFalse((self.store / "canonical_anchor.json").exists())
@@ -1530,15 +1554,17 @@ class AnchorMigrationTests(unittest.TestCase):
     def test_wrong_document_set_is_refused(self) -> None:
         from rag_hermes.canonical_registry import bootstrap_canonical_anchor
 
-        self._legacy_store_without_anchor()
+        registry = self._legacy_store_without_anchor()
+        digest = hashlib.sha256(registry.path.read_bytes()).hexdigest()
         with self.assertRaises(CanonicalStoreError) as caught:
             bootstrap_canonical_anchor(
                 self.store,
                 {
                     "records": 2,
+                    "digest": digest,
                     "documents": {
-                        "doc-1": {"doc_version": 1, "acl_version": 2},
-                        "doc-2": {"doc_version": 1, "acl_version": 1},
+                        "doc-1": {"doc_version": 1, "acl_version": 2, "state": "active"},
+                        "doc-2": {"doc_version": 1, "acl_version": 1, "state": "active"},
                     },
                 },
             )
@@ -1609,19 +1635,32 @@ class AnchorMigrationTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         script = root / "scripts/migrate_canonical_anchor.py"
         env = {**os.environ, "PYTHONPATH": str(root)}
+        digest = hashlib.sha256(registry.path.read_bytes()).hexdigest()
         attest = self.store / "attestation.json"
         attest.write_bytes(
             json.dumps(
-                {"records": 2, "documents": {"doc-1": {"doc_version": 1, "acl_version": 2}}}
+                {
+                    "records": 2,
+                    "digest": digest,
+                    "documents": {
+                        "doc-1": {"doc_version": 1, "acl_version": 2, "state": "active"}
+                    },
+                }
             ).encode("utf-8")
         )
         attest.chmod(0o600)
 
-        # Attestation divergente d'abord : refus, aucune ancre publiée.
+        # Attestation divergente d'abord (acl_version=1) : refus, aucune ancre.
         wrong = self.store / "wrong.json"
         wrong.write_bytes(
             json.dumps(
-                {"records": 2, "documents": {"doc-1": {"doc_version": 1, "acl_version": 1}}}
+                {
+                    "records": 2,
+                    "digest": digest,
+                    "documents": {
+                        "doc-1": {"doc_version": 1, "acl_version": 1, "state": "active"}
+                    },
+                }
             ).encode("utf-8")
         )
         wrong.chmod(0o600)
