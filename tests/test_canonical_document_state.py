@@ -29,6 +29,7 @@ from rag_hermes.canonical_registry import (
     CanonicalWriteThrough,
     _LiveCanonicalAclAuthority,
     _validated_anchor,
+    _document_from_record,
     bootstrap_canonical_anchor,
     wrap_repository_with_canonical_barrier,
     _ANCHOR_FILENAME,
@@ -544,6 +545,52 @@ class V1ReadBarrierInventoryTests(_StoreCase):
         self.assertTrue(after.response.abstained)
         self.assertEqual(after.retrieved_chunks, ())
         self.assertEqual(after.cited_chunks, ())
+
+
+class CoverageHardeningTests(_StoreCase):
+    """Tue les survivants de mutation signalés en contre-revue (G3/G11/G13) et
+    épingle le garde-fou de création (A1 : register ne crée jamais d'inactif)."""
+
+    def test_register_refuses_to_create_an_inactive_document(self) -> None:
+        # A1 : seul mark_inactive produit `inactive` ; un import ordinaire d'un
+        # Document(state=inactive) est refusé (anti-déni logiciel par import).
+        reg = self.registry()
+        with self.assertRaises(ValueError):
+            reg.register(replace(document(), state="inactive"))
+        self.assertIsNone(reg.source("doc-1"))
+
+    def test_register_refuses_unknown_state(self) -> None:
+        # G11 : _validated_document rejette un state hors {active, inactive}.
+        reg = self.registry()
+        with self.assertRaises(ValueError):
+            reg.register(replace(document(), state="frozen"))
+
+    def test_decoder_rejects_non_string_state(self) -> None:
+        # G13 : _document_from_record rejette un `state` non-str / inconnu.
+        base = _modern_record(document())
+        for bad in (123, True, None, "frozen", ""):
+            record = {**base, "state": bad}
+            with self.assertRaises(ValueError):
+                _document_from_record(record)
+
+    def test_masking_at_equal_acl_version_in_history_is_refused(self) -> None:
+        # G3 : une ligne forgée active(vN) → inactive(vN) (sans bump acl) est
+        # refusée au rejeu — le masquage exige un acl_version strictement +1.
+        doc = document(acl_version=1)
+        active_line = _line(_modern_record(doc, state="active"))
+        masked_same_acl = _line(_modern_record(doc, state="inactive"))  # acl_version=1
+        lines = [active_line, masked_same_acl]
+        anchor = {
+            "schema_version": 2,
+            "records": 2,
+            "digest": _digest(lines),
+            "documents": {
+                "doc-1": {"doc_version": 1, "acl_version": 1, "state": "inactive"}
+            },
+        }
+        _write_store(self.store, lines, anchor)
+        with self.assertRaises(CanonicalStoreError):
+            self.registry().source("doc-1")
 
 
 if __name__ == "__main__":

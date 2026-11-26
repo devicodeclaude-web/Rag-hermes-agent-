@@ -355,6 +355,11 @@ def _validated_document(document: Any) -> Document:
             raise ValueError(
                 f"canonical document field {field} must not contain control characters"
             )
+    # Garde d'état en DÉFENSE EN PROFONDEUR, mutuellement redondante avec celle
+    # de `_document_from_record` (chemin de relecture) et avec le refus de
+    # `register` (chemin d'import) : retirer l'une SEULE échoue encore fermé via
+    # l'autre, donc ce mutant « survit » sans être un trou de confidentialité.
+    # Annoté plutôt qu'épinglé par un test vacant.
     if type(document.state) is not str or document.state not in _VALID_STATES:
         raise ValueError("canonical document state must be 'active' or 'inactive'")
     return document
@@ -401,6 +406,8 @@ def _document_from_record(record: Any) -> Document:
         state = _STATE_ACTIVE
     elif keys == _MODERN_RECORD_KEYS:
         state = record["state"]
+        # Défense en profondeur redondante avec `_validated_document` (appelé
+        # juste après) : dominée, donc annotée au lieu d'un test vacant.
         if type(state) is not str or state not in _VALID_STATES:
             raise ValueError("canonical record state must be 'active' or 'inactive'")
     else:
@@ -770,6 +777,11 @@ class CanonicalDocumentRegistry:
             if state == _STATE_INACTIVE and current.state != _STATE_INACTIVE:
                 # Suppression logique ancrée : un retour en arrière du seul JSONL
                 # qui la « déschuchoterait » est détecté et refusé fermé.
+                # DÉFENSE EN PROFONDEUR ANNOTÉE (survivant de mutation dominé) :
+                # le contrôle de digest byte-exact ci-dessus attrape déjà toute
+                # réécriture d'une ligne ancrée, donc ce refus d'état n'est pas
+                # atteignable isolément par un test — gardé par sûreté, non
+                # épinglé par un test vacant.
                 raise CanonicalStoreError(
                     "canonical store reactivated a document below its anchor"
                 )
@@ -897,6 +909,17 @@ class CanonicalDocumentRegistry:
     def register(self, document: Any) -> Document:
         with self.write_guard():
             validated = _validated_document(document)
+            if validated.state != _STATE_ACTIVE:
+                # Un import ordinaire ne CRÉE jamais un enregistrement inactif :
+                # le masquage ne passe QUE par la transition dédiée
+                # `mark_inactive`. Sans ce refus, un importateur authentifié
+                # pourrait « empoisonner » durablement un document_id en le
+                # rendant non lisible et non réactivable (déni logiciel), et la
+                # garantie « seule mark_inactive produit inactive » tomberait.
+                raise ValueError(
+                    "register cannot create a non-active canonical document; "
+                    "use mark_inactive"
+                )
             return self._write_in_transaction(
                 lambda fresh: validated, create=not bool(self._documents)
             )
