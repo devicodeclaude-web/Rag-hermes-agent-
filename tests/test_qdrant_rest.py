@@ -326,6 +326,13 @@ class QdrantRestClientTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "update_filter"):
                     self.client.upsert("chunks", [point], update_filter=invalid)
 
+    def test_retrieve_points_can_omit_vectors_for_tombstone_preflight(self):
+        self.client.retrieve_points("chunks", ["p1"], with_vector=False)
+        self.assertEqual(RecordingHandler.requests[-1], (
+            "POST", "/collections/chunks/points",
+            {"ids": ["p1"], "with_payload": True, "with_vector": False},
+        ))
+
     def test_retrieve_points_reads_ids_with_payload_and_vectors(self):
         points = self.client.retrieve_points("chunks", ["p1", "p2"])
         method, path, body = RecordingHandler.requests[-1]

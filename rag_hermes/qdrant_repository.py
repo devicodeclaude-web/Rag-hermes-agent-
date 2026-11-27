@@ -6,6 +6,7 @@ import json
 import math
 from pathlib import Path
 import unicodedata
+import uuid
 from typing import Any, Callable, Iterable, cast
 
 from .acl import AuthorizationContext, Chunk, filter_authorized
@@ -212,6 +213,92 @@ class QdrantChunkRepository:
                 raise ValueError("vector_size does not match the collection")
             self._vector_size = schema["vector_size"]
             self._dense_distance = "Cosine"  # verified by hybrid preflight
+
+    def inspect_tombstone_candidates(self, document: Document) -> tuple[str, ...]:
+        """Read-only, bounded preflight for #71; NOT authorization to mutate.
+
+        The document must come from a trusted live canonical store, not the
+        requester or Qdrant. Its caller must hold the canonical transaction
+        guard across the eventual write; these IDs are stale once the method
+        returns. No endpoint or production caller uses this diagnostic yet.
+        """
+        if type(document) is not Document or document.state != "active":
+            raise ValueError("an active canonical Document is required")
+        snapshot = _snapshot_document(document)
+        with document_write_lock(
+            self._lock_dir, self._collection, snapshot.tenant_id, snapshot.document_id,
+            timeout=self._lock_timeout,
+        ):
+            ids = self._assert_document_owner(snapshot)
+            if not ids:
+                raise ValueError("canonical document has no indexed points")
+            for point_id in ids:
+                if type(point_id) is not str or len(point_id) != 36:
+                    raise ValueError("indexed point id is not a canonical UUID")
+                try:
+                    if str(uuid.UUID(point_id)) != point_id:
+                        raise ValueError("indexed point id is not a canonical UUID")
+                except ValueError:
+                    raise ValueError("indexed point id is not a canonical UUID") from None
+            readback = getattr(self._client, "retrieve_points", None)
+            if not callable(readback):
+                raise RuntimeError("Qdrant client must implement retrieve_points")
+            ordered = sorted(cast(set[str], ids))
+            seen: set[str] = set()
+            for start in range(0, len(ordered), 256):
+                batch = ordered[start:start + 256]
+                points = readback(self._collection, batch, with_vector=False)
+                if type(points) is not list or len(points) != len(batch):
+                    raise RuntimeError("Qdrant readback is incomplete")
+                for point in points:
+                    payload = point.get("payload") if type(point) is dict else None
+                    point_id = point.get("id") if type(point) is dict else None
+                    if (type(point_id) is not str or point_id not in batch
+                        or point_id in seen or type(payload) is not dict):
+                        raise RuntimeError("Qdrant readback is inconsistent")
+                    seen.add(point_id)
+                    if (type(payload.get("tenant_id")) is not str
+                        or payload["tenant_id"] != snapshot.tenant_id
+                        or type(payload.get("document_id")) is not str
+                        or payload["document_id"] != snapshot.document_id
+                        or type(payload.get("owner_id")) is not str
+                        or payload["owner_id"] != snapshot.owner_id):
+                        raise PermissionError("indexed document owner changed during preflight")
+                    if payload.get("tombstone") is not False:
+                        raise ValueError("indexed point is already tombstoned or invalid")
+                    if (set(payload) != _PAYLOAD_FIELDS
+                        or any(type(payload.get(field)) is not str
+                               for field in _PAYLOAD_STR_FIELDS)
+                        or any(type(payload.get(field)) is not int
+                               for field in _PAYLOAD_INT_FIELDS)
+                        or any(type(payload.get(field)) is not list
+                               or any(type(item) is not str for item in payload[field])
+                               for field in _PAYLOAD_LIST_FIELDS)
+                        or payload["visibility"] != snapshot.visibility
+                        or payload["classification"] != snapshot.classification
+                        or payload["doc_version"] != snapshot.doc_version
+                        or payload["acl_version"] != snapshot.acl_version
+                        or payload["source_uri"] != snapshot.source_uri
+                        or payload["source_sha"] != snapshot.source_sha
+                        or payload["content_hash"] not in ("", snapshot.source_sha)
+                        or tuple(payload["allowed_group_ids"]) != snapshot.allowed_groups
+                        or tuple(payload["allowed_user_ids"]) != snapshot.allowed_users
+                        or not 0 <= payload["start_offset"] < payload["end_offset"] <= len(snapshot.content)
+                        or snapshot.content[payload["start_offset"]:payload["end_offset"]] != payload["text"]):
+                        raise ValueError("indexed payload differs from canonical document")
+                    if (type(payload.get("chunk_id")) is not str
+                        or not payload["chunk_id"]
+                        or type(payload.get("source_sha")) is not str
+                        or type(payload.get("doc_version")) is not int
+                        or point_id != stable_point_id(
+                            tenant_id=snapshot.tenant_id,
+                            document_id=snapshot.document_id,
+                            chunk_id=payload["chunk_id"],
+                            source_sha=payload["source_sha"],
+                            doc_version=payload["doc_version"],
+                        )):
+                        raise ValueError("indexed point identity is inconsistent")
+            return tuple(ordered)
 
     def _assert_document_owner(self, snapshot: _DocumentSnapshot) -> set[str | int]:
         # A short page is not proof of completion: only Qdrant's terminal

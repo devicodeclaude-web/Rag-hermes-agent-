@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import hashlib
-from dataclasses import asdict
+from dataclasses import asdict, replace
 import multiprocessing
 import os
 from pathlib import Path
@@ -96,6 +96,35 @@ class QdrantRepositoryIntegrationTests(unittest.TestCase):
             doc_version=1,
             source_uri=f"local://{doc_id}",
         )
+
+    def test_tombstone_preflight_accepts_current_document_on_real_qdrant(self) -> None:
+        document = self._document("mask-valid", "alpha", "alice", "Passage valide.")
+        point = chunk_to_point(chunk_document(document)[0], _fixed_vector(document.content))
+        self.assertEqual(self.client.upsert(self.collection, [point])["result"]["status"], "completed")
+        self.assertEqual(self.repository.inspect_tombstone_candidates(document), (point["id"],))
+        self.assertIs(self.client.retrieve_points(
+            self.collection, [point["id"]]
+        )[0]["payload"]["tombstone"], False)
+
+    def test_tombstone_preflight_rejects_late_foreign_owner_on_real_qdrant(self) -> None:
+        document = self._document("mask-preflight", "alpha", "alice", "Passage alice.")
+        foreign = replace(document, owner_id="bob", content="Passage bob.")
+        points = [chunk_to_point(chunk_document(doc)[0], _fixed_vector(doc.content))
+                  for doc in (document, foreign)]
+        # Qdrant scroll sorts by point ID: force Alice on page 1, Bob on page 2.
+        points[0]["id"] = str(uuid.UUID(int=1))
+        points[1]["id"] = str(uuid.UUID(int=2))
+        self.assertNotEqual(points[0]["id"], points[1]["id"])
+        self.assertEqual(self.client.upsert(self.collection, points)["result"]["status"], "completed")
+        with patch.object(repository_module, "_OWNER_SCAN_PAGE_SIZE", 1), patch.object(
+            self.client, "scroll_filtered_page", wraps=self.client.scroll_filtered_page
+        ) as scroll:
+            with self.assertRaises(PermissionError):
+                self.repository.inspect_tombstone_candidates(document)
+            self.assertEqual(scroll.call_count, 2)
+        observed = self.client.retrieve_points(self.collection, [point["id"] for point in points])
+        self.assertEqual(len(observed), 2)
+        self.assertTrue(all(point["payload"]["tombstone"] is False for point in observed))
 
     def test_tombstone_payload_is_completed_and_visible_on_real_qdrant(self) -> None:
         document = self._document("mask-test", "alpha", "alice", "Visible passage.")
