@@ -90,6 +90,31 @@ class CanonicalTombstoneCoordinatorTests(unittest.TestCase):
         self.assertFalse(thread.is_alive())
         self.assertTrue(entered.is_set())
 
+    def test_confirmation_failure_after_publication_is_an_index_reconciliation(self) -> None:
+        from rag_hermes.canonical_tombstone import (
+            CanonicalMaskIndexError, CanonicalTombstoneCoordinator,
+        )
+
+        coordinator = CanonicalTombstoneCoordinator(
+            self.registry, self.repository, chunker=self.chunker,
+        )
+        # Canonical publication succeeds, but the post-publication confirmation
+        # read is made to diverge. Since the document is already durably
+        # inactive, this must surface as an INDEX reconciliation case, not a
+        # pre-publication CanonicalStoreError a reconciliation tool would miss.
+        real_manifest = self.registry.last_active_manifest
+        def corrupt_manifest():
+            _, inactive = real_manifest()
+            return {}, inactive
+
+        with patch.object(self.registry, "last_active_manifest", corrupt_manifest):
+            with self.assertRaisesRegex(CanonicalMaskIndexError, "reconciliation"):
+                coordinator.mask_document(
+                    tenant_id="alpha", document_id="doc", owner_id="alice",
+                )
+        self.assertIsNone(self.registry.source("doc"))
+        self.assertEqual(self.client.tombstoned, [])
+
     def test_second_scan_rejects_index_changed_after_canonical_publication(self) -> None:
         from rag_hermes.canonical_tombstone import (
             CanonicalMaskIndexError, CanonicalTombstoneCoordinator,

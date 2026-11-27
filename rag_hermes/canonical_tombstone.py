@@ -75,22 +75,27 @@ class CanonicalTombstoneCoordinator:
                     fresh, chunker=self._chunker,
                 )
                 self._registry.mark_inactive(document_id, owner_id=owner_id)
-                # mark_inactive returned after durable publication. Re-read the
-                # state and the historical manifest while holding both leases:
-                # the LAST active record, not the new acl_version, has the
-                # indexed point payloads.
-                masked = self._registry.documents().get(document_id)
-                manifest, inactive_ids = self._registry.last_active_manifest()
-                if (
-                    masked is None or masked.state != "inactive"
-                    or masked.tenant_id != tenant_id or masked.owner_id != owner_id
-                    or masked.doc_version != fresh.doc_version
-                    or masked.acl_version != fresh.acl_version + 1
-                    or manifest.get(document_id) != fresh
-                    or document_id not in inactive_ids
-                ):
-                    raise CanonicalStoreError("canonical mask confirmation failed")
+                # mark_inactive returned after durable publication: the document
+                # is now canonically inactive. Any failure from here on is an
+                # INDEX-side reconciliation case, not a pre-publication store
+                # error, so a reconciliation tool keyed on CanonicalMaskIndexError
+                # does not miss it. Confidentiality already holds (reads are
+                # fail-closed on inactive); only index sync remains to repair.
                 try:
+                    # Re-read state and the historical manifest while holding
+                    # both leases: the LAST active record, not the new
+                    # acl_version, carries the indexed point payloads.
+                    masked = self._registry.documents().get(document_id)
+                    manifest, inactive_ids = self._registry.last_active_manifest()
+                    if (
+                        masked is None or masked.state != "inactive"
+                        or masked.tenant_id != tenant_id or masked.owner_id != owner_id
+                        or masked.doc_version != fresh.doc_version
+                        or masked.acl_version != fresh.acl_version + 1
+                        or manifest.get(document_id) != fresh
+                        or document_id not in inactive_ids
+                    ):
+                        raise CanonicalStoreError("canonical mask confirmation failed")
                     # The private core MUST NOT reacquire this same flock inode.
                     return self._repository._apply_document_tombstone_locked(
                         fresh, chunker=self._chunker,
