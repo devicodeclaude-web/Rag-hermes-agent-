@@ -215,3 +215,84 @@ class TombstonePreflightTests(unittest.TestCase):
             self.repository.inspect_tombstone_candidates(self.document)
         self.assertEqual(self.client.deleted, [])
         self.assertEqual(self.client.upserted, [])
+
+
+class ApplyDocumentTombstoneTests(unittest.TestCase):
+    """The first real index mutation of the masking flow: scan+mark+reread."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.client = FakeQdrantClient()
+        self.repository = QdrantChunkRepository(
+            self.client, collection="chunks", embed=lambda _text: [1.0],
+            lock_dir=self.temp.name,
+        )
+        # The document whose index points still carry the pre-masking payload.
+        self.document = replace(_document(), content="alpha beta")
+        self.chunker = partial(chunk_document, max_tokens=1, overlap_tokens=0)
+        self.chunks = self.chunker(self.document)
+        self.assertEqual(len(self.chunks), 2)
+        self.points = [chunk_to_point(chunk, [1.0]) for chunk in self.chunks]
+        self.client.scroll_results = list(self.points)
+        self.client.stored_points = {point["id"]: point for point in self.points}
+
+    def _ids(self):
+        return sorted(point["id"] for point in self.points)
+
+    def test_apply_marks_every_point_and_confirms_via_readback(self):
+        count = self.repository.apply_document_tombstone(self.document, chunker=self.chunker)
+        self.assertEqual(count, 2)
+        self.assertEqual(self.client.tombstoned, [("chunks", self._ids())])
+        for point_id in self._ids():
+            self.assertIs(self.client.stored_points[point_id]["payload"]["tombstone"], True)
+        self.assertEqual(self.client.deleted, [])
+        self.assertEqual(self.client.upserted, [])
+
+    def test_apply_requires_an_approved_chunker(self):
+        with self.assertRaisesRegex(ValueError, "approved chunker"):
+            self.repository.apply_document_tombstone(self.document, chunker=None)
+        self.assertEqual(self.client.tombstoned, [])
+
+    def test_apply_requires_the_last_active_document(self):
+        with self.assertRaisesRegex(ValueError, "active canonical Document"):
+            self.repository.apply_document_tombstone(
+                replace(self.document, state="inactive"), chunker=self.chunker,
+            )
+        self.assertEqual(self.client.tombstoned, [])
+
+    def test_apply_fails_closed_when_the_server_refuses_the_mark(self):
+        self.client.fail_mark = True
+        with self.assertRaises(RuntimeError):
+            self.repository.apply_document_tombstone(self.document, chunker=self.chunker)
+        # The scan proved the ids before the refusal; the mark was attempted.
+        self.assertEqual(self.client.tombstoned, [("chunks", self._ids())])
+
+    def test_apply_fails_closed_when_the_tombstone_did_not_take(self):
+        # The mark call "succeeds" but the flag never flips (lost/ambiguous write).
+        self.client.mark_applies = False
+        with self.assertRaisesRegex(RuntimeError, "reconciliation"):
+            self.repository.apply_document_tombstone(self.document, chunker=self.chunker)
+        self.assertEqual(self.client.tombstoned, [("chunks", self._ids())])
+        for point_id in self._ids():
+            self.assertIs(self.client.stored_points[point_id]["payload"]["tombstone"], False)
+
+    def test_apply_refuses_a_manifest_mismatch_without_marking(self):
+        extra = chunk_to_point(
+            replace(self.chunks[0], chunk_id="forged"), [1.0],
+        )
+        self.client.scroll_results.append(extra)
+        self.client.stored_points[extra["id"]] = extra
+        with self.assertRaisesRegex(ValueError, "canonical chunk manifest"):
+            self.repository.apply_document_tombstone(self.document, chunker=self.chunker)
+        self.assertEqual(self.client.tombstoned, [])
+
+    def test_apply_refuses_an_already_tombstoned_point_without_marking(self):
+        first = self._ids()[0]
+        self.client.stored_points[first] = {
+            **self.client.stored_points[first],
+            "payload": {**self.client.stored_points[first]["payload"], "tombstone": True},
+        }
+        with self.assertRaises(ValueError):
+            self.repository.apply_document_tombstone(self.document, chunker=self.chunker)
+        self.assertEqual(self.client.tombstoned, [])

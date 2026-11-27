@@ -98,6 +98,29 @@ class QdrantRepositoryIntegrationTests(unittest.TestCase):
             source_uri=f"local://{doc_id}",
         )
 
+    def test_apply_document_tombstone_marks_points_on_real_qdrant(self) -> None:
+        document = self._document("mask-apply", "alpha", "alice", "alpha beta")
+        other = self._document("mask-other", "beta", "bob", "gamma delta")
+        chunker = partial(chunk_document, max_tokens=1, overlap_tokens=0)
+        points = [chunk_to_point(chunk, _fixed_vector(chunk.text)) for chunk in chunker(document)]
+        other_point = chunk_to_point(chunk_document(other)[0], _fixed_vector(other.content))
+        self.assertEqual(len(points), 2)
+        self.assertEqual(self.client.upsert(
+            self.collection, points + [other_point]
+        )["result"]["status"], "completed")
+        count = self.repository.apply_document_tombstone(document, chunker=chunker)
+        self.assertEqual(count, 2)
+        observed = self.client.retrieve_points(self.collection, [p["id"] for p in points])
+        self.assertEqual(len(observed), 2)
+        self.assertTrue(all(point["payload"]["tombstone"] is True for point in observed))
+        # Another tenant's point is untouched.
+        self.assertIs(self.client.retrieve_points(
+            self.collection, [other_point["id"]]
+        )[0]["payload"]["tombstone"], False)
+        # A second application now fails closed: the points are already masked.
+        with self.assertRaises(ValueError):
+            self.repository.apply_document_tombstone(document, chunker=chunker)
+
     def test_tombstone_preflight_accepts_current_document_on_real_qdrant(self) -> None:
         document = self._document("mask-valid", "alpha", "alice", "Passage valide.")
         point = chunk_to_point(chunk_document(document)[0], _fixed_vector(document.content))
