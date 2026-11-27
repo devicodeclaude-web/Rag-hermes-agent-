@@ -221,8 +221,11 @@ class QdrantChunkRepository:
         """Compare the observed points to a chunk manifest independent of Qdrant.
 
         The caller must pin the chunker profile AND obtain the document from a
-        live canonical authority. The returned IDs are not write permission:
-        the local lease ends on return and the server scan is not a snapshot.
+        live canonical authority. The 100k-element limit bounds consumption
+        of a lazy chunker, NOT eager work performed before the callback returns;
+        only invoke a trusted chunker with its own size limits. The returned
+        IDs are not write permission: the local lease ends on return and the
+        server scan is not a snapshot.
         """
         if not callable(chunker):
             raise ValueError("approved chunker is required")
@@ -252,7 +255,7 @@ class QdrantChunkRepository:
         ):
             expected_payloads: dict[str, dict[str, Any]] | None = None
             if chunker is not None:
-                # Bounded manifest from the caller-pinned chunker, not Qdrant.
+                # islice limits lazy consumption, NOT eager work in the callback.
                 expected_payloads = {}
                 for chunk in islice(chunker(document), _OWNER_SCAN_BUDGET + 1):
                     if len(expected_payloads) >= _OWNER_SCAN_BUDGET:

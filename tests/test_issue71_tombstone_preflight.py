@@ -62,6 +62,21 @@ class TombstonePreflightTests(unittest.TestCase):
         self.assertEqual(self.client.deleted, [])
         self.assertEqual(self.client.upserted, [])
 
+    def test_canonical_inventory_bounds_lazy_manifest_consumption(self):
+        generated = []
+        source = chunk_document(self.document)[0]
+        def lazy_chunker(_document):
+            for index in range(100):
+                generated.append(index)
+                yield replace(source, chunk_id=f"chunk-{index}")
+        with patch.object(repository_module, "_OWNER_SCAN_BUDGET", 2):
+            with self.assertRaisesRegex(ValueError, "exceeds scan budget"):
+                self.repository.inspect_canonical_tombstone_candidates(
+                    self.document, chunker=lazy_chunker,
+                )
+        self.assertEqual(generated, [0, 1, 2])
+        self.assertEqual(self.client.scrolls, [])
+
     def test_canonical_inventory_rejects_forged_chunk_identity_and_payload(self):
         payload = {**self.point["payload"], "chunk_id": "invented-chunk"}
         forged_id = stable_point_id(
