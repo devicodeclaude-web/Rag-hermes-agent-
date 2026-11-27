@@ -127,9 +127,21 @@ class QdrantAuthIntegrationTests(unittest.TestCase):
         by_id = {point["id"]: point["payload"] for point in actual}
         self.assertEqual(by_id[points[0]["id"]], {**points[0]["payload"], "tombstone": True})
         self.assertEqual(by_id[points[1]["id"]], points[1]["payload"])
+        # The default replacement readback still includes the named dense vector.
+        self.assertEqual(
+            self.clients.retrieve_points(self.collection, [points[1]["id"]])[0]["vector"],
+            points[1]["vector"],
+        )
         self.assertDenied(
             self.reader.mark_points_tombstoned, self.collection, [points[1]["id"]],
         )
+        self.admin.upsert(self.other, [points[1]])
+        self.assertDenied(
+            self.writer.mark_points_tombstoned, self.other, [points[1]["id"]],
+        )
+        self.assertIs(self.admin.retrieve_points(
+            self.other, [points[1]["id"]], with_vector=False,
+        )[0]["payload"]["tombstone"], False)
 
     def test_missing_or_wrong_credentials_are_rejected(self) -> None:
         for key in ("", "wrong-ci-key"):

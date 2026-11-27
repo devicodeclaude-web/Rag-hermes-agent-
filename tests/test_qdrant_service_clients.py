@@ -27,6 +27,7 @@ class QdrantRepositoryClientsTests(TestCase):
         for name in ("scroll_filtered_page", "upsert", "retrieve_points", "delete_points"):
             getattr(writer, name).assert_called_once()
             getattr(reader, name).assert_not_called()
+        writer.retrieve_points.assert_called_once_with("chunks", ["one"])
         for name in ("create_collection", "delete_collection", "create_payload_index", "scroll_page"):
             self.assertFalse(hasattr(adapter, name), name)
 
