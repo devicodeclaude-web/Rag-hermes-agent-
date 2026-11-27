@@ -21,6 +21,12 @@ class Document:
     doc_version: int
     source_uri: str
     acl_version: int = 1
+    # État canonique de suppression logique réversible (issue #71, Découpage A).
+    # Défaut `active` : tout site de construction existant reste inchangé, et un
+    # enregistrement JSONL legacy (11 clés, sans `state`) se relit comme actif
+    # sans réinterprétation. Seule une transition dédiée du registre canonique
+    # (`CanonicalDocumentRegistry.mark_inactive`) produit `inactive`.
+    state: str = "active"
 
 
 def chunk_document(
