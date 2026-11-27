@@ -260,6 +260,51 @@ class QdrantRestClientTests(unittest.TestCase):
         finally:
             self.client._request = original
 
+    def test_tombstone_updates_only_explicit_point_ids_and_requires_completion(self):
+        ids = ["d0ab0a70-5544-5a1d-9568-34f8ee771f09"]
+        original = self.client._request
+        self.client._request = lambda method, path, body: (
+            RecordingHandler.requests.append((method, path, body))
+            or {"status": "ok", "result": {"operation_id": 8, "status": "completed"}}
+        )
+        try:
+            self.client.mark_points_tombstoned("chunks", ids)
+        finally:
+            self.client._request = original
+        self.assertEqual(RecordingHandler.requests[-1], (
+            "POST", "/collections/chunks/points/payload?wait=true",
+            {"payload": {"tombstone": True}, "points": ids},
+        ))
+
+    def test_tombstone_refuses_invalid_ids_before_mutation(self):
+        for ids in ([], [True], [""], ["a", "a"], [0], ["not-a-uuid"],
+                    ["d0ab0a70-5544-5a1d-9568-34f8ee771f09", 1]):
+            with self.subTest(ids=ids), self.assertRaises(ValueError):
+                self.client.mark_points_tombstoned("chunks", ids)
+        self.assertEqual(RecordingHandler.requests, [])
+
+    def test_tombstone_accepts_completed_without_operation_id(self):
+        with patch.object(self.client, "_request", return_value={
+            "status": "ok", "result": {"status": "completed", "operation_id": None},
+        }):
+            self.client.mark_points_tombstoned(
+                "chunks", ["d0ab0a70-5544-5a1d-9568-34f8ee771f09"]
+            )
+
+    def test_tombstone_refuses_ambiguous_server_status(self):
+        for response in ({"status": "ok", "result": {"status": "acknowledged"}},
+                         {"status": "error", "result": {"status": "completed"}},
+                         {"status": "ok", "result": {}},
+                         {"status": "ok", "result": {"status": "completed", "operation_id": True}},
+                         {"status": "ok", "result": {"status": "completed", "operation_id": -1}},
+                         [], None):
+            with self.subTest(response=response), patch.object(
+                self.client, "_request", return_value=response
+            ), self.assertRaises(RuntimeError):
+                self.client.mark_points_tombstoned(
+                    "chunks", ["d0ab0a70-5544-5a1d-9568-34f8ee771f09"]
+                )
+
     def test_upsert_transmits_the_conditional_update_filter(self):
         guard = {"must": [{"key": "owner_id", "match": {"value": "alice"}}]}
         point = {"id": "p1", "vector": {"dense": [1.0]}, "payload": {}}

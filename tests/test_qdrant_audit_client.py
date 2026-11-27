@@ -16,7 +16,7 @@ from rag_hermes.qdrant_rest import (
 )
 
 MUTATIONS = (
-    "upsert", "delete_points", "delete_collection", "create_collection",
+    "upsert", "delete_points", "mark_points_tombstoned", "delete_collection", "create_collection",
     "create_payload_index", "retrieve_points", "query", "query_sparse",
     "scroll", "scroll_filtered_page", "collection_exists", "get_collection",
 )

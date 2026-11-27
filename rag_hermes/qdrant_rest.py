@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 from typing import Any
+from uuid import UUID
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
@@ -78,6 +79,13 @@ class QdrantHttpTransport:
             raise RuntimeError(f"Qdrant HTTP {exc.code}") from None
         except URLError as exc:
             raise RuntimeError("Qdrant unavailable") from None
+
+
+def _is_canonical_uuid(value: str) -> bool:
+    try:
+        return str(UUID(value)) == value
+    except ValueError:
+        return False
 
 
 class QdrantRestClient:
@@ -209,6 +217,33 @@ class QdrantRestClient:
         ):
             raise RuntimeError("Qdrant returned malformed scroll page")
         return points, cursor
+
+    def mark_points_tombstoned(self, collection: str, ids: list[str]) -> None:
+        """Low-level ID-bounded payload write; caller must prove authorization.
+
+        A completed operation is NOT proof that these IDs existed or belonged to
+        the document. The caller must scan ownership first and reread afterwards.
+        This method is not wired into an API or the deletion flow (#71, B1).
+        """
+        if type(ids) is not list or not ids or any(
+            type(point_id) is not str or len(point_id) != 36
+            or not _is_canonical_uuid(point_id) for point_id in ids
+        ) or len(set(ids)) != len(ids):
+            raise ValueError("tombstone requires unique canonical UUID point ids")
+        name = quote(collection, safe="")
+        response = self._request(
+            "POST", f"/collections/{name}/points/payload?wait=true",
+            {"payload": {"tombstone": True}, "points": ids},
+        )
+        result = response.get("result") if type(response) is dict else None
+        operation_id = result.get("operation_id") if type(result) is dict else None
+        if (type(response) is not dict or response.get("status") != "ok"
+            or type(result) is not dict
+            or result.get("status") != "completed"
+            or operation_id is not None and (
+                type(operation_id) is not int or not 0 <= operation_id < 2**64
+            )):
+            raise RuntimeError("Qdrant did not confirm tombstone completion")
 
     def upsert(
         self, collection: str, points: list[dict[str, Any]], *,
