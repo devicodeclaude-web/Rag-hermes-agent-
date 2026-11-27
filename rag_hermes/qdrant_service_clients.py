@@ -39,8 +39,19 @@ class QdrantRepositoryClients:
     def upsert(self, collection: str, points: list[dict], *, update_filter: dict | None = None):
         return self._write.upsert(collection, points, update_filter=update_filter)
 
-    def retrieve_points(self, collection: str, ids: list[str | int]):
-        return self._write.retrieve_points(collection, ids)
+    def retrieve_points(self, collection: str, ids: list[str | int], *, with_vector: bool = True):
+        # Existing replacement clients need the default vector readback. The
+        # tombstone preflight instead asks explicitly for payloads only.
+        if type(with_vector) is not bool:
+            raise ValueError("with_vector must be a boolean")
+        if with_vector:
+            return self._write.retrieve_points(collection, ids)
+        return self._write.retrieve_points(collection, ids, with_vector=False)
+
+    def mark_points_tombstoned(self, collection: str, ids: list[str]) -> None:
+        # Ownership was proved by the repository; never route a mutation via
+        # the user-query credential or broaden it to a filter selector.
+        return self._write.mark_points_tombstoned(collection, ids)
 
     def delete_points(self, collection: str, query_filter: dict):
         return self._write.delete_points(collection, query_filter)

@@ -30,6 +30,20 @@ class QdrantRepositoryClientsTests(TestCase):
         for name in ("create_collection", "delete_collection", "create_payload_index", "scroll_page"):
             self.assertFalse(hasattr(adapter, name), name)
 
+    def test_masking_uses_writer_for_mark_and_payload_only_readback(self):
+        reader = Mock()
+        writer = Mock()
+        adapter = QdrantRepositoryClients(reader, writer)
+        ids = ["point-one", "point-two"]
+        adapter.mark_points_tombstoned("chunks", ids)
+        adapter.retrieve_points("chunks", ids, with_vector=False)
+        writer.mark_points_tombstoned.assert_called_once_with("chunks", ids)
+        writer.retrieve_points.assert_called_once_with(
+            "chunks", ids, with_vector=False,
+        )
+        reader.mark_points_tombstoned.assert_not_called()
+        reader.retrieve_points.assert_not_called()
+
     def test_collection_metadata_is_read_with_the_read_identity(self):
         reader = Mock()
         writer = Mock()

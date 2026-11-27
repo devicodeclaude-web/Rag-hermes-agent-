@@ -17,6 +17,7 @@ from rag_hermes.canonical_registry import CanonicalDocumentRegistry
 from rag_hermes.index_integrity import audit_qdrant_index
 from rag_hermes.ingestion import Document, chunk_document
 from rag_hermes.qdrant_identity import mint_collection_token
+from rag_hermes.qdrant_repository import QdrantChunkRepository
 from rag_hermes.qdrant_rest import QdrantAuditClient, QdrantRestClient
 from rag_hermes.qdrant_service_clients import QdrantRepositoryClients
 from rag_hermes.qdrant_store import chunk_to_point
@@ -96,6 +97,39 @@ class QdrantAuthIntegrationTests(unittest.TestCase):
         self.assertEqual(self.reader.query(
             self.collection, [1.0, 0.0, 0.0, 0.0], query_filter=self.filter,
         ), [])
+
+    def test_tombstone_repository_uses_the_scoped_writer_through_the_adapter(self) -> None:
+        doc = Document(
+            document_id="masked", content="Private passage.", tenant_id="alpha",
+            visibility="private", owner_id="alice", allowed_groups=(),
+            allowed_users=(), classification=1, doc_version=1,
+            source_uri="local://masked",
+        )
+        other = Document(
+            document_id="other", content="Other passage.", tenant_id="beta",
+            visibility="private", owner_id="bob", allowed_groups=(),
+            allowed_users=(), classification=1, doc_version=1,
+            source_uri="local://other",
+        )
+        points = [chunk_to_point(chunk_document(d)[0], [1.0, 0.0, 0.0, 0.0])
+                  for d in (doc, other)]
+        self.clients.upsert(self.collection, points)
+        with tempfile.TemporaryDirectory() as lock_dir:
+            repository = QdrantChunkRepository(
+                self.clients, collection=self.collection,
+                embed=lambda _: [1.0, 0.0, 0.0, 0.0], lock_dir=lock_dir,
+            )
+            self.assertEqual(repository.apply_document_tombstone(
+                doc, chunker=chunk_document,
+            ), 1)
+        actual = self.admin.retrieve_points(self.collection, [p["id"] for p in points])
+        self.assertEqual(len(actual), 2)
+        by_id = {point["id"]: point["payload"] for point in actual}
+        self.assertEqual(by_id[points[0]["id"]], {**points[0]["payload"], "tombstone": True})
+        self.assertEqual(by_id[points[1]["id"]], points[1]["payload"])
+        self.assertDenied(
+            self.reader.mark_points_tombstoned, self.collection, [points[1]["id"]],
+        )
 
     def test_missing_or_wrong_credentials_are_rejected(self) -> None:
         for key in ("", "wrong-ci-key"):
