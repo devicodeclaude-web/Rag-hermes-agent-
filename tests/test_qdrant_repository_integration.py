@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import hashlib
 from dataclasses import asdict, replace
+from functools import partial
 import multiprocessing
 import os
 from pathlib import Path
@@ -105,6 +106,25 @@ class QdrantRepositoryIntegrationTests(unittest.TestCase):
         self.assertIs(self.client.retrieve_points(
             self.collection, [point["id"]]
         )[0]["payload"]["tombstone"], False)
+
+    def test_canonical_tombstone_manifest_on_real_qdrant(self) -> None:
+        document = self._document("manifest", "alpha", "alice", "alpha beta")
+        chunker = partial(chunk_document, max_tokens=1, overlap_tokens=0)
+        points = [chunk_to_point(chunk, _fixed_vector(chunk.text))
+                  for chunk in chunker(document)]
+        self.assertEqual(len(points), 2)
+        self.assertEqual(self.client.upsert(self.collection, points)["result"]["status"], "completed")
+        self.assertEqual(
+            self.repository.inspect_canonical_tombstone_candidates(document, chunker=chunker),
+            tuple(sorted(point["id"] for point in points)),
+        )
+        changed = {**points[0], "payload": {**points[0]["payload"], "section": "fake"}}
+        self.assertEqual(self.client.upsert(self.collection, [changed])["result"]["status"], "completed")
+        with self.assertRaisesRegex(ValueError, "canonical chunk manifest"):
+            self.repository.inspect_canonical_tombstone_candidates(document, chunker=chunker)
+        observed = self.client.retrieve_points(self.collection, [point["id"] for point in points])
+        self.assertEqual(len(observed), 2)
+        self.assertTrue(all(point["payload"]["tombstone"] is False for point in observed))
 
     def test_tombstone_preflight_rejects_late_foreign_owner_on_real_qdrant(self) -> None:
         document = self._document("mask-preflight", "alpha", "alice", "Passage alice.")
