@@ -247,24 +247,57 @@ class QdrantChunkRepository:
         if type(document) is not Document or document.state != "active":
             raise ValueError("an active canonical Document is required")
         snapshot = _snapshot_document(document)
+        if not callable(getattr(self._client, "mark_points_tombstoned", None)):
+            raise RuntimeError("Qdrant client must implement mark_points_tombstoned")
+        with self._document_write_lease(snapshot.tenant_id, snapshot.document_id):
+            return self._apply_document_tombstone_locked(document, chunker=chunker)
+
+    def _document_write_lease(self, tenant_id: str, document_id: str):
+        """Internal lease shared with the canonical coordinator; never reenter."""
+        return document_write_lock(
+            self._lock_dir, self._collection, tenant_id, document_id,
+            timeout=self._lock_timeout,
+        )
+
+    def _preflight_document_tombstone_locked(
+        self, document: Document, *, chunker: Callable[[Document], Iterable[Chunk]],
+    ) -> None:
+        """Read-only check before canonical masking, under an existing lease.
+
+        This neither authorizes an index write nor replaces the fresh scan in
+        `_apply_document_tombstone_locked` AFTER canonical publication.
+        """
+        if not callable(chunker):
+            raise ValueError("approved chunker is required")
+        if type(document) is not Document or document.state != "active":
+            raise ValueError("an active canonical Document is required")
+        self._scan_and_verify_tombstone_candidates(
+            _snapshot_document(document), document, chunker=chunker,
+        )
+
+    def _apply_document_tombstone_locked(
+        self, document: Document, *, chunker: Callable[[Document], Iterable[Chunk]],
+    ) -> int:
+        """Caller must hold this repository's document lease (private API)."""
+        if not callable(chunker):
+            raise ValueError("approved chunker is required")
+        if type(document) is not Document or document.state != "active":
+            raise ValueError("an active canonical Document is required")
+        snapshot = _snapshot_document(document)
         mark = getattr(self._client, "mark_points_tombstoned", None)
         if not callable(mark):
             raise RuntimeError("Qdrant client must implement mark_points_tombstoned")
-        with document_write_lock(
-            self._lock_dir, self._collection, snapshot.tenant_id, snapshot.document_id,
-            timeout=self._lock_timeout,
-        ):
-            verified = self._scan_and_verify_tombstone_candidates(
-                snapshot, document, chunker=chunker,
-            )
-            ordered = sorted(verified)
-            # Mutation: only the proven ids, under the same lease. The client
-            # requires a completed operation and raises otherwise.
-            mark(self._collection, ordered)
-            # A completed mark is not proof the flag flipped: re-read and confirm
-            # each payload is now exactly its verified value with tombstone True.
-            self._assert_points_tombstoned(ordered, verified)
-            return len(ordered)
+        verified = self._scan_and_verify_tombstone_candidates(
+            snapshot, document, chunker=chunker,
+        )
+        ordered = sorted(verified)
+        # Mutation: only the proven ids, under the same lease. The client
+        # requires a completed operation and raises otherwise.
+        mark(self._collection, ordered)
+        # A completed mark is not proof the flag flipped: re-read and confirm
+        # each payload is now exactly its verified value with tombstone True.
+        self._assert_points_tombstoned(ordered, verified)
+        return len(ordered)
 
     def inspect_canonical_tombstone_candidates(
         self, document: Document, *, chunker: Callable[[Document], Iterable[Chunk]],
