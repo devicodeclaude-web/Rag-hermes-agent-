@@ -260,8 +260,10 @@ class QdrantRestClient:
         return self._request("PUT", f"/collections/{name}/points?wait=true", body)
 
     def retrieve_points(
-        self, collection: str, ids: list[str | int]
+        self, collection: str, ids: list[str | int], *, with_vector: bool = True,
     ) -> list[dict[str, Any]]:
+        if type(with_vector) is not bool:
+            raise ValueError("with_vector must be a boolean")
         if (
             type(ids) is not list or not ids
             or any(
@@ -276,7 +278,7 @@ class QdrantRestClient:
         name = quote(collection, safe="")
         response = self._request(
             "POST", f"/collections/{name}/points",
-            {"ids": ids, "with_payload": True, "with_vector": True},
+            {"ids": ids, "with_payload": True, "with_vector": with_vector},
         )
         result = response.get("result")
         if response.get("status") != "ok" or type(result) is not list or len(result) > len(ids):

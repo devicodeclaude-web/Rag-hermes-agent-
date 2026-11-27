@@ -1,4 +1,4 @@
-# Issue #71 — contrat proposé de masquage réversible (NON implémenté)
+# Issue #71 — contrat de masquage réversible (implémentation PARTIELLE)
 
 Décision du propriétaire : commencer par une **suppression logique réversible**, pour **un seul hôte** et des écrivains coopérants du service. Ce document spécifie une cible de conception, pas une API, un déploiement ni une preuve de sûreté. La suppression physique et la coordination multi-hôtes ne sont pas dans cette tranche.
 
@@ -6,7 +6,7 @@ Décision du propriétaire : commencer par une **suppression logique réversible
 
 - `replace_document` refuse une liste vide : elle ne supprime pas un document. Le service n'expose aucune opération de masquage/restauration (`rag_hermes/service.py`, `rag_hermes/qdrant_repository.py`).
 - Le filtre de recherche Qdrant exige déjà `tombstone == False` (`qdrant_filter.py`), mais `chunk_to_point` écrit `False` et l'ingestion refuse un point de remplacement marqué `True`. Aucune écriture de tombstone documentaire n'existe.
-- Le registre canonique persiste des *documents* JSONL sans champ d'état : son décodeur exige exactement les clés actuelles, son ancre lie l'historique et les versions. Ajouter un état demande une migration vérifiée, pas une clé extra ajoutée silencieusement.
+- Le registre canonique persiste désormais `active/inactive` et refuse la réactivation par import ordinaire (Découpage A, PR #109). La primitive REST de marquage de payload par UUID explicites existe (B1, PR #110), mais n'a **aucun appelant de production**. Le prévol B2 `inspect_tombstone_candidates` est un diagnostic en lecture seule : il scanne la propriété jusqu'au curseur terminal et relit les payloads actuels par lots bornés ; son résultat devient périmé dès la libération du verrou documentaire. Il n'authentifie PAS le `Document` fourni, ne prouve pas la complétude d'un index modifiable par un client non coopérant et n'autorise jamais une mutation à lui seul. Aucune suppression de bout en bout ni API n'est disponible.
 - Le verrou documentaire `flock` porte sur le nom de collection **normalisé localement**, le locataire et le document. Deux noms (alias/nom canonique) produisent des clés différentes ; des clients directs Qdrant et d'autres hôtes le contournent. Ne pas afficher « atomique » ni « sûr pour tout écrivain ».
 - La voie V1 (`build_service`) lit l'autorité canonique vivante sous garde partagée. Les voies G1 (`g1_wiring`, `g1_audited_candidates`) lisent un **snapshot épinglé distinct** sans consultation de l'état vivant ni le même bail ; elles restent hors de la révocation tant qu'elles ne sont pas recâblées ou désactivées sur la collection modifiable. Un ancien snapshot peut encore citer un point si le masquage Qdrant a échoué.
 

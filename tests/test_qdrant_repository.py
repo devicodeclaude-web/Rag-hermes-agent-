@@ -61,7 +61,7 @@ class FakeQdrantClient:
                 self.stored_points[point["id"]] = point
         return {"status": "ok", "result": {"status": "completed"}}
 
-    def retrieve_points(self, collection: str, ids: list[str | int]) -> list[dict]:
+    def retrieve_points(self, collection: str, ids: list[str | int], *, with_vector=True) -> list[dict]:
         return [self.stored_points[point_id] for point_id in ids if point_id in self.stored_points]
 
     def query(
