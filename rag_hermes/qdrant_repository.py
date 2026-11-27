@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 from itertools import islice
 import hashlib
 import json
 import math
 from pathlib import Path
+import threading
 import unicodedata
 import uuid
 from typing import Any, Callable, Iterable, cast
@@ -17,6 +19,20 @@ from .qdrant_preflight import verify_collection_ready
 from .qdrant_store import chunk_to_point, lexical_weights_to_sparse_vector, stable_point_id
 from .qdrant_write_lock import default_lock_directory, document_write_lock
 from .retrieval import SearchResult
+
+# Thread-local set of document-lease keys currently held by this thread, so the
+# lease-only private helpers can ASSERT the lease rather than only document it.
+# A lease holds an flock per (collection, tenant, document); a future caller
+# reaching the core without it must fail loudly, not scan/mark outside exclusion.
+_HELD_DOCUMENT_LEASES = threading.local()
+
+
+def _held_document_leases() -> set[tuple[str, str, str]]:
+    held = getattr(_HELD_DOCUMENT_LEASES, "keys", None)
+    if held is None:
+        held = set()
+        _HELD_DOCUMENT_LEASES.keys = held
+    return held
 
 
 _OWNER_SCAN_PAGE_SIZE = 10_000
@@ -247,24 +263,80 @@ class QdrantChunkRepository:
         if type(document) is not Document or document.state != "active":
             raise ValueError("an active canonical Document is required")
         snapshot = _snapshot_document(document)
+        if not callable(getattr(self._client, "mark_points_tombstoned", None)):
+            raise RuntimeError("Qdrant client must implement mark_points_tombstoned")
+        with self._document_write_lease(snapshot.tenant_id, snapshot.document_id):
+            return self._apply_document_tombstone_locked(document, chunker=chunker)
+
+    @contextmanager
+    def _document_write_lease(self, tenant_id: str, document_id: str):
+        """Internal lease shared with the canonical coordinator; never reenter.
+
+        Registers the lease key in a thread-local set so the lease-only private
+        helpers can assert exclusion is actually held. The flock itself is not
+        reentrant (a new descriptor every call), so a nested acquire of the same
+        key is a bug: fail fast instead of blocking until timeout.
+        """
+        key = (self._collection, tenant_id, document_id)
+        held = _held_document_leases()
+        if key in held:
+            raise RuntimeError("document write lease is not reentrant")
+        with document_write_lock(
+            self._lock_dir, self._collection, tenant_id, document_id,
+            timeout=self._lock_timeout,
+        ):
+            held.add(key)
+            try:
+                yield
+            finally:
+                held.discard(key)
+
+    def _assert_document_lease_held(self, snapshot: _DocumentSnapshot) -> None:
+        if (self._collection, snapshot.tenant_id, snapshot.document_id) not in _held_document_leases():
+            raise RuntimeError("document write lease must be held for this operation")
+
+    def _preflight_document_tombstone_locked(
+        self, document: Document, *, chunker: Callable[[Document], Iterable[Chunk]],
+    ) -> None:
+        """Read-only check before canonical masking, under an existing lease.
+
+        This neither authorizes an index write nor replaces the fresh scan in
+        `_apply_document_tombstone_locked` AFTER canonical publication.
+        """
+        if not callable(chunker):
+            raise ValueError("approved chunker is required")
+        if type(document) is not Document or document.state != "active":
+            raise ValueError("an active canonical Document is required")
+        snapshot = _snapshot_document(document)
+        self._assert_document_lease_held(snapshot)
+        self._scan_and_verify_tombstone_candidates(
+            snapshot, document, chunker=chunker,
+        )
+
+    def _apply_document_tombstone_locked(
+        self, document: Document, *, chunker: Callable[[Document], Iterable[Chunk]],
+    ) -> int:
+        """Caller must hold this repository's document lease (private API)."""
+        if not callable(chunker):
+            raise ValueError("approved chunker is required")
+        if type(document) is not Document or document.state != "active":
+            raise ValueError("an active canonical Document is required")
+        snapshot = _snapshot_document(document)
+        self._assert_document_lease_held(snapshot)
         mark = getattr(self._client, "mark_points_tombstoned", None)
         if not callable(mark):
             raise RuntimeError("Qdrant client must implement mark_points_tombstoned")
-        with document_write_lock(
-            self._lock_dir, self._collection, snapshot.tenant_id, snapshot.document_id,
-            timeout=self._lock_timeout,
-        ):
-            verified = self._scan_and_verify_tombstone_candidates(
-                snapshot, document, chunker=chunker,
-            )
-            ordered = sorted(verified)
-            # Mutation: only the proven ids, under the same lease. The client
-            # requires a completed operation and raises otherwise.
-            mark(self._collection, ordered)
-            # A completed mark is not proof the flag flipped: re-read and confirm
-            # each payload is now exactly its verified value with tombstone True.
-            self._assert_points_tombstoned(ordered, verified)
-            return len(ordered)
+        verified = self._scan_and_verify_tombstone_candidates(
+            snapshot, document, chunker=chunker,
+        )
+        ordered = sorted(verified)
+        # Mutation: only the proven ids, under the same lease. The client
+        # requires a completed operation and raises otherwise.
+        mark(self._collection, ordered)
+        # A completed mark is not proof the flag flipped: re-read and confirm
+        # each payload is now exactly its verified value with tombstone True.
+        self._assert_points_tombstoned(ordered, verified)
+        return len(ordered)
 
     def inspect_canonical_tombstone_candidates(
         self, document: Document, *, chunker: Callable[[Document], Iterable[Chunk]],

@@ -5,6 +5,7 @@ authorization boundary, so every claim here is a round trip to Qdrant.
 """
 from __future__ import annotations
 
+from functools import partial
 import hashlib
 import os
 from pathlib import Path
@@ -14,6 +15,7 @@ import uuid
 
 from rag_hermes.canonical_reconciliation import audit_canonical_copy_index
 from rag_hermes.canonical_registry import CanonicalDocumentRegistry
+from rag_hermes.canonical_tombstone import CanonicalTombstoneCoordinator
 from rag_hermes.index_integrity import audit_qdrant_index
 from rag_hermes.ingestion import Document, chunk_document
 from rag_hermes.qdrant_identity import mint_collection_token
@@ -142,6 +144,55 @@ class QdrantAuthIntegrationTests(unittest.TestCase):
         self.assertIs(self.admin.retrieve_points(
             self.other, [points[1]["id"]], with_vector=False,
         )[0]["payload"]["tombstone"], False)
+
+    def test_canonical_first_mask_over_scoped_clients_on_real_qdrant(self) -> None:
+        masked_doc = Document(
+            document_id="coordinated", content="alpha beta", tenant_id="alpha",
+            visibility="private", owner_id="alice", allowed_groups=(),
+            allowed_users=(), classification=1, doc_version=1,
+            source_uri="local://coordinated",
+        )
+        other_doc = Document(
+            document_id="other-coordinated", content="gamma", tenant_id="beta",
+            visibility="private", owner_id="bob", allowed_groups=(),
+            allowed_users=(), classification=1, doc_version=1,
+            source_uri="local://other-coordinated",
+        )
+        chunker = partial(chunk_document, max_tokens=1, overlap_tokens=0)
+        masked_chunks = chunker(masked_doc)
+        other_chunks = chunker(other_doc)
+        self.assertEqual(len(masked_chunks), 2)
+        points = [chunk_to_point(c, [1.0, 0.0, 0.0, 0.0])
+                  for c in masked_chunks + other_chunks]
+        self.clients.upsert(self.collection, points)
+        with tempfile.TemporaryDirectory() as directory:
+            registry = CanonicalDocumentRegistry(directory)
+            registry.register(masked_doc)
+            repository = QdrantChunkRepository(
+                self.clients, collection=self.collection,
+                embed=lambda _: [1.0, 0.0, 0.0, 0.0], lock_dir=directory,
+            )
+            coordinator = CanonicalTombstoneCoordinator(
+                registry, repository, chunker=chunker,
+            )
+            self.assertEqual(coordinator.mask_document(
+                tenant_id="alpha", document_id="coordinated", owner_id="alice",
+            ), 2)
+            self.assertIsNone(CanonicalDocumentRegistry(directory).source("coordinated"))
+            with self.assertRaisesRegex(ValueError, "already inactive"):
+                coordinator.mask_document(
+                    tenant_id="alpha", document_id="coordinated", owner_id="alice",
+                )
+        auditor = QdrantAuditClient(
+            self.admin.base_url, api_key=_jwt(
+                os.environ["QDRANT_AUTH_ADMIN_KEY"], self.collection, "r",
+                ttl_seconds=1800,
+            ),
+        )
+        self.assertEqual(audit_qdrant_index(
+            auditor, self.collection, masked_chunks + other_chunks,
+            expected_tombstone_ids=frozenset(p["id"] for p in points[:2]),
+        ).point_count, 3)
 
     def test_missing_or_wrong_credentials_are_rejected(self) -> None:
         for key in ("", "wrong-ci-key"):

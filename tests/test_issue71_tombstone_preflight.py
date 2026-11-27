@@ -296,3 +296,26 @@ class ApplyDocumentTombstoneTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.repository.apply_document_tombstone(self.document, chunker=self.chunker)
         self.assertEqual(self.client.tombstoned, [])
+
+    def test_locked_core_refuses_without_a_held_document_lease(self):
+        # The lease-only helpers must fail loudly, not scan/mark outside the
+        # flock, if a future caller reaches them without acquiring the lease.
+        with self.assertRaisesRegex(RuntimeError, "document write lease"):
+            self.repository._apply_document_tombstone_locked(
+                self.document, chunker=self.chunker,
+            )
+        with self.assertRaisesRegex(RuntimeError, "document write lease"):
+            self.repository._preflight_document_tombstone_locked(
+                self.document, chunker=self.chunker,
+            )
+        self.assertEqual(self.client.tombstoned, [])
+        self.assertEqual(self.client.scrolls, [])
+
+    def test_document_write_lease_is_not_reentrant(self):
+        snapshot_tenant = self.document.tenant_id
+        with self.repository._document_write_lease(snapshot_tenant, self.document.document_id):
+            with self.assertRaisesRegex(RuntimeError, "not reentrant"):
+                with self.repository._document_write_lease(
+                    snapshot_tenant, self.document.document_id,
+                ):
+                    self.fail("reentrant lease must not be granted")
