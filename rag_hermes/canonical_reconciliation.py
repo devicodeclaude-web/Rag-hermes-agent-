@@ -369,6 +369,8 @@ def plan_canonical_index_reconciliation(
             if point["id"] in expected_tombstone_ids:
                 # A masked document's points keep their old payload except the
                 # tombstone flag, so the plan must expect them masked too.
+                # Safe to mutate: chunk_to_point returns a fresh, unshared
+                # payload dict on each call.
                 point["payload"]["tombstone"] = True
             expected[point["id"]] = point["payload"]
 
