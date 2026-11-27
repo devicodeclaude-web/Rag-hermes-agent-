@@ -14,6 +14,7 @@ import uuid
 
 from rag_hermes.canonical_reconciliation import audit_canonical_copy_index
 from rag_hermes.canonical_registry import CanonicalDocumentRegistry
+from rag_hermes.index_integrity import audit_qdrant_index
 from rag_hermes.ingestion import Document, chunk_document
 from rag_hermes.qdrant_identity import mint_collection_token
 from rag_hermes.qdrant_rest import QdrantAuditClient, QdrantRestClient
@@ -176,6 +177,38 @@ class QdrantAuditIdentityIntegrationTests(unittest.TestCase):
             }, limit=10)],
             [self.point_id],
         )
+
+    def test_tombstone_audit_uses_collection_scoped_read_only_identity(self) -> None:
+        self.admin.delete_points(
+            self.collection,
+            {"must": [{"key": "tenant_id", "match": {"value": "alpha"}}]},
+        )
+        documents = [Document(
+            document_id=f"rbac-{tenant}", content=f"Text for {tenant}.",
+            tenant_id=tenant, visibility="private", owner_id="alice",
+            allowed_groups=(), allowed_users=(), classification=1,
+            doc_version=1, source_uri=f"local://rbac-{tenant}",
+        ) for tenant in ("alpha", "beta")]
+        chunks = [chunk_document(doc)[0] for doc in documents]
+        points = [chunk_to_point(chunk, [1.0, 0.0, 0.0, 0.0]) for chunk in chunks]
+        self.admin.upsert(self.collection, points)
+        masked_id = points[0]["id"]
+        self.admin.mark_points_tombstoned(self.collection, [masked_id])
+        self.assertEqual(audit_qdrant_index(
+            self.auditor, self.collection, chunks, page_size=1,
+            expected_tombstone_ids=frozenset({masked_id}),
+        ).point_count, 2)
+        reader = QdrantRestClient(self.admin.base_url, api_key=self.audit_key)
+        with self.assertRaisesRegex(RuntimeError, "Qdrant HTTP 40[13]"):
+            reader.mark_points_tombstoned(self.collection, [points[1]["id"]])
+        other_collection = "hermes_other_" + uuid.uuid4().hex[:12]
+        self.admin.create_collection(other_collection, vector_size=4)
+        self.addCleanup(self.admin.delete_collection, other_collection)
+        with self.assertRaisesRegex(RuntimeError, "Qdrant HTTP 40[13]"):
+            self.auditor.scroll_page(other_collection, limit=1)
+        self.assertIs(self.admin.retrieve_points(
+            self.collection, [points[1]["id"]]
+        )[0]["payload"]["tombstone"], False)
 
     def test_canonical_copy_audit_runs_on_the_read_only_audit_credential(self) -> None:
         """The reconciliation diagnostic must need nothing but `r`, server-side."""

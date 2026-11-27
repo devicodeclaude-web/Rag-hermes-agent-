@@ -492,6 +492,11 @@ class CanonicalDocumentRegistry:
         self._path = path / _STORE_FILENAME
         self._lock = threading.Lock()
         self._documents: dict[str, Document] = {}
+        # Dernier enregistrement ACTIF par document (identique à `_documents`
+        # pour un document actif ; l'état d'avant masquage pour un inactif).
+        # C'est lui qui a produit les points Qdrant, car `mark_inactive`
+        # n'incrémente que `acl_version` sans réécrire le payload indexé.
+        self._last_active: dict[str, Document] = {}
         self._records = 0
         self._running = hashlib.sha256()
         self._broken: str | None = None
@@ -699,7 +704,7 @@ class CanonicalDocumentRegistry:
         try:
             anchor = self._read_anchor(dir_fd)
             boundary = 0 if anchor is None else anchor[0]
-            fresh, records, prefix_digest, running, history_is_modern = (
+            fresh, records, prefix_digest, running, history_is_modern, last_active = (
                 self._read_documents(file_fd, digest_at=boundary)
             )
             # The file may be truncated or restored from a valid old backup.
@@ -716,6 +721,7 @@ class CanonicalDocumentRegistry:
             )
             self._records = records
             self._running = running
+            self._last_active = last_active
             return fresh
         except (OSError, ValueError, UnicodeError, PermissionError):
             raise CanonicalStoreError("canonical store history is invalid") from None
@@ -789,13 +795,14 @@ class CanonicalDocumentRegistry:
     @staticmethod
     def _read_documents(
         file_fd: int, *, digest_at: int = 0
-    ) -> tuple[dict[str, Document], int, str | None, Any, bool]:
+    ) -> tuple[dict[str, Document], int, str | None, Any, bool, dict[str, Document]]:
         # Relire depuis le descripteur vérifié, sans publier de demi-rejeu si
         # une ligne est corrompue ou si un invariant de version est violé.
         with os.fdopen(file_fd, "rb", closefd=False) as handle:
             handle.seek(0)
             payload = handle.read().decode("utf-8")
         documents: dict[str, Document] = {}
+        last_active: dict[str, Document] = {}
         records = 0
         running = hashlib.sha256()
         prefix_digest: str | None = running.hexdigest() if digest_at == 0 else None
@@ -823,6 +830,8 @@ class CanonicalDocumentRegistry:
                     f"invalid canonical document record at line {number}: {exc}"
                 ) from exc
             documents[document.document_id] = document
+            if document.state == _STATE_ACTIVE:
+                last_active[document.document_id] = document
             if is_modern:
                 modern_documents.add(document.document_id)
                 history_is_modern = True
@@ -833,7 +842,7 @@ class CanonicalDocumentRegistry:
             records += 1
             if records == digest_at:
                 prefix_digest = running.hexdigest()
-        return documents, records, prefix_digest, running, history_is_modern
+        return documents, records, prefix_digest, running, history_is_modern, last_active
 
     @staticmethod
     def _check_against_previous(
@@ -905,6 +914,30 @@ class CanonicalDocumentRegistry:
         with self._lock:
             self._load()
             return dict(self._documents)
+
+    def last_active_manifest(self) -> tuple[Mapping[str, Document], frozenset[str]]:
+        """Manifeste pour l'audit d'index incluant les documents masqués.
+
+        Retourne `(manifest, tombstoned_ids)` :
+        - `manifest[document_id]` = dernier enregistrement ACTIF du document.
+          Pour un document actif, c'est son état courant ; pour un inactif,
+          c'est l'état d'avant masquage, car `mark_inactive` n'incrémente que
+          `acl_version` et ne réécrit pas le payload des points Qdrant déjà
+          indexés — ce sont donc ces chunks-là qu'il faut régénérer.
+        - `tombstoned_ids` = `document_id` actuellement `inactive`.
+
+        Ce n'est pas un instantané Qdrant ni une autorisation de mutation :
+        les points réellement présents ne sont pas lus ici.
+        """
+        with self._lock:
+            self._load()
+            manifest = dict(self._last_active)
+            tombstoned = frozenset(
+                document_id
+                for document_id, document in self._documents.items()
+                if document.state == _STATE_INACTIVE
+            )
+            return manifest, tombstoned
 
     def register(self, document: Any) -> Document:
         with self.write_guard():
@@ -1066,6 +1099,15 @@ class CanonicalDocumentRegistry:
                             "canonical record durability is not confirmed"
                         ) from exc
                     self._documents = published
+                    # Maintenir le dernier-actif publié en mémoire, puisque le
+                    # cache est réutilisé sans relecture tant que la signature
+                    # ne change pas : un append actif devient le dernier-actif
+                    # de son document ; un masquage conserve l'actif précédent
+                    # (déjà capturé par `_fresh_verified`).
+                    if validated.state == _STATE_ACTIVE:
+                        self._last_active = {
+                            **self._last_active, validated.document_id: validated
+                        }
                     self._records += 1
                     self._running = running
                     self._signature = _file_identity(file_fd)
@@ -1173,7 +1215,7 @@ def _verified_anchor_snapshot(store_dir: str | Path, candidate: bytes):
                         existing = handle.read()
                     if existing and not existing.endswith(b"\n"):
                         raise CanonicalStoreError("canonical history has a partial trailing line")
-                    documents, count, _, running, _ = CanonicalDocumentRegistry._read_documents(
+                    documents, count, _, running, _, _ = CanonicalDocumentRegistry._read_documents(
                         file_fd
                     )
                     if count + 1 != anchor[0]:
@@ -1387,7 +1429,7 @@ def bootstrap_canonical_anchor(store_dir: str | Path, attestation: object) -> No
             if CanonicalDocumentRegistry._anchor_identity(dir_fd) is not None:
                 raise CanonicalStoreError("canonical anchor already present")
             try:
-                documents, records, _, running, history_is_modern = (
+                documents, records, _, running, history_is_modern, _ = (
                     CanonicalDocumentRegistry._read_documents(file_fd)
                 )
             except (OSError, ValueError, UnicodeError) as exc:
@@ -1575,7 +1617,7 @@ def prepare_anchor_recovery_copy(
                     raise CanonicalStoreError("recovery copy has no anchor")
                 copy_fd = _open_private_file(stage_fd, write=False, create=False)
                 try:
-                    docs, count, prefix, _, staged_modern = (
+                    docs, count, prefix, _, staged_modern, _ = (
                         CanonicalDocumentRegistry._read_documents(
                             copy_fd, digest_at=anchor_view[0]
                         )

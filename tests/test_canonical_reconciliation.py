@@ -62,6 +62,41 @@ class CanonicalReconciliationTests(unittest.TestCase):
             page_size=1, **kwargs,
         )
 
+    def test_anchored_inactive_audit_uses_last_active_acl_and_tombstone(self):
+        self.registry.mark_inactive("doc-1", owner_id="alice")
+        self.anchor_digest = hashlib.sha256(self.registry.anchor_path.read_bytes()).hexdigest()
+        self.client.points[0]["payload"]["tombstone"] = True
+        report = self.audit()
+        self.assertEqual(report.point_count, 1)
+        self.assertEqual(self.client.calls, [("chunks", 1, None)])
+        self.assertEqual(self.client.points[0]["payload"]["acl_version"], 1)
+        self.assertEqual(self.registry.documents()["doc-1"].acl_version, 2)
+
+    def test_anchored_inactive_audit_refuses_point_left_active(self):
+        self.registry.mark_inactive("doc-1", owner_id="alice")
+        self.anchor_digest = hashlib.sha256(self.registry.anchor_path.read_bytes()).hexdigest()
+        # The canonical doc is masked but its Qdrant point was never tombstoned:
+        # a half-applied mask must fail the audit, not pass as if synced.
+        self.assertIs(self.client.points[0]["payload"]["tombstone"], False)
+        with self.assertRaisesRegex(ValueError, "payload conflicts"):
+            self.audit()
+
+    def test_anchored_inactive_plan_enumerates_unmasked_point(self):
+        self.registry.mark_inactive("doc-1", owner_id="alice")
+        self.anchor_digest = hashlib.sha256(self.registry.anchor_path.read_bytes()).hexdigest()
+        plan = plan_canonical_index_reconciliation(
+            self.store, anchor_sha256=self.anchor_digest, client=self.client,
+            collection="chunks", chunker=chunk_document, page_size=1,
+        )
+        self.assertFalse(plan.is_clean)
+        self.assertEqual(plan.divergent_points, ((self.points[0]["id"], ("tombstone",)),))
+        self.client.points[0]["payload"]["tombstone"] = True
+        clean = plan_canonical_index_reconciliation(
+            self.store, anchor_sha256=self.anchor_digest, client=self.client,
+            collection="chunks", chunker=chunk_document, page_size=1,
+        )
+        self.assertTrue(clean.is_clean, clean)
+
     def test_matching_copy_is_audited_read_only(self):
         before = {p.name: p.read_bytes() for p in self.store.iterdir()}
         report = self.audit()

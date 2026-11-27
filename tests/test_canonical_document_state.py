@@ -593,5 +593,40 @@ class CoverageHardeningTests(_StoreCase):
             self.registry().source("doc-1")
 
 
+class LastActiveManifestTests(_StoreCase):
+    """`last_active_manifest` doit rendre l'état d'AVANT masquage, relu du disque."""
+
+    def test_active_document_manifest_is_its_current_record(self) -> None:
+        reg = self.registry()
+        reg.register(document(acl_version=3))
+        manifest, tombstoned = reg.last_active_manifest()
+        self.assertEqual(set(manifest), {"doc-1"})
+        self.assertEqual(manifest["doc-1"].acl_version, 3)
+        self.assertEqual(manifest["doc-1"].state, "active")
+        self.assertEqual(tombstoned, frozenset())
+
+    def test_masked_document_manifest_keeps_last_active_snapshot(self) -> None:
+        reg = self.registry()
+        reg.register(document(acl_version=1))
+        reg.mark_inactive("doc-1", owner_id="alice")
+        # A fresh instance proves this is replayed from the JSONL, not cached.
+        fresh = self.registry()
+        manifest, tombstoned = fresh.last_active_manifest()
+        self.assertEqual(tombstoned, frozenset({"doc-1"}))
+        self.assertEqual(manifest["doc-1"].state, "active")
+        self.assertEqual(manifest["doc-1"].acl_version, 1)
+        self.assertEqual(fresh.documents()["doc-1"].acl_version, 2)
+
+    def test_manifest_separates_active_and_masked_documents(self) -> None:
+        reg = self.registry()
+        reg.register(document("doc-active"))
+        reg.register(document("doc-masked"))
+        reg.mark_inactive("doc-masked", owner_id="alice")
+        manifest, tombstoned = reg.last_active_manifest()
+        self.assertEqual(set(manifest), {"doc-active", "doc-masked"})
+        self.assertEqual(tombstoned, frozenset({"doc-masked"}))
+        self.assertTrue(all(doc.state == "active" for doc in manifest.values()))
+
+
 if __name__ == "__main__":
     unittest.main()

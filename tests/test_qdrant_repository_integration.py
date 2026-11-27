@@ -18,7 +18,7 @@ from rag_hermes.canonical_reconciliation import (
     render_divergence_report,
 )
 from rag_hermes.g1_audited_candidates import run_audited_g1_candidate_window
-from rag_hermes.index_integrity import AuditedIndexSessionError, verify_index_snapshot
+from rag_hermes.index_integrity import AuditedIndexSessionError, audit_qdrant_index, verify_index_snapshot
 from rag_hermes.ingestion import Document, chunk_document
 import rag_hermes.qdrant_repository as repository_module
 from rag_hermes.qdrant_repository import QdrantChunkRepository
@@ -602,6 +602,33 @@ class QdrantRepositoryIntegrationTests(unittest.TestCase):
         self.assertEqual(len(points), 1)
         self.assertEqual(points[0]["payload"]["owner_id"], ["alice", "bob"])
 
+    def test_tombstone_aware_unfiltered_audit_on_real_qdrant(self) -> None:
+        old = self._document("inactive-audit", "alpha", "alice", "Old content.")
+        other = self._document("active-audit", "beta", "bob", "Other content.")
+        chunks = [chunk_document(doc)[0] for doc in (old, other)]
+        points = [chunk_to_point(chunk, _fixed_vector(chunk.text)) for chunk in chunks]
+        self.assertEqual(self.client.upsert(self.collection, points)["result"]["status"], "completed")
+        tombstone_id = points[0]["id"]
+        self.client.mark_points_tombstoned(self.collection, [tombstone_id])
+        audit_client = QdrantAuditClient(os.environ["QDRANT_INTEGRATION_URL"])
+        expected = frozenset({tombstone_id})
+        self.assertEqual(audit_qdrant_index(
+            audit_client, self.collection, chunks, page_size=1,
+            expected_tombstone_ids=expected,
+        ).point_count, 2)
+        with self.assertRaisesRegex(ValueError, "payload"):
+            audit_qdrant_index(audit_client, self.collection, chunks, page_size=1)
+        # Wrong tenant hides this point from a filtered owner scan, not audit.
+        forged = self.client.retrieve_points(self.collection, [tombstone_id])[0]
+        forged["payload"]["tenant_id"] = "foreign"
+        forged["vector"] = {"dense": _fixed_vector("")}
+        self.assertEqual(self.client.upsert(self.collection, [forged])["result"]["status"], "completed")
+        with self.assertRaisesRegex(ValueError, "payload"):
+            audit_qdrant_index(
+                audit_client, self.collection, chunks, page_size=1,
+                expected_tombstone_ids=expected,
+            )
+
     def test_canonical_copy_audit_checks_real_qdrant_scroll(self) -> None:
         document = self._document("audit-copy", "alpha", "alice", "Texte de l'audit.")
         with tempfile.TemporaryDirectory() as directory:
@@ -624,6 +651,34 @@ class QdrantRepositoryIntegrationTests(unittest.TestCase):
                     directory, anchor_sha256=changed_pin, client=audit_client,
                     collection=self.collection, chunker=chunk_document, page_size=1,
                 )
+
+    def test_canonical_copy_audit_accepts_masked_document_on_real_qdrant(self) -> None:
+        document = self._document("mask-audit", "alpha", "alice", "Texte à masquer.")
+        with tempfile.TemporaryDirectory() as directory:
+            registry = CanonicalDocumentRegistry(directory)
+            registry.register(document)
+            chunks = chunk_document(document)
+            self.repository.replace_document(document, chunks)
+            audit_client = QdrantAuditClient(os.environ["QDRANT_INTEGRATION_URL"])
+            point_id = chunk_to_point(chunks[0], _fixed_vector(""))["id"]
+            registry.mark_inactive("mask-audit", owner_id="alice")
+            pin = hashlib.sha256(registry.anchor_path.read_bytes()).hexdigest()
+            # Masked canonically but point still active in Qdrant: fail closed.
+            with self.assertRaisesRegex(ValueError, "indexed payload conflicts"):
+                audit_canonical_copy_index(
+                    directory, anchor_sha256=pin, client=audit_client,
+                    collection=self.collection, chunker=chunk_document, page_size=1,
+                )
+            # After the real tombstone write, the historical manifest matches.
+            self.client.mark_points_tombstoned(self.collection, [point_id])
+            report = audit_canonical_copy_index(
+                directory, anchor_sha256=pin, client=audit_client,
+                collection=self.collection, chunker=chunk_document, page_size=1,
+            )
+            self.assertEqual(report.point_count, 1)
+            self.assertIs(self.client.retrieve_points(
+                self.collection, [point_id]
+            )[0]["payload"]["tombstone"], True)
 
     def test_reconciliation_plan_enumerates_real_qdrant_divergences(self) -> None:
         document = self._document("plan-copy", "alpha", "alice", "Texte du plan.")

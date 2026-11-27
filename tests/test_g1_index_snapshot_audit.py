@@ -31,6 +31,78 @@ class IndexSnapshotAuditTests(unittest.TestCase):
         ]
         self.points = [chunk_to_point(chunk, [1.0]) for chunk in self.chunks]
 
+    def test_tombstone_aware_snapshot_accepts_historical_point_and_changes_digest(self):
+        observed = deepcopy(self.points)
+        observed[0]["payload"]["tombstone"] = True
+        tombstones = frozenset({observed[0]["id"]})
+        report = verify_index_snapshot(
+            self.chunks, observed, expected_tombstone_ids=tombstones,
+        )
+        self.assertEqual(report.point_count, 2)
+        self.assertNotEqual(report.payload_sha256, verify_index_snapshot(self.chunks, self.points).payload_sha256)
+        with self.assertRaisesRegex(ValueError, "payload"):
+            verify_index_snapshot(self.chunks, self.points, expected_tombstone_ids=tombstones)
+
+    def test_tombstone_aware_unfiltered_audit_catches_hidden_or_unmarked_point(self):
+        observed = deepcopy(self.points)
+        observed[0]["payload"]["tombstone"] = True
+        tombstones = frozenset({observed[0]["id"]})
+        class FakeClient:
+            def __init__(self, points):
+                self.points = points
+                self.calls = []
+            def scroll_page(self, collection, *, limit, offset=None):
+                self.calls.append((collection, offset))
+                start = 0 if offset is None else offset
+                end = start + limit
+                return self.points[start:end], end if end < len(self.points) else None
+        client = FakeClient(observed)
+        report = audit_qdrant_index(
+            client, "chunks", self.chunks, page_size=1,
+            expected_tombstone_ids=tombstones,
+        )
+        self.assertEqual(report.point_count, 2)
+        self.assertEqual(client.calls, [("chunks", None), ("chunks", 1)])
+        observed[0]["payload"]["tombstone"] = False
+        with self.assertRaisesRegex(ValueError, "payload"):
+            audit_qdrant_index(client, "chunks", self.chunks, expected_tombstone_ids=tombstones)
+        observed[0]["payload"]["tombstone"] = True
+        observed[0]["payload"]["tenant_id"] = "other"
+        with self.assertRaisesRegex(ValueError, "payload"):
+            audit_qdrant_index(client, "chunks", self.chunks, expected_tombstone_ids=tombstones)
+
+    def test_tombstone_manifest_pin_includes_state(self):
+        observed = deepcopy(self.points)
+        observed[0]["payload"]["tombstone"] = True
+        tombstones = frozenset({observed[0]["id"]})
+        digest = verify_index_snapshot(
+            self.chunks, observed, expected_tombstone_ids=tombstones,
+        ).payload_sha256
+        class Client:
+            def scroll_page(self, _collection, *, limit, offset=None):
+                return observed, None
+        self.assertEqual(audit_qdrant_index(
+            Client(), "chunks", self.chunks,
+            expected_tombstone_ids=tombstones, expected_manifest_sha256=digest,
+        ).payload_sha256, digest)
+        with self.assertRaisesRegex(ValueError, "manifest digest"):
+            audit_qdrant_index(
+                Client(), "chunks", self.chunks,
+                expected_tombstone_ids=tombstones,
+                expected_manifest_sha256=verify_index_snapshot(self.chunks, self.points).payload_sha256,
+            )
+
+    def test_tombstone_audit_rejects_untrusted_id_sets_before_scroll(self):
+        class NeverScroll:
+            def scroll_page(self, *_args, **_kwargs):
+                raise AssertionError("invalid tombstone manifest reached the index")
+        for ids in (frozenset({"unknown"}), frozenset({7}), [self.points[0]["id"]]):
+            with self.subTest(ids=ids), self.assertRaisesRegex(ValueError, "tombstone"):
+                audit_qdrant_index(
+                    NeverScroll(), "chunks", self.chunks,
+                    expected_tombstone_ids=ids,
+                )
+
     def test_complete_canonical_snapshot_passes(self):
         report = verify_index_snapshot(self.chunks, self.points)
         self.assertEqual(report.point_count, 2)
