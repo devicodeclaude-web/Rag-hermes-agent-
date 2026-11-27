@@ -26,6 +26,9 @@ class FakeQdrantClient:
         self.stored_points: dict[str | int, dict] = {}
         self.upsert_filters: list[dict] = []
         self.fail_upsert = False
+        self.tombstoned: list[tuple[str, list]] = []
+        self.fail_mark = False
+        self.mark_applies = True
 
     @staticmethod
     def _matches_condition(point: dict, condition: dict) -> bool:
@@ -63,6 +66,23 @@ class FakeQdrantClient:
 
     def retrieve_points(self, collection: str, ids: list[str | int], *, with_vector=True) -> list[dict]:
         return [self.stored_points[point_id] for point_id in ids if point_id in self.stored_points]
+
+    def mark_points_tombstoned(self, collection: str, ids: list[str]) -> None:
+        # Mimics QdrantRestClient.mark_points_tombstoned: sets tombstone:true on
+        # the given points server-side. `fail_mark` simulates a refusal/ambiguous
+        # status (the real client raises on a non-"completed" result); when
+        # `mark_applies` is False the call "succeeds" but the flag never flips,
+        # standing in for a lost or partially applied write.
+        self.tombstoned.append((collection, list(ids)))
+        if self.fail_mark:
+            raise RuntimeError("simulated Qdrant tombstone failure")
+        if self.mark_applies:
+            for point_id in ids:
+                point = self.stored_points.get(point_id)
+                if point is not None:
+                    self.stored_points[point_id] = {
+                        **point, "payload": {**point["payload"], "tombstone": True},
+                    }
 
     def query(
         self,
