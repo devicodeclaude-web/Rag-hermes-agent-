@@ -77,8 +77,11 @@ def _verified_copy_manifest(
             # The registry verifies the full replay against the anchor before
             # any remote call. No file or lock is created on this path.
             registry = CanonicalDocumentRegistry(path)
-            documents = registry.documents()
-            if not documents:
+            # Last-active snapshot per document (+ the currently inactive ids):
+            # a masked document keeps its old Qdrant payload, so the historical
+            # record — not the inactive one — regenerates the indexed chunks.
+            manifest, tombstoned_ids = registry.last_active_manifest()
+            if not manifest:
                 # Defence in depth, expected unreachable: a non-zero anchor
                 # implies at least one replayed record, and every record
                 # yields a document. Mutation testing confirms no test can
@@ -86,24 +89,29 @@ def _verified_copy_manifest(
                 # test.
                 raise ValueError("canonical copy contains no documents")
             chunks: list[Chunk] = []
-            for document in documents.values():
+            expected_tombstone_ids: set[str] = set()
+            for document_id, document in manifest.items():
                 passages = list(chunker(document))
                 if not passages:
                     # Checking the TOTAL only would let a document without any
                     # passage vanish from the comparison: a false match.
                     raise ValueError("canonical document produced no chunks")
                 chunks.extend(passages)
+                if document_id in tombstoned_ids:
+                    for passage in passages:
+                        expected_tombstone_ids.add(chunk_to_point(passage, [1.0])["id"])
+            frozen_tombstones = frozenset(expected_tombstone_ids)
 
             def recheck() -> None:
                 if (_read_recovery_file(directory, _ANCHOR_FILENAME) != original_anchor
-                        or registry.documents() != documents):
+                        or registry.last_active_manifest() != (manifest, tombstoned_ids)):
                     raise CanonicalStoreError("canonical copy changed during index read")
                 opened = os.fstat(directory)
                 visible = os.stat(path, follow_symlinks=False)
                 if (opened.st_dev, opened.st_ino) != (visible.st_dev, visible.st_ino):
                     raise CanonicalStoreError("canonical copy path changed during index read")
 
-            yield chunks, recheck
+            yield chunks, recheck, frozen_tombstones
         finally:
             _close_tracked_private_file(lock_token)
     finally:
@@ -125,7 +133,7 @@ def audit_canonical_copy_index(
     with _verified_copy_manifest(
         copy_dir, anchor_sha256=anchor_sha256, collection=collection,
         chunker=chunker, page_size=page_size,
-    ) as (chunks, recheck):
+    ) as (chunks, recheck, expected_tombstone_ids):
         # `expected_manifest_sha256` is deliberately NOT passed: here the
         # independently approved value is the ANCHOR digest, and the manifest
         # is derived from the anchored documents by the approved chunker.
@@ -133,6 +141,7 @@ def audit_canonical_copy_index(
         # derivation, not add an independent source.
         report = audit_qdrant_index(
             client, collection, chunks, page_size=page_size,
+            expected_tombstone_ids=expected_tombstone_ids,
         )
         recheck()
         return report
@@ -351,12 +360,16 @@ def plan_canonical_index_reconciliation(
     with _verified_copy_manifest(
         copy_dir, anchor_sha256=anchor_sha256, collection=collection,
         chunker=chunker, page_size=page_size,
-    ) as (chunks, recheck):
+    ) as (chunks, recheck, expected_tombstone_ids):
         expected: dict[str, dict[str, Any]] = {}
         for chunk in chunks:
             point = chunk_to_point(chunk, [1.0])
             if point["id"] in expected:
                 raise ValueError("duplicate canonical point id")
+            if point["id"] in expected_tombstone_ids:
+                # A masked document's points keep their old payload except the
+                # tombstone flag, so the plan must expect them masked too.
+                point["payload"]["tombstone"] = True
             expected[point["id"]] = point["payload"]
 
         observed: dict[str, dict[str, Any]] = {}

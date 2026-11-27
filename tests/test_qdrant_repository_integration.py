@@ -652,6 +652,34 @@ class QdrantRepositoryIntegrationTests(unittest.TestCase):
                     collection=self.collection, chunker=chunk_document, page_size=1,
                 )
 
+    def test_canonical_copy_audit_accepts_masked_document_on_real_qdrant(self) -> None:
+        document = self._document("mask-audit", "alpha", "alice", "Texte à masquer.")
+        with tempfile.TemporaryDirectory() as directory:
+            registry = CanonicalDocumentRegistry(directory)
+            registry.register(document)
+            chunks = chunk_document(document)
+            self.repository.replace_document(document, chunks)
+            audit_client = QdrantAuditClient(os.environ["QDRANT_INTEGRATION_URL"])
+            point_id = chunk_to_point(chunks[0], _fixed_vector(""))["id"]
+            registry.mark_inactive("mask-audit", owner_id="alice")
+            pin = hashlib.sha256(registry.anchor_path.read_bytes()).hexdigest()
+            # Masked canonically but point still active in Qdrant: fail closed.
+            with self.assertRaisesRegex(ValueError, "indexed payload conflicts"):
+                audit_canonical_copy_index(
+                    directory, anchor_sha256=pin, client=audit_client,
+                    collection=self.collection, chunker=chunk_document, page_size=1,
+                )
+            # After the real tombstone write, the historical manifest matches.
+            self.client.mark_points_tombstoned(self.collection, [point_id])
+            report = audit_canonical_copy_index(
+                directory, anchor_sha256=pin, client=audit_client,
+                collection=self.collection, chunker=chunk_document, page_size=1,
+            )
+            self.assertEqual(report.point_count, 1)
+            self.assertIs(self.client.retrieve_points(
+                self.collection, [point_id]
+            )[0]["payload"]["tombstone"], True)
+
     def test_reconciliation_plan_enumerates_real_qdrant_divergences(self) -> None:
         document = self._document("plan-copy", "alpha", "alice", "Texte du plan.")
         with tempfile.TemporaryDirectory() as directory:
