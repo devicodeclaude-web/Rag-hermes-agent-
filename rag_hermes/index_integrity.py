@@ -29,20 +29,34 @@ def audit_qdrant_index(
     *,
     page_size: int = 100,
     expected_manifest_sha256: str | None = None,
+    expected_tombstone_ids: frozenset[str] = frozenset(),
 ) -> IndexSnapshotReport:
-    """Audit unfiltered pages; an independently approved pin is optional for legacy callers."""
+    """Audit unfiltered pages; tombstone IDs require an independent historical manifest."""
     if not collection or not 1 <= page_size <= 1000:
         raise ValueError("collection and bounded page_size are required")
     expected = list(expected_chunks)
     if not expected:
         raise ValueError("empty canonical chunk manifest")
+    if type(expected_tombstone_ids) is not frozenset or any(
+        type(point_id) is not str for point_id in expected_tombstone_ids
+    ):
+        raise ValueError("expected tombstones require a frozenset of point ids")
+    if expected_tombstone_ids and not expected_tombstone_ids <= {
+        chunk_to_point(chunk, [1.0])["id"] for chunk in expected
+    }:
+        raise ValueError("expected tombstone ids are not in canonical chunk manifest")
     if expected_manifest_sha256 is not None:
         if not isinstance(expected_manifest_sha256, str) or len(expected_manifest_sha256) != 64 or any(
             char not in "0123456789abcdef" for char in expected_manifest_sha256
         ):
             raise ValueError("invalid manifest digest")
         canonical_points = [chunk_to_point(chunk, [1.0]) for chunk in expected]
-        actual = verify_index_snapshot(expected, canonical_points).payload_sha256
+        for point in canonical_points:
+            if point["id"] in expected_tombstone_ids:
+                point["payload"]["tombstone"] = True
+        actual = verify_index_snapshot(
+            expected, canonical_points, expected_tombstone_ids=expected_tombstone_ids,
+        ).payload_sha256
         if actual != expected_manifest_sha256:
             raise ValueError("manifest digest does not match pinned value")
     points: list[dict[str, Any]] = []
@@ -61,13 +75,20 @@ def audit_qdrant_index(
             raise ValueError("invalid or repeated Qdrant scroll cursor")
         seen_offsets.add(next_offset)
         offset = next_offset
-    return verify_index_snapshot(expected, points)
+    return verify_index_snapshot(
+        expected, points, expected_tombstone_ids=expected_tombstone_ids,
+    )
 
 
 def verify_index_snapshot(
-    expected_chunks: Iterable[Chunk], observed_points: Iterable[dict[str, Any]]
+    expected_chunks: Iterable[Chunk], observed_points: Iterable[dict[str, Any]],
+    *, expected_tombstone_ids: frozenset[str] = frozenset(),
 ) -> IndexSnapshotReport:
     """Fail closed on missing, extra, duplicate, or mismatched indexed points."""
+    if type(expected_tombstone_ids) is not frozenset or any(
+        type(point_id) is not str for point_id in expected_tombstone_ids
+    ):
+        raise ValueError("expected tombstones require a frozenset of point ids")
     expected: dict[str, dict[str, Any]] = {}
     for chunk in expected_chunks:
         point = chunk_to_point(chunk, [1.0])
@@ -76,6 +97,10 @@ def verify_index_snapshot(
         expected[point["id"]] = point["payload"]
     if not expected:
         raise ValueError("empty canonical chunk manifest")
+    if not expected_tombstone_ids <= expected.keys():
+        raise ValueError("expected tombstone ids are not in canonical chunk manifest")
+    for point_id in expected_tombstone_ids:
+        expected[point_id]["tombstone"] = True
 
     observed: dict[str, dict[str, Any]] = {}
     for point in observed_points:
