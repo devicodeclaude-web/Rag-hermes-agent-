@@ -97,6 +97,30 @@ class QdrantRepositoryIntegrationTests(unittest.TestCase):
             source_uri=f"local://{doc_id}",
         )
 
+    def test_tombstone_payload_is_completed_and_visible_on_real_qdrant(self) -> None:
+        document = self._document("mask-test", "alpha", "alice", "Visible passage.")
+        chunk = chunk_document(document)[0]
+        point = chunk_to_point(chunk, _fixed_vector(chunk.text))
+        other = self._document("other-mask-test", "beta", "bob", "Other passage.")
+        other_chunk = chunk_document(other)[0]
+        other_point = chunk_to_point(other_chunk, _fixed_vector(other_chunk.text))
+        self.assertEqual(self.client.upsert(self.collection, [point, other_point])["result"]["status"], "completed")
+        self.client.mark_points_tombstoned(self.collection, [point["id"]])
+        observed = self.client.retrieve_points(self.collection, [point["id"]])
+        self.assertEqual(len(observed), 1)
+        self.assertIs(observed[0]["payload"]["tombstone"], True)
+        self.assertEqual(observed[0]["payload"]["owner_id"], "alice")
+        self.assertEqual(observed[0]["payload"]["text"], chunk.text)
+        visible = self.client.scroll(
+            self.collection, query_filter={"must": [
+                {"key": "tombstone", "match": {"value": False}},
+            ]}, limit=10,
+        )
+        self.assertEqual([item["id"] for item in visible], [other_point["id"]])
+        self.assertIs(self.client.retrieve_points(
+            self.collection, [other_point["id"]]
+        )[0]["payload"]["tombstone"], False)
+
     def test_hybrid_rrf_queries_real_qdrant_with_acl_prefilter(self) -> None:
         collection = "hermes_hybrid_" + uuid.uuid4().hex[:12]
         self.client.create_collection(collection, vector_size=4, sparse=True)
