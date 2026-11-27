@@ -231,9 +231,16 @@ class QdrantChunkRepository:
         Under the single document write lease: scan the owner's points to the
         terminal cursor, verify them against the approved chunk manifest, mark
         exactly those proven ids (requiring a completed operation), then re-read
-        and confirm every point flipped to `tombstone:true` with no other change.
+        and confirm every proven point flipped to `tombstone:true` with no other
+        change. Completeness is only over the set observed by that scan under the
+        cooperative lease: a non-cooperating writer (a direct Qdrant client or a
+        second host) could insert an owner point after the terminal cursor that
+        this call neither marks nor reports — out of the mono-host guarantee.
         Any refusal, ambiguity or partial result raises and leaves the caller to
-        reconcile; a success is only reported after the confirming re-read.
+        reconcile; a success is only reported after the confirming re-read. The
+        operation is NOT idempotent on a partial failure: some points may already
+        be tombstoned, so a retry raises `already tombstoned` and reconciliation
+        tooling (orchestration C) is required rather than a blind re-run.
         """
         if not callable(chunker):
             raise ValueError("approved chunker is required")
@@ -439,7 +446,6 @@ class QdrantChunkRepository:
                     raise RuntimeError("tombstone write did not apply cleanly; reconciliation required")
         if seen != set(ordered):
             raise RuntimeError("tombstone write did not apply cleanly; reconciliation required")
-
 
     def _assert_document_owner(self, snapshot: _DocumentSnapshot) -> set[str | int]:
         # A short page is not proof of completion: only Qdrant's terminal
