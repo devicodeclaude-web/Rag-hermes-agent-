@@ -1,6 +1,8 @@
 """Lecture seule préalable au marquage #71 ; ce plan n'autorise aucune mutation."""
 from __future__ import annotations
 
+from dataclasses import replace
+from functools import partial
 import tempfile
 import unittest
 import uuid
@@ -35,6 +37,81 @@ class TombstonePreflightTests(unittest.TestCase):
         self.point = chunk_to_point(chunk_document(self.document)[0], [1.0])
         self.client.scroll_results = [self.point]
         self.client.stored_points = {self.point["id"]: self.point}
+
+    def test_canonical_inventory_requires_every_expected_chunk(self):
+        doc = replace(self.document, content="alpha beta")
+        chunker = partial(chunk_document, max_tokens=1, overlap_tokens=0)
+        chunks = chunker(doc)
+        self.assertEqual(len(chunks), 2)
+        first = chunk_to_point(chunks[0], [1.0])
+        self.client.scroll_results = [first]
+        self.client.stored_points = {first["id"]: first}
+        with self.assertRaisesRegex(ValueError, "canonical chunk manifest"):
+            self.repository.inspect_canonical_tombstone_candidates(doc, chunker=chunker)
+
+    def test_canonical_inventory_accepts_all_expected_chunks(self):
+        doc = replace(self.document, content="alpha beta")
+        chunker = partial(chunk_document, max_tokens=1, overlap_tokens=0)
+        points = [chunk_to_point(chunk, [1.0]) for chunk in chunker(doc)]
+        self.client.scroll_results = points
+        self.client.stored_points = {point["id"]: point for point in points}
+        self.assertEqual(
+            self.repository.inspect_canonical_tombstone_candidates(doc, chunker=chunker),
+            tuple(sorted(point["id"] for point in points)),
+        )
+        self.assertEqual(self.client.deleted, [])
+        self.assertEqual(self.client.upserted, [])
+
+    def test_canonical_inventory_rejects_forged_chunk_identity_and_payload(self):
+        payload = {**self.point["payload"], "chunk_id": "invented-chunk"}
+        forged_id = stable_point_id(
+            tenant_id=payload["tenant_id"], document_id=payload["document_id"],
+            chunk_id=payload["chunk_id"], source_sha=payload["source_sha"],
+            doc_version=payload["doc_version"],
+        )
+        forged = {**self.point, "id": forged_id, "payload": payload}
+        self.client.scroll_results = [forged]
+        self.client.stored_points = {forged_id: forged}
+        # The older index-only diagnostic intentionally accepts self-consistency.
+        self.assertEqual(self.repository.inspect_tombstone_candidates(self.document), (forged_id,))
+        with self.assertRaisesRegex(ValueError, "canonical chunk manifest"):
+            self.repository.inspect_canonical_tombstone_candidates(
+                self.document, chunker=chunk_document,
+            )
+        for change in ({"section": "invented"}, {"token_count": 999}):
+            with self.subTest(change=change):
+                changed = {**self.point, "payload": {**self.point["payload"], **change}}
+                self.client.scroll_results = [changed]
+                self.client.stored_points = {self.point["id"]: changed}
+                with self.assertRaisesRegex(ValueError, "canonical chunk manifest"):
+                    self.repository.inspect_canonical_tombstone_candidates(
+                        self.document, chunker=chunk_document,
+                    )
+
+    def test_canonical_inventory_rejects_unexpected_extra_point(self):
+        doc = replace(self.document, content="alpha beta")
+        chunks = chunk_document(doc, max_tokens=1, overlap_tokens=0)
+        points = [chunk_to_point(chunk, [1.0]) for chunk in chunks]
+        self.client.scroll_results = points
+        self.client.stored_points = {point["id"]: point for point in points}
+        with self.assertRaisesRegex(ValueError, "canonical chunk manifest"):
+            self.repository.inspect_canonical_tombstone_candidates(
+                doc, chunker=lambda _document: chunks[:1],
+            )
+
+    def test_canonical_inventory_rejects_missing_or_duplicate_manifest(self):
+        with self.assertRaisesRegex(ValueError, "canonical chunk manifest is empty"):
+            self.repository.inspect_canonical_tombstone_candidates(
+                self.document, chunker=lambda _document: [],
+            )
+        with self.assertRaisesRegex(ValueError, "duplicate ids"):
+            self.repository.inspect_canonical_tombstone_candidates(
+                self.document, chunker=lambda _document: chunk_document(self.document) * 2,
+            )
+        with self.assertRaisesRegex(ValueError, "approved chunker"):
+            self.repository.inspect_canonical_tombstone_candidates(
+                self.document, chunker=None,
+            )
 
     def test_preflight_finds_ids_without_mutating_canonical_or_index(self):
         result = self.repository.inspect_tombstone_candidates(self.document)

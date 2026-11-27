@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import islice
 import hashlib
 import json
 import math
@@ -214,7 +215,27 @@ class QdrantChunkRepository:
             self._vector_size = schema["vector_size"]
             self._dense_distance = "Cosine"  # verified by hybrid preflight
 
+    def inspect_canonical_tombstone_candidates(
+        self, document: Document, *, chunker: Callable[[Document], Iterable[Chunk]],
+    ) -> tuple[str, ...]:
+        """Compare the observed points to a chunk manifest independent of Qdrant.
+
+        The caller must pin the chunker profile AND obtain the document from a
+        live canonical authority. The returned IDs are not write permission:
+        the local lease ends on return and the server scan is not a snapshot.
+        """
+        if not callable(chunker):
+            raise ValueError("approved chunker is required")
+        return self._inspect_tombstone_candidates(document, chunker=chunker)
+
     def inspect_tombstone_candidates(self, document: Document) -> tuple[str, ...]:
+        """Index-only diagnostic; does NOT prove chunk-manifest completeness."""
+        return self._inspect_tombstone_candidates(document, chunker=None)
+
+    def _inspect_tombstone_candidates(
+        self, document: Document, *,
+        chunker: Callable[[Document], Iterable[Chunk]] | None,
+    ) -> tuple[str, ...]:
         """Read-only, bounded preflight for #71; NOT authorization to mutate.
 
         The document must come from a trusted live canonical store, not the
@@ -229,7 +250,26 @@ class QdrantChunkRepository:
             self._lock_dir, self._collection, snapshot.tenant_id, snapshot.document_id,
             timeout=self._lock_timeout,
         ):
+            expected_payloads: dict[str, dict[str, Any]] | None = None
+            if chunker is not None:
+                # Bounded manifest from the caller-pinned chunker, not Qdrant.
+                expected_payloads = {}
+                for chunk in islice(chunker(document), _OWNER_SCAN_BUDGET + 1):
+                    if len(expected_payloads) >= _OWNER_SCAN_BUDGET:
+                        raise ValueError("canonical chunk manifest exceeds scan budget")
+                    self._assert_chunk_matches_document(snapshot, chunk)
+                    point = chunk_to_point(chunk, [1.0])
+                    point_id = point["id"]
+                    if point_id in expected_payloads:
+                        raise ValueError("canonical chunk manifest contains duplicate ids")
+                    expected_payloads[point_id] = json.loads(
+                        json.dumps(point["payload"], allow_nan=False, ensure_ascii=False)
+                    )
+                if not expected_payloads:
+                    raise ValueError("canonical chunk manifest is empty")
             ids = self._assert_document_owner(snapshot)
+            if expected_payloads is not None and ids != expected_payloads.keys():
+                raise ValueError("indexed ids differ from canonical chunk manifest")
             if not ids:
                 raise ValueError("canonical document has no indexed points")
             for point_id in ids:
@@ -298,6 +338,8 @@ class QdrantChunkRepository:
                             doc_version=payload["doc_version"],
                         )):
                         raise ValueError("indexed point identity is inconsistent")
+                    if expected_payloads is not None and payload != expected_payloads[point_id]:
+                        raise ValueError("indexed payload differs from canonical chunk manifest")
             return tuple(ordered)
 
     def _assert_document_owner(self, snapshot: _DocumentSnapshot) -> set[str | int]:
