@@ -13,6 +13,7 @@ import tempfile
 import unittest
 import uuid
 
+from rag_hermes.collection_generation import observe_collection_generation
 from rag_hermes.canonical_reconciliation import audit_canonical_copy_index
 from rag_hermes.canonical_registry import CanonicalDocumentRegistry
 from rag_hermes.canonical_tombstone import CanonicalTombstoneCoordinator
@@ -63,6 +64,25 @@ class QdrantAuthIntegrationTests(unittest.TestCase):
     def assertDenied(self, call, *args, **kwargs) -> None:
         with self.assertRaisesRegex(RuntimeError, "Qdrant HTTP 40[13]"):
             call(*args, **kwargs)
+
+    def test_scoped_writer_observes_only_an_operator_provisioned_physical_generation(self) -> None:
+        collection = "hermes_gen_" + uuid.uuid4().hex[:12]
+        generation = str(uuid.uuid4())
+        self.admin.create_collection(collection, vector_size=4, generation_uuid=generation)
+        self.addCleanup(self._drop, collection)
+        writer = QdrantRestClient(
+            self.admin.base_url,
+            api_key=_jwt(os.environ["QDRANT_AUTH_ADMIN_KEY"], collection, "prw"),
+        )
+        observation = observe_collection_generation(writer, collection)
+        self.assertEqual(
+            (observation.endpoint, observation.collection, observation.generation),
+            (writer.base_url, collection, generation),
+        )
+        # A prw JWT cannot provision or replace the physical generation.
+        self.assertDenied(writer.delete_collection, collection)
+        self.assertDenied(writer.create_collection,
+                          "forbidden_" + uuid.uuid4().hex[:12], vector_size=4)
 
     def test_read_identity_cannot_mutate_points(self) -> None:
         self.assertIsInstance(self.reader.get_collection(self.collection), dict)

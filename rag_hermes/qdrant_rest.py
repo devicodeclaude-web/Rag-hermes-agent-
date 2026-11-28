@@ -114,20 +114,57 @@ class QdrantRestClient:
             raise RuntimeError("Qdrant returned malformed collection metadata")
         return result
 
+    def list_collections(self) -> tuple[str, ...]:
+        """Read physical collection names, not names resolved through aliases.
+
+        This is one observation, not proof that a collection cannot be deleted
+        and recreated while a reconciliation operation is running.
+        """
+        response = self._request("GET", "/collections", {})
+        result = response.get("result")
+        if response.get("status") != "ok" or type(result) is not dict:
+            raise RuntimeError("Qdrant returned an invalid collection list")
+        entries = result.get("collections")
+        if type(entries) is not list or any(
+            type(entry) is not dict or set(entry) != {"name"}
+            or type(entry["name"]) is not str or not entry["name"]
+            for entry in entries
+        ):
+            raise RuntimeError("Qdrant returned an invalid collection list")
+        names = tuple(entry["name"] for entry in entries)
+        if len(names) != len(set(names)):
+            raise RuntimeError("Qdrant returned an invalid collection list")
+        return names
+
     def create_collection(
         self, collection: str, *, vector_size: int, distance: str = "Cosine",
-        sparse: bool = False,
+        sparse: bool = False, generation_uuid: str | None = None,
     ) -> dict[str, Any]:
         if vector_size < 1:
             raise ValueError("vector_size must be positive")
         if type(sparse) is not bool:
             raise ValueError("sparse must be a boolean")
+        if generation_uuid is not None:
+            try:
+                valid_generation = (
+                    type(generation_uuid) is str
+                    and str(UUID(generation_uuid)) == generation_uuid
+                    and UUID(generation_uuid).version == 4
+                )
+            except (ValueError, AttributeError, TypeError):
+                valid_generation = False
+            if not valid_generation:
+                raise ValueError("generation_uuid must be a canonical UUIDv4")
         name = quote(collection, safe="")
         body: dict[str, Any] = {
             "vectors": {"dense": {"size": vector_size, "distance": distance}}
         }
         if sparse:
             body["sparse_vectors"] = {"sparse": {}}
+        if generation_uuid is not None:
+            # Provisioner-only field. Merely writing it is NOT proof of an
+            # original, independent operator receipt or an immutable instance.
+            body["metadata"] = {"hermes_generation_uuid": generation_uuid}
         return self._request("PUT", f"/collections/{name}", body)
 
     def delete_collection(self, collection: str) -> dict[str, Any]:
