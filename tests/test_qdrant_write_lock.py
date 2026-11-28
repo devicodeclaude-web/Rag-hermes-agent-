@@ -17,7 +17,61 @@ def _hold_lock(directory: str, entered, release) -> None:
         release.wait(10)
 
 
+def _fork_while_holding_document_lock(directory: str, control) -> None:
+    """Let the lock holder die while its forked child remains alive."""
+    from rag_hermes.qdrant_write_lock import document_write_lock
+    with document_write_lock(directory, "chunks", "tenant", "doc"):
+        child = os.fork()
+        if child == 0:
+            control.send(("child", os.getpid()))
+            control.recv()  # Keep the child alive until the test releases it.
+            control.send(("released", os.getpid()))
+            os._exit(0)
+        os._exit(0)  # Crash: never execute flock(LOCK_UN) in the holder.
+
+
 class DocumentWriteLockTests(unittest.TestCase):
+    def test_forked_idle_child_does_not_preserve_crashed_holders_lock(self) -> None:
+        from rag_hermes.qdrant_write_lock import document_write_lock
+        ctx = multiprocessing.get_context("spawn")
+        with tempfile.TemporaryDirectory() as directory:
+            parent, control = ctx.Pipe()
+            holder = ctx.Process(target=_fork_while_holding_document_lock, args=(directory, control))
+            holder.start()
+            control.close()
+            child_pid = None
+            try:
+                self.assertTrue(parent.poll(10), "forked child never signalled readiness")
+                _, child_pid = parent.recv()
+                holder.join(10)
+                self.assertEqual(holder.exitcode, 0)
+                # The holder exited abruptly: only an inherited FD can keep
+                # this lock held. A bounded acquisition must succeed now.
+                with document_write_lock(directory, "chunks", "tenant", "doc", timeout=0.2):
+                    pass
+            finally:
+                try:
+                    parent.send("release")
+                    if parent.poll(5):
+                        self.assertEqual(parent.recv(), ("released", child_pid))
+                        child_pid = None
+                except (BrokenPipeError, EOFError, OSError):
+                    pass
+                parent.close()
+                if holder.is_alive():
+                    holder.kill()
+                    holder.join(5)
+                if child_pid is not None:
+                    try:
+                        os.kill(child_pid, 0)
+                    except ProcessLookupError:
+                        pass
+                    else:
+                        # The child normally exits on release; kill on test
+                        # failure so a leaked child cannot hang the suite.
+                        import signal
+                        os.kill(child_pid, signal.SIGKILL)
+
     def test_different_identity_keys_do_not_alias(self) -> None:
         from rag_hermes.qdrant_write_lock import document_write_lock
         with tempfile.TemporaryDirectory() as directory:

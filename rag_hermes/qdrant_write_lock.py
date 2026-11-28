@@ -13,12 +13,57 @@ import hashlib
 import os
 from pathlib import Path
 import stat
+import threading
 import time
 from typing import Iterator
 
 
 class DocumentWriteLockTimeout(TimeoutError):
     """An import could not acquire its cooperative document lock in time."""
+
+
+# Track OPEN file descriptions before flock: an idle child forked by any
+# thread otherwise inherits and keeps a parent's lease alive after a crash.
+_ACTIVE_FDS_LOCK = threading.Lock()
+_ACTIVE_FDS: dict[int, int] = {}
+_NEXT_TOKEN = 0
+
+
+def _after_fork_in_child() -> None:
+    for fd in _ACTIVE_FDS.values():
+        try:
+            os.close(fd)  # Never LOCK_UN: that would unlock the parent's OFD.
+        except OSError:
+            pass
+    _ACTIVE_FDS.clear()
+    _ACTIVE_FDS_LOCK.release()
+
+
+os.register_at_fork(
+    before=_ACTIVE_FDS_LOCK.acquire,
+    after_in_parent=_ACTIVE_FDS_LOCK.release,
+    after_in_child=_after_fork_in_child,
+)
+
+
+def _open_tracked_lock_file(root_fd: int, filename: str) -> tuple[int, int]:
+    global _NEXT_TOKEN
+    with _ACTIVE_FDS_LOCK:
+        fd = os.open(
+            filename, os.O_CREAT | os.O_RDWR | os.O_CLOEXEC | os.O_NOFOLLOW,
+            0o600, dir_fd=root_fd,
+        )
+        token = _NEXT_TOKEN
+        _NEXT_TOKEN += 1
+        _ACTIVE_FDS[token] = fd
+        return fd, token
+
+
+def _close_tracked_lock_file(token: int) -> None:
+    with _ACTIVE_FDS_LOCK:
+        fd = _ACTIVE_FDS.pop(token, None)
+        if fd is not None:
+            os.close(fd)
 
 
 def default_lock_directory() -> Path:
@@ -98,8 +143,7 @@ def document_write_lock(
     filename = _lock_filename(collection, tenant_id, document_id)
     root_fd = _open_private_directory(root)
     try:
-        flags = os.O_CREAT | os.O_RDWR | os.O_CLOEXEC | os.O_NOFOLLOW
-        fd = os.open(filename, flags, 0o600, dir_fd=root_fd)
+        fd, token = _open_tracked_lock_file(root_fd, filename)
     finally:
         os.close(root_fd)
     try:
@@ -126,6 +170,10 @@ def document_write_lock(
         try:
             yield
         finally:
-            fcntl.flock(fd, fcntl.LOCK_UN)
+            # The child may unwind an inherited context after at-fork cleanup.
+            # Its token was removed; never unlock a reused numeric descriptor.
+            with _ACTIVE_FDS_LOCK:
+                if _ACTIVE_FDS.get(token) == fd:
+                    fcntl.flock(fd, fcntl.LOCK_UN)
     finally:
-        os.close(fd)
+        _close_tracked_lock_file(token)

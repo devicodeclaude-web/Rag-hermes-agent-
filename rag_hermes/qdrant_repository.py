@@ -6,6 +6,7 @@ from itertools import islice
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import threading
 import unicodedata
@@ -20,19 +21,26 @@ from .qdrant_store import chunk_to_point, lexical_weights_to_sparse_vector, stab
 from .qdrant_write_lock import default_lock_directory, document_write_lock
 from .retrieval import SearchResult
 
-# Thread-local set of document-lease keys currently held by this thread, so the
-# lease-only private helpers can ASSERT the lease rather than only document it.
-# A lease holds an flock per (collection, tenant, document); a future caller
-# reaching the core without it must fail loudly, not scan/mark outside exclusion.
+# The private core requires a lease held by THIS repository instance. Two
+# instances may use identical logical IDs but different lock directories.
 _HELD_DOCUMENT_LEASES = threading.local()
 
 
-def _held_document_leases() -> set[tuple[str, str, str]]:
+def _held_document_leases() -> set[tuple[int, str, str, str]]:
     held = getattr(_HELD_DOCUMENT_LEASES, "keys", None)
     if held is None:
         held = set()
         _HELD_DOCUMENT_LEASES.keys = held
     return held
+
+
+def _clear_inherited_document_leases() -> None:
+    # TLS is copied in the forking thread, but the child has closed the lock
+    # FDs in qdrant_write_lock's at-fork handler.
+    _HELD_DOCUMENT_LEASES.keys = set()
+
+
+os.register_at_fork(after_in_child=_clear_inherited_document_leases)
 
 
 _OWNER_SCAN_PAGE_SIZE = 10_000
@@ -277,7 +285,7 @@ class QdrantChunkRepository:
         reentrant (a new descriptor every call), so a nested acquire of the same
         key is a bug: fail fast instead of blocking until timeout.
         """
-        key = (self._collection, tenant_id, document_id)
+        key = (id(self), self._collection, tenant_id, document_id)
         held = _held_document_leases()
         if key in held:
             raise RuntimeError("document write lease is not reentrant")
@@ -292,7 +300,7 @@ class QdrantChunkRepository:
                 held.discard(key)
 
     def _assert_document_lease_held(self, snapshot: _DocumentSnapshot) -> None:
-        if (self._collection, snapshot.tenant_id, snapshot.document_id) not in _held_document_leases():
+        if (id(self), self._collection, snapshot.tenant_id, snapshot.document_id) not in _held_document_leases():
             raise RuntimeError("document write lease must be held for this operation")
 
     def _preflight_document_tombstone_locked(
