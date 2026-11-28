@@ -302,7 +302,7 @@ class AnchorVersioningTests(_StoreCase):
         reg.register(document())
         reg.mark_inactive("doc-1", owner_id="alice")
         anchor = json.loads((self.store / _ANCHOR_FILENAME).read_text("utf-8"))
-        self.assertEqual(anchor.get("schema_version"), 2)
+        self.assertEqual(anchor.get("schema_version"), 3)
         self.assertEqual(anchor["documents"]["doc-1"]["state"], "inactive")
 
     def test_legacy_anchor_with_legacy_history_still_loads(self) -> None:

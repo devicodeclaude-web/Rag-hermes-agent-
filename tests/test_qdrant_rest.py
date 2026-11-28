@@ -40,7 +40,9 @@ class RecordingHandler(BaseHTTPRequestHandler):
             self.wfile.write(detail)
             return
         result = (
-            {"exists": self.__class__.exists_result}
+            {"collections": [{"name": "chunks"}]}
+            if self.path == "/collections" and self.command == "GET"
+            else {"exists": self.__class__.exists_result}
             if self.path.endswith("/exists")
             else [] if self.path.endswith("/points") and self.command == "POST"
             else {"points": []}
@@ -157,6 +159,21 @@ class QdrantRestClientTests(unittest.TestCase):
             "sparse_vectors": {"sparse": {}},
         })
 
+    def test_collection_generation_is_supplied_at_creation_not_inferred_later(self):
+        generation = "a8dd7c86-e3e5-48d8-94e2-e27e86d84886"
+        self.client.create_collection("chunks", vector_size=4, generation_uuid=generation)
+        self.assertEqual(RecordingHandler.requests[-1], (
+            "PUT", "/collections/chunks", {
+                "vectors": {"dense": {"size": 4, "distance": "Cosine"}},
+                "metadata": {"hermes_generation_uuid": generation},
+            },
+        ))
+        for invalid in ("", "not-a-uuid", "A8DD7C86-E3E5-48D8-94E2-E27E86D84886",
+                        "a8dd7c86-e3e5-18d8-94e2-e27e86d84886"):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                self.client.create_collection("chunks", vector_size=4, generation_uuid=invalid)
+        self.assertEqual(len(RecordingHandler.requests), 1)
+
     def test_get_collection_reads_collection_metadata(self):
         result = self.client.get_collection("chunks with/slash")
         method, path, body = RecordingHandler.requests[-1]
@@ -165,6 +182,20 @@ class QdrantRestClientTests(unittest.TestCase):
             ("GET", "/collections/chunks%20with%2Fslash", {}),
         )
         self.assertEqual(result, {"points": []})
+
+    def test_list_collections_reads_only_physical_names_and_rejects_bad_pages(self):
+        self.assertEqual(self.client.list_collections(), ("chunks",))
+        self.assertEqual(RecordingHandler.requests[-1], ("GET", "/collections", {}))
+        for invalid in (
+            None, {}, {"collections": [{"name": "chunks"}, {"name": "chunks"}]},
+            {"collections": [{"name": ""}]},
+            {"collections": [{"name": 123}]},
+            {"collections": [{"name": "chunks", "alias": True}]},
+        ):
+            with self.subTest(invalid=invalid):
+                with patch.object(self.client, "_request", return_value={"status": "ok", "result": invalid}):
+                    with self.assertRaisesRegex(RuntimeError, "collection list"):
+                        self.client.list_collections()
 
     def test_collection_exists_reads_strict_boolean_result(self):
         exists = self.client.collection_exists("chunks with/slash")
