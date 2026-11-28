@@ -3,6 +3,9 @@ from __future__ import annotations
 
 from dataclasses import replace
 from functools import partial
+import os
+import select
+import signal
 import tempfile
 import unittest
 import uuid
@@ -310,6 +313,56 @@ class ApplyDocumentTombstoneTests(unittest.TestCase):
             )
         self.assertEqual(self.client.tombstoned, [])
         self.assertEqual(self.client.scrolls, [])
+
+    def test_locked_core_rejects_a_lease_from_another_repository(self):
+        # Same logical IDs in distinct lock directories are NOT the same bail.
+        with tempfile.TemporaryDirectory() as other_directory:
+            other = QdrantChunkRepository(
+                self.client, collection="chunks", embed=lambda _: [1.0],
+                lock_dir=other_directory, lock_timeout=0,
+            )
+            with self.repository._document_write_lease(
+                self.document.tenant_id, self.document.document_id,
+            ):
+                with self.assertRaisesRegex(RuntimeError, "document write lease"):
+                    other._apply_document_tombstone_locked(
+                        self.document, chunker=self.chunker,
+                    )
+            self.assertEqual(self.client.tombstoned, [])
+
+    @unittest.skipUnless(hasattr(os, "fork"), "fork is required")
+    def test_fork_child_cannot_inherit_the_repository_lease_assertion(self):
+        from rag_hermes.qdrant_repository import _snapshot_document
+
+        with self.repository._document_write_lease(
+            self.document.tenant_id, self.document.document_id,
+        ):
+            read_fd, write_fd = os.pipe()
+            child = os.fork()
+            if child == 0:
+                os.close(read_fd)
+                try:
+                    self.repository._assert_document_lease_held(_snapshot_document(self.document))
+                except RuntimeError:
+                    os.write(write_fd, b"refused")
+                else:
+                    os.write(write_fd, b"inherited")
+                os._exit(0)
+            os.close(write_fd)
+            try:
+                ready, _, _ = select.select([read_fd], [], [], 3)
+                self.assertTrue(ready, "fork child stalled")
+                self.assertEqual(os.read(read_fd, 32), b"refused")
+                self.assertEqual(os.waitpid(child, 0)[1], 0)
+            finally:
+                os.close(read_fd)
+                try:
+                    finished, _ = os.waitpid(child, os.WNOHANG)
+                except ChildProcessError:
+                    finished = child
+                if not finished:
+                    os.kill(child, signal.SIGKILL)
+                    os.waitpid(child, 0)
 
     def test_document_write_lease_is_not_reentrant(self):
         snapshot_tenant = self.document.tenant_id
