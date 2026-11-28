@@ -105,6 +105,29 @@ class IngestionEventReplayTests(unittest.TestCase):
         self.assertEqual(registry.source("doc-1"), document())
         self.assertEqual(json.loads(registry.anchor_path.read_text())["records"], 3)
 
+    def test_zero_width_token_window_does_not_corrupt_original_chunk_identity(self):
+        from rag_hermes.ingestion_events import validate_event
+        doc = replace(document(), content="one")
+        original_line = json.dumps({**json.loads(self.document_line), "content": "one"},
+                                   sort_keys=True, separators=(",", ":"))
+        proposed = intent(original_line)
+        proposed["profile"]["max_passage_tokens"] = 1
+        class SkippingTokenizer:
+            def __call__(self, _text, **_kwargs):
+                return {"input_ids": [0, 1], "offset_mapping": [(0, 0), (0, 3)]}
+        chunks = chunk_document_tokens(
+            doc, SkippingTokenizer(), max_passage_tokens=1, overlap_tokens=0,
+            tokenizer_name=proposed["profile"]["repo_id"],
+            tokenizer_revision=proposed["profile"]["revision"],
+        )
+        self.assertEqual(len(chunks), 1)
+        proposed["points"] = [{"id": point["id"], "payload": point["payload"]}
+                              for point in (chunk_to_point(chunk, [1.0]) for chunk in chunks)]
+        self.assertEqual(validate_event(
+            proposed, document=doc, document_index=1,
+            document_digest=hashlib.sha256((original_line + "\n").encode()).hexdigest(),
+        ), "ingestion_intent")
+
     def test_inactive_document_cannot_declare_new_ingestion_intent(self):
         record = json.loads(self.document_line)
         record["state"] = "inactive"

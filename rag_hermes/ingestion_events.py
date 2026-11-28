@@ -58,7 +58,7 @@ def _validate_points(points: object, document: Document, profile: dict[str, Any]
         raise ValueError("ingestion intent needs a nonempty points array")
     seen: set[str] = set()
     content_hash = hashlib.sha256(document.content.encode("utf-8")).hexdigest()
-    for index, point in enumerate(points):
+    for point in points:
         if type(point) is not dict or set(point) != {"id", "payload"}:
             raise ValueError("ingestion point keys must be exact")
         point_id, payload = point["id"], point["payload"]
@@ -91,12 +91,15 @@ def _validate_points(points: object, document: Document, profile: dict[str, Any]
             raise ValueError("ingestion point text/offsets differ from canonical content")
         if not 1 <= payload["token_count"] <= profile["max_passage_tokens"]:
             raise ValueError("ingestion point token count is outside its profile")
-        material = (f"{document.document_id}:{document.doc_version}:{index}:"
-                    f"{start}:{end}:{content_hash}:"
-                    f"{profile['repo_id']}@{profile['revision']}")
-        chunk_id = hashlib.sha256(material.encode("utf-8")).hexdigest()[:24]
-        if payload["chunk_id"] != chunk_id:
-            raise ValueError("ingestion point chunk identity differs")
+        # The chunker hashes the token WINDOW index, not the index of emitted
+        # points. Zero-width windows may be skipped, so reconstructing that
+        # index from enumerate(points) rejects valid original chunks. Shape
+        # checks here are NOT a completeness proof: the future ingestion writer
+        # must compare this entire list with its freshly generated chunks, and
+        # the repair preflight must compare a complete Qdrant scan before write.
+        chunk_id = payload["chunk_id"]
+        if not _hex(chunk_id, 24):
+            raise ValueError("ingestion point chunk identity is invalid")
         expected_id = stable_point_id(
             tenant_id=document.tenant_id, document_id=document.document_id,
             chunk_id=chunk_id, source_sha=content_hash, doc_version=document.doc_version,
