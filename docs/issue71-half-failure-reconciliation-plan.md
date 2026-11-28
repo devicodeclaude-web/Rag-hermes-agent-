@@ -21,7 +21,7 @@
 
 Le propriétaire a explicitement approuvé D1 et D2 : garantie **opérationnelle bornée** pour les collections nouvellement provisionnées (reçu indépendant établi à la création et gel administratif pendant réparation), et refus automatique de réparer les anciens documents sans preuve contemporaine. Aucun document existant n'est rétro-attesté.
 
-**Tranche 1a, incomplète :** le client peut écrire une métadonnée de génération UUIDv4 *fournie par le provisionneur* lors de la création (le service `prw` ne peut pas créer), et une primitive en lecture seule peut observer le nom physique + la métadonnée sous `prw`. Une observation courante n'est ni un reçu indépendant, ni une preuve d'ingestion originale. La persistance de reçus originaux, la liaison à chaque ingestion et toute réparation restent ABSENTES ; aucun chemin mutateur ne consomme cette primitive. La PR demeure non activable et non fusionnable à ce stade.
+**Tranches 1a–1b, incomplètes :** le client peut écrire une métadonnée de génération UUIDv4 *fournie par le provisionneur* lors de la création (le service `prw` ne peut pas créer), et une primitive en lecture seule peut observer le nom physique + la métadonnée sous `prw`. Le chunker de production expose un instantané immuable du profil construit depuis les octets vérifiés ; un tokenizer injecté n'en reçoit aucun. Ces observations courantes ne sont ni un reçu indépendant, ni une preuve d'ingestion originale. La persistance de reçus originaux, la liaison à chaque ingestion et toute réparation restent ABSENTES ; aucun chemin mutateur ne consomme ces primitives. La PR demeure non activable et non fusionnable à ce stade.
 
 ## Tranches techniques — à implémenter après décision
 

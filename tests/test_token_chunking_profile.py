@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
+import logging
+from dataclasses import FrozenInstanceError, replace
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 import tempfile
 import tomllib
 import unittest
+from unittest.mock import patch
 
 from rag_hermes.ingestion import Document
 from rag_hermes.ingestion import chunk_document
@@ -90,6 +95,111 @@ class LockedTokenChunkerTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "tokenizers.*0.22.2"):
                 LockedTokenChunker(lock_path=self.lock,
                                    tokenizer_path=self.tokenizer_file)
+
+    def test_production_snapshot_captures_verified_bytes_revision_runtime_and_budgets(self):
+        with (patch("rag_hermes.token_chunking_profile._APPROVED_REVISION", "a" * 40),
+              patch("rag_hermes.token_chunking_profile._APPROVED_TOKENIZER_SHA256",
+                    self.manifest["files"][0]["sha256"]),
+              patch("rag_hermes.token_chunking_profile.metadata.version", return_value="0.22.2"),
+              patch("tokenizers.Tokenizer.from_str", return_value=object())):
+            profile = LockedTokenChunker(
+                lock_path=self.lock, tokenizer_path=self.tokenizer_file,
+                max_passage_tokens=23, overlap_tokens=5,
+            )
+        snapshot = profile.verified_profile_snapshot
+        self.assertEqual(snapshot.repo_id, self.manifest["repo_id"])
+        self.assertEqual(snapshot.revision, "a" * 40)
+        self.assertEqual(snapshot.tokenizer_sha256, self.manifest["files"][0]["sha256"])
+        self.assertEqual(snapshot.tokenizers_version, "0.22.2")
+        self.assertEqual((snapshot.max_passage_tokens, snapshot.overlap_tokens), (23, 5))
+        with self.assertRaises(FrozenInstanceError):
+            snapshot.revision = "b" * 40
+        self.assertNotEqual(snapshot, replace(snapshot, tokenizer_sha256="b" * 64))
+        self.assertNotEqual(snapshot, replace(snapshot, revision="b" * 40))
+        self.assertNotEqual(snapshot, replace(snapshot, max_passage_tokens=24))
+        self.assertNotEqual(snapshot, replace(snapshot, overlap_tokens=6))
+
+    def test_injected_tokenizer_never_receives_trusted_snapshot(self):
+        from rag_hermes.token_chunking_profile import _TokenizerAdapter
+
+        for tokenizer in (FakeTokenizer(), _TokenizerAdapter(object())):
+            with self.subTest(tokenizer=type(tokenizer).__name__):
+                profile = LockedTokenChunker(
+                    lock_path=self.lock, tokenizer_path=self.tokenizer_file,
+                    tokenizer=tokenizer,
+                )
+                self.assertIsNone(profile.verified_profile_snapshot)
+
+    def test_fresh_snapshots_detect_changed_verified_inputs(self):
+        def construct():
+            with (patch("rag_hermes.token_chunking_profile._APPROVED_REVISION",
+                        self.manifest["revision"]),
+                  patch("rag_hermes.token_chunking_profile._APPROVED_TOKENIZER_SHA256",
+                        self.manifest["files"][0]["sha256"]),
+                  patch("rag_hermes.token_chunking_profile.metadata.version", return_value="0.22.2"),
+                  patch("tokenizers.Tokenizer.from_str", return_value=object())):
+                return LockedTokenChunker(
+                    lock_path=self.lock, tokenizer_path=self.tokenizer_file,
+                    max_passage_tokens=22, overlap_tokens=4,
+                ).verified_profile_snapshot
+
+        original = construct()
+        self.tokenizer_file.write_bytes(b"changed approved tokenizer")
+        self.manifest["files"][0]["sha256"] = hashlib.sha256(self.tokenizer_file.read_bytes()).hexdigest()
+        self.lock.write_text(json.dumps(self.manifest), encoding="utf-8")
+        changed_bytes = construct()
+        self.assertNotEqual(original, changed_bytes)
+        self.manifest["revision"] = "b" * 40
+        self.lock.write_text(json.dumps(self.manifest), encoding="utf-8")
+        changed_revision = construct()
+        self.assertNotEqual(changed_bytes, changed_revision)
+        self.assertNotEqual(changed_revision, replace(changed_revision, max_passage_tokens=23))
+        self.assertNotEqual(changed_revision, replace(changed_revision, overlap_tokens=5))
+
+    def test_snapshot_cannot_be_replaced_or_diverge_from_public_chunking_parameters(self):
+        with (patch("rag_hermes.token_chunking_profile._APPROVED_REVISION", "a" * 40),
+              patch("rag_hermes.token_chunking_profile._APPROVED_TOKENIZER_SHA256",
+                    self.manifest["files"][0]["sha256"]),
+              patch("rag_hermes.token_chunking_profile.metadata.version", return_value="0.22.2"),
+              patch("tokenizers.Tokenizer.from_str", return_value=object())):
+            profile = LockedTokenChunker(lock_path=self.lock, tokenizer_path=self.tokenizer_file)
+        snapshot = profile.verified_profile_snapshot
+        for attr, value in (("verified_profile_snapshot", None), ("name", "other/repo"),
+                            ("revision", "b" * 40), ("max_passage_tokens", 100),
+                            ("overlap_tokens", 2)):
+            with self.subTest(attr=attr), self.assertRaises(AttributeError):
+                setattr(profile, attr, value)
+        self.tokenizer_file.write_bytes(b"subsequently changed bytes")
+        self.assertIs(profile.verified_profile_snapshot, snapshot)
+
+    def test_snapshot_and_failure_do_not_log_or_expose_tokenizer_bytes_or_paths(self):
+        secret = "unique-sensitive-tokenizer-marker"
+        self.tokenizer_file.write_bytes(secret.encode())
+        self.manifest["files"][0]["sha256"] = hashlib.sha256(self.tokenizer_file.read_bytes()).hexdigest()
+        self.lock.write_text(json.dumps(self.manifest), encoding="utf-8")
+        stream = io.StringIO()
+        logger = logging.getLogger()
+        handler = logging.StreamHandler(stream)
+        old_level = logger.level
+        logger.setLevel(logging.DEBUG)
+        self.addCleanup(logger.setLevel, old_level)
+        logger.addHandler(handler)
+        self.addCleanup(logger.removeHandler, handler)
+        with (redirect_stdout(stream), redirect_stderr(stream),
+              patch("rag_hermes.token_chunking_profile._APPROVED_REVISION", "a" * 40),
+              patch("rag_hermes.token_chunking_profile._APPROVED_TOKENIZER_SHA256",
+                    self.manifest["files"][0]["sha256"]),
+              patch("rag_hermes.token_chunking_profile.metadata.version", return_value="0.22.2"),
+              patch("tokenizers.Tokenizer.from_str", return_value=object())):
+            profile = LockedTokenChunker(lock_path=self.lock, tokenizer_path=self.tokenizer_file)
+            self.tokenizer_file.write_bytes(b"changed later")
+            with self.assertRaisesRegex(ValueError, "sha256 mismatch") as error:
+                LockedTokenChunker(lock_path=self.lock, tokenizer_path=self.tokenizer_file)
+        exposed = stream.getvalue() + repr(profile.verified_profile_snapshot) + str(error.exception)
+        self.assertNotIn(secret, exposed)
+        self.assertNotIn(str(self.tokenizer_file), exposed)
+        self.assertNotIn(str(self.lock), exposed)
+        self.assertEqual(stream.getvalue(), "")
 
     def test_production_refuses_a_lock_claiming_an_unapproved_checkpoint(self):
         self.manifest["repo_id"] = "different/claim"
