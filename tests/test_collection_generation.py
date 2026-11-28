@@ -52,6 +52,24 @@ class CollectionGenerationTests(unittest.TestCase):
                 client.info = {"config": config}
                 with self.assertRaisesRegex(ValueError, "generation"):
                     observe_collection_generation(client, "physical")
+    def test_recreated_collection_or_changed_backend_fails_against_original_observation(self):
+        from rag_hermes.collection_generation import (
+            observe_collection_generation, require_matching_generation,
+        )
+        client = ReadOnlyCollectionClient()
+        original = observe_collection_generation(client, "physical")
+        self.assertEqual(require_matching_generation(client, original), original)
+        client.info = {"config": {"metadata": {
+            "hermes_generation_uuid": "d9ae70d3-d293-48f1-98a0-a6a394a4b5d3",
+        }}}
+        with self.assertRaisesRegex(ValueError, "generation mismatch"):
+            require_matching_generation(client, original)
+        client.info = {"config": {"metadata": {"hermes_generation_uuid": GENERATION}}}
+        client.base_url = "https://replacement.example"
+        with self.assertRaisesRegex(ValueError, "generation mismatch"):
+            require_matching_generation(client, original)
+        with self.assertRaises(ValueError):
+            require_matching_generation(client, "forged")
 
 
 if __name__ == "__main__":

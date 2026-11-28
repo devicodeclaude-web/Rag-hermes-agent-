@@ -79,6 +79,16 @@ class QdrantAuthIntegrationTests(unittest.TestCase):
             (observation.endpoint, observation.collection, observation.generation),
             (writer.base_url, collection, generation),
         )
+        # A real alias resolves with GET /collections/{alias}, but must never
+        # be accepted as a physical lock/repair target.
+        alias = "hermes_alias_" + uuid.uuid4().hex[:12]
+        self.admin._request("POST", "/collections/aliases", {
+            "actions": [{"create_alias": {
+                "collection_name": collection, "alias_name": alias,
+            }}],
+        })
+        with self.assertRaisesRegex(ValueError, "physical collection"):
+            observe_collection_generation(writer, alias)
         # A prw JWT cannot provision or replace the physical generation.
         self.assertDenied(writer.delete_collection, collection)
         self.assertDenied(writer.create_collection,

@@ -40,3 +40,21 @@ def observe_collection_generation(client: Any, collection: str) -> CollectionGen
     if not valid:
         raise ValueError("original collection generation metadata is missing or invalid")
     return CollectionGenerationObservation(endpoint, collection, generation)
+
+
+def require_matching_generation(
+    client: Any, original: CollectionGenerationObservation,
+) -> CollectionGenerationObservation:
+    """Compare with an externally and historically approved original record.
+
+    This function does not approve that record, its timestamp or lifecycle
+    exclusion; callers must obtain that evidence independently of Qdrant.
+    """
+    if type(original) is not CollectionGenerationObservation:
+        raise ValueError("original collection generation receipt is required")
+    if getattr(client, "base_url", None) != original.endpoint:
+        raise ValueError("collection generation mismatch")
+    observed = observe_collection_generation(client, original.collection)
+    if observed != original:
+        raise ValueError("collection generation mismatch")
+    return observed
